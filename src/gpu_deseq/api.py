@@ -9,10 +9,13 @@ import torch
 from formulaic import model_matrix
 from scipy.stats import chi2, norm
 
-MIN_MU = 1e-8
-MIN_ALPHA = 1e-8
-MAX_IRLS_STEPS = 50
-IRLS_TOL = 1e-6
+from . import _deseq2_core as _core
+
+# Public aliases, in case callers imported these before
+MIN_DISP = _core.MIN_DISP
+MAX_DISP = _core.MAX_DISP
+MIN_MU = _core.MIN_MU
+RIDGE_FACTOR = _core.RIDGE
 
 
 def _to_tensor(counts: object) -> torch.Tensor:
@@ -50,14 +53,21 @@ def _resolve_device(backend: str) -> torch.device:
 class DeseqResult:
     test_type: str
     design_columns: list[str]
-    coefficients: torch.Tensor
-    covariance: torch.Tensor | None
-    log_likelihood: torch.Tensor
-    base_mean: torch.Tensor
+    coefficients: torch.Tensor              # (G, P)
+    mu: torch.Tensor | None                 # (G, S) final μ from IRLS
+    dispersions: torch.Tensor | None        # (G,) MAP dispersions
+    base_mean: torch.Tensor                 # (G,)
+    design_matrix: torch.Tensor | None = None      # (S, P) used for Wald SE
+    hat_diagonals: torch.Tensor | None = None      # (G, S) IRLS H diag (Cook's)
+    counts: torch.Tensor | None = None             # (G, S) raw counts
+    normalized_counts: torch.Tensor | None = None  # (G, S) counts / size_factors
+    design_df: pd.DataFrame | None = None          # pandas frame (pydeseq2 uses value_counts)
     contrast_vector: torch.Tensor | None = None
     reduced_log_likelihood: torch.Tensor | None = None
+    log_likelihood: torch.Tensor | None = None  # for LRT only
     degrees_of_freedom: int | None = None
     gene_ids: list[str] | None = None
+    non_zero_mask: torch.Tensor | None = None
 
 
 class DESeqDataset:
@@ -96,6 +106,7 @@ class DESeqDataset:
         )
         self.size_factors: torch.Tensor | None = None
         self.normalized_counts: torch.Tensor | None = None
+        self.non_zero_mask: torch.Tensor | None = None
         self.dispersions_gene_wise: torch.Tensor | None = None
         self.dispersion_trend: torch.Tensor | None = None
         self.dispersions: torch.Tensor | None = None
@@ -113,16 +124,17 @@ class DESeqDataset:
         self.device = target
         self.counts = self.counts.to(target)
         self.design_matrix = self.design_matrix.to(target)
-        if self.size_factors is not None:
-            self.size_factors = self.size_factors.to(target)
-        if self.normalized_counts is not None:
-            self.normalized_counts = self.normalized_counts.to(target)
-        if self.dispersions_gene_wise is not None:
-            self.dispersions_gene_wise = self.dispersions_gene_wise.to(target)
-        if self.dispersion_trend is not None:
-            self.dispersion_trend = self.dispersion_trend.to(target)
-        if self.dispersions is not None:
-            self.dispersions = self.dispersions.to(target)
+        for attr in (
+            "size_factors",
+            "normalized_counts",
+            "non_zero_mask",
+            "dispersions_gene_wise",
+            "dispersion_trend",
+            "dispersions",
+        ):
+            t = getattr(self, attr, None)
+            if t is not None:
+                setattr(self, attr, t.to(target))
         return self
 
 
@@ -144,135 +156,143 @@ def _bh_adjust(pvalues: np.ndarray) -> np.ndarray:
     return adjusted
 
 
+# ---------------------------------------------------------------------------
+# Public entry points
+# ---------------------------------------------------------------------------
+
+
 def fit_size_factors(dataset: DESeqDataset, method: str = "median_ratio") -> DESeqDataset:
+    """Median-of-ratios size factors (pydeseq2 default, with poscounts fallback)."""
     if method != "median_ratio":
         raise ValueError("only median_ratio is supported")
-    counts = dataset.counts
-    positive_mask = torch.all(counts > 0, dim=1)
-    if not torch.any(positive_mask):
-        raise ValueError("median ratio size factor estimation requires genes with all counts > 0")
-    positive_counts = counts[positive_mask]
-    geom_means = torch.exp(torch.mean(torch.log(positive_counts), dim=1))
-    ratios = positive_counts / geom_means[:, None]
-    size_factors = torch.median(ratios, dim=0).values
-    size_factors = size_factors / torch.exp(torch.mean(torch.log(size_factors)))
-    dataset.size_factors = size_factors
-    dataset.normalized_counts = dataset.counts / size_factors[None, :]
+    sf, normed = _core.fit_size_factors(dataset.counts)
+    dataset.size_factors = sf.to(dataset.device)
+    dataset.normalized_counts = normed.to(dataset.device)
     return dataset
 
 
 def fit_dispersions(dataset: DESeqDataset, fit_type: str = "parametric") -> DESeqDataset:
+    """Faithful port of pydeseq2's fit_genewise + trend + MAP + outlier rule."""
     if fit_type != "parametric":
         raise ValueError("only parametric dispersion fitting is supported")
-    if dataset.normalized_counts is None:
+    if dataset.normalized_counts is None or dataset.size_factors is None:
         raise ValueError("size factors must be estimated before dispersions")
+
+    counts = dataset.counts
     normed = dataset.normalized_counts
-    mean = torch.mean(normed, dim=1).clamp_min(MIN_MU)
-    var = torch.var(normed, dim=1, correction=1)
-    gene_wise = ((var - mean) / (mean * mean)).clamp_min(MIN_ALPHA)
-    x = (1.0 / mean).detach().cpu().numpy()
-    y = gene_wise.detach().cpu().numpy()
-    design = np.column_stack([np.ones_like(x), x])
-    coeffs, _, _, _ = np.linalg.lstsq(design, y, rcond=None)
-    trend = torch.as_tensor(
-        coeffs[0] + coeffs[1] / mean.detach().cpu().numpy(),
-        device=dataset.device,
-        dtype=torch.float64,
-    ).clamp_min(MIN_ALPHA)
-    shrunk = torch.exp(0.5 * (torch.log(gene_wise) + torch.log(trend))).clamp_min(MIN_ALPHA)
-    dataset.dispersions_gene_wise = gene_wise
-    dataset.dispersion_trend = trend
-    dataset.dispersions = shrunk
-    return dataset
+    design = dataset.design_matrix
+    size_factors = dataset.size_factors
 
+    # non-zero genes: those not all-zero across samples (pydeseq2 dds.py:729).
+    non_zero_mask = ~torch.all(counts == 0, dim=1)
+    dataset.non_zero_mask = non_zero_mask
 
-def _chunk_slices(total: int, chunk_size: int) -> list[slice]:
-    return [slice(start, min(start + chunk_size, total)) for start in range(0, total, chunk_size)]
-
-
-def _batched_irls(
-    counts: torch.Tensor,
-    x: torch.Tensor,
-    offset: torch.Tensor,
-    dispersions: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    # Full-length outputs, NaN-padded for all-zero genes.
     n_genes = counts.shape[0]
-    n_params = x.shape[1]
-    xt = x.transpose(0, 1)
-    pinv_x = torch.linalg.pinv(x)
-    beta = (pinv_x @ torch.log((counts + 0.1).transpose(0, 1))).transpose(0, 1)
-    beta[:, 0] = beta[:, 0] - torch.mean(offset)
+    genewise_full = torch.full((n_genes,), float("nan"), dtype=torch.float64, device=dataset.device)
+    trend_full = torch.full((n_genes,), float("nan"), dtype=torch.float64, device=dataset.device)
+    disp_full = torch.full((n_genes,), float("nan"), dtype=torch.float64, device=dataset.device)
 
-    eye = torch.eye(n_params, dtype=x.dtype, device=x.device) * 1e-6
-    for _ in range(MAX_IRLS_STEPS):
-        eta = beta @ xt + offset[None, :]
-        mu = torch.exp(eta).clamp_min(MIN_MU)
-        weights = (mu / (1.0 + dispersions[:, None] * mu)).clamp_min(1e-8)
-        z = eta + (counts - mu) / mu
-        xw = x[None, :, :] * weights[:, :, None]
-        xtwx = torch.einsum("gsp,sq->gpq", xw, x) + eye[None, :, :]
-        xtwz = torch.einsum("gsp,gs->gp", xw, z - offset[None, :])
-        new_beta = torch.linalg.solve(xtwx, xtwz.unsqueeze(-1)).squeeze(-1)
-        max_delta = torch.max(torch.abs(new_beta - beta)).item()
-        beta = new_beta
-        if max_delta < IRLS_TOL:
-            break
+    if int(non_zero_mask.sum().item()) == 0:
+        dataset.dispersions_gene_wise = genewise_full
+        dataset.dispersion_trend = trend_full
+        dataset.dispersions = disp_full
+        return dataset
 
-    eta = beta @ xt + offset[None, :]
-    mu = torch.exp(eta).clamp_min(MIN_MU)
-    weights = (mu / (1.0 + dispersions[:, None] * mu)).clamp_min(1e-8)
-    xw = x[None, :, :] * weights[:, :, None]
-    fisher = torch.einsum("gsp,sq->gpq", xw, x) + eye[None, :, :]
-    covariance = torch.linalg.pinv(fisher)
-    log_likelihood = _nb_log_likelihood(counts, mu, dispersions)
-    return beta, covariance, log_likelihood
+    idx = torch.nonzero(non_zero_mask, as_tuple=False).squeeze(-1)
+    counts_nz = counts[idx]
+    normed_nz = normed[idx]
 
+    # Initial MoM (clipped).
+    alpha_init = _core.fit_initial_dispersions(normed_nz, size_factors, design)
 
-def _nb_log_likelihood(counts: torch.Tensor, mu: torch.Tensor, dispersions: torch.Tensor) -> torch.Tensor:
-    alpha = dispersions[:, None].clamp_min(MIN_ALPHA)
-    theta = 1.0 / alpha
-    log_prob = (
-        torch.lgamma(counts + theta)
-        - torch.lgamma(theta)
-        - torch.lgamma(counts + 1.0)
-        + theta * torch.log(theta / (theta + mu))
-        + counts * torch.log(mu / (theta + mu))
+    # mu_hat initialization per pydeseq2 (dds.py:747-765).
+    if _core.is_saturated_design(design):
+        mu_hat = _core.lin_reg_mu(counts_nz, size_factors, design)
+    else:
+        _, mu_hat, _, _ = _core.irls_batched(counts_nz, size_factors, design, alpha_init)
+        mu_hat = mu_hat.clamp_min(_core.MIN_MU)
+
+    # Cox-Reid adjusted MLE at fixed mu_hat.
+    alpha_mle = _core.fit_alpha_mle(counts_nz, mu_hat, design)
+    genewise_full[idx] = alpha_mle
+
+    # Trend fit on CPU.
+    normed_means_nz = normed_nz.mean(dim=1).cpu().numpy()
+    trend_values_nz, trend_type = _core.fit_parametric_trend(
+        alpha_mle.cpu().numpy(), normed_means_nz
     )
-    return torch.sum(log_prob, dim=1)
+    trend_nz = torch.as_tensor(trend_values_nz, dtype=torch.float64, device=dataset.device)
+    trend_full[idx] = trend_nz
+
+    # Prior variance.
+    n_samples = counts.shape[1]
+    n_vars = design.shape[1]
+    prior_var, sq_logres = _core.compute_prior_disp_var(
+        alpha_mle.cpu().numpy(), trend_values_nz, n_samples, n_vars
+    )
+
+    # MAP shrinkage at fixed mu_hat with prior centered at trend.
+    alpha_map = _core.fit_alpha_map(
+        counts_nz, mu_hat, design,
+        alpha_hat=trend_nz, prior_disp_var=prior_var,
+    )
+    alpha_map = alpha_map.clamp(_core.MIN_DISP, _core.MAX_DISP)
+
+    # Outlier rule: keep MLE for very-high genewise vs trend.
+    alpha_final = _core.apply_outlier_keep_mle(alpha_map, alpha_mle, trend_nz, sq_logres)
+    disp_full[idx] = alpha_final
+
+    dataset.dispersions_gene_wise = genewise_full
+    dataset.dispersion_trend = trend_full
+    dataset.dispersions = disp_full
+    return dataset
 
 
 def _fit_glm(dataset: DESeqDataset, design_matrix: torch.Tensor | None = None) -> DeseqResult:
     if dataset.dispersions is None or dataset.size_factors is None:
         raise ValueError("size factors and dispersions must be estimated before GLM fitting")
     x = dataset.design_matrix if design_matrix is None else design_matrix.to(dataset.device)
-    offset = torch.log(dataset.size_factors)
-    chunk_size = min(1024, dataset.n_genes)
-    betas: list[torch.Tensor] = []
-    covariances: list[torch.Tensor] = []
-    log_likelihoods: list[torch.Tensor] = []
-    for gene_slice in _chunk_slices(dataset.n_genes, chunk_size):
-        beta, covariance, log_likelihood = _batched_irls(
-            dataset.counts[gene_slice],
-            x,
-            offset,
-            dataset.dispersions[gene_slice],
+    non_zero_mask = dataset.non_zero_mask
+    assert non_zero_mask is not None
+    idx = torch.nonzero(non_zero_mask, as_tuple=False).squeeze(-1)
+
+    n_genes = dataset.n_genes
+    n_samples = dataset.n_samples
+    p = x.shape[1]
+
+    beta_full = torch.full((n_genes, p), float("nan"), dtype=torch.float64, device=dataset.device)
+    mu_full = torch.full((n_genes, n_samples), float("nan"), dtype=torch.float64, device=dataset.device)
+    hat_full = torch.full((n_genes, n_samples), float("nan"), dtype=torch.float64, device=dataset.device)
+
+    if idx.numel() > 0:
+        counts_nz = dataset.counts[idx]
+        dispersions_nz = dataset.dispersions[idx]
+        beta_nz, mu_nz, H_nz, _conv = _core.irls_batched(
+            counts_nz, dataset.size_factors, x, dispersions_nz
         )
-        betas.append(beta)
-        covariances.append(covariance)
-        log_likelihoods.append(log_likelihood)
-    coefficients = torch.cat(betas, dim=0)
-    covariance = torch.cat(covariances, dim=0)
-    log_likelihood = torch.cat(log_likelihoods, dim=0)
+        beta_full[idx] = beta_nz
+        mu_full[idx] = mu_nz
+        hat_full[idx] = H_nz
+
     base_mean = torch.mean(dataset.normalized_counts, dim=1)
-    design_columns = dataset.design_columns if design_matrix is None else [f"coef_{i}" for i in range(x.shape[1])]
+    design_columns = dataset.design_columns if design_matrix is None else [f"coef_{i}" for i in range(p)]
+
     return DeseqResult(
         test_type="fit",
         design_columns=design_columns,
-        coefficients=coefficients,
-        covariance=covariance,
-        log_likelihood=log_likelihood,
+        coefficients=beta_full,
+        mu=mu_full,
+        dispersions=dataset.dispersions,
         base_mean=base_mean,
+        design_matrix=x,
+        hat_diagonals=hat_full,
+        counts=dataset.counts,
+        normalized_counts=dataset.normalized_counts,
+        design_df=dataset._design_cpu if design_matrix is None else None,
         gene_ids=dataset.gene_ids,
+        non_zero_mask=non_zero_mask,
+        log_likelihood=None,
     )
 
 
@@ -301,11 +321,17 @@ def wald_test(dataset: DESeqDataset, contrast: str | Iterable[float] | torch.Ten
         test_type="wald",
         design_columns=fitted.design_columns,
         coefficients=fitted.coefficients,
-        covariance=fitted.covariance,
-        log_likelihood=fitted.log_likelihood,
+        mu=fitted.mu,
+        dispersions=fitted.dispersions,
         base_mean=fitted.base_mean,
+        design_matrix=fitted.design_matrix,
+        hat_diagonals=fitted.hat_diagonals,
+        counts=fitted.counts,
+        normalized_counts=fitted.normalized_counts,
+        design_df=fitted.design_df,
         contrast_vector=contrast_vector,
         gene_ids=dataset.gene_ids,
+        non_zero_mask=fitted.non_zero_mask,
     )
 
 
@@ -320,17 +346,67 @@ def lrt_test(dataset: DESeqDataset, reduced_design: str) -> DeseqResult:
     reduced = _fit_glm(dataset, reduced_design_matrix)
     if full.coefficients.shape[1] <= reduced.coefficients.shape[1]:
         raise ValueError("reduced design must have fewer columns than the full design")
+
+    # Per-gene log-likelihoods for LRT: sum NB log-prob over samples.
+    assert dataset.dispersions is not None and dataset.non_zero_mask is not None
+    idx = torch.nonzero(dataset.non_zero_mask, as_tuple=False).squeeze(-1)
+    if idx.numel() > 0:
+        ll_full_nz = -_core._nb_nll_per_gene(dataset.counts[idx], full.mu[idx], dataset.dispersions[idx])
+        ll_red_nz = -_core._nb_nll_per_gene(dataset.counts[idx], reduced.mu[idx], dataset.dispersions[idx])
+    ll_full = torch.full((dataset.n_genes,), float("nan"), dtype=torch.float64, device=dataset.device)
+    ll_red = torch.full((dataset.n_genes,), float("nan"), dtype=torch.float64, device=dataset.device)
+    if idx.numel() > 0:
+        ll_full[idx] = ll_full_nz
+        ll_red[idx] = ll_red_nz
+
     return DeseqResult(
         test_type="lrt",
         design_columns=full.design_columns,
         coefficients=full.coefficients,
-        covariance=full.covariance,
-        log_likelihood=full.log_likelihood,
-        reduced_log_likelihood=reduced.log_likelihood,
-        degrees_of_freedom=full.coefficients.shape[1] - reduced.coefficients.shape[1],
+        mu=full.mu,
+        dispersions=dataset.dispersions,
         base_mean=full.base_mean,
+        design_matrix=full.design_matrix,
+        log_likelihood=ll_full,
+        reduced_log_likelihood=ll_red,
+        degrees_of_freedom=full.coefficients.shape[1] - reduced.coefficients.shape[1],
         gene_ids=dataset.gene_ids,
+        non_zero_mask=full.non_zero_mask,
     )
+
+
+def _wald_se_and_stat(
+    coefficients: torch.Tensor,    # (G, P)
+    mu: torch.Tensor,              # (G, S)
+    dispersions: torch.Tensor,     # (G,)
+    design: torch.Tensor,          # (S, P)
+    contrast: torch.Tensor,        # (P,)
+    ridge: float = _core.RIDGE,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """pydeseq2's wald_test sandwich SE + Wald statistic.
+
+    SE = sqrt( cᵀ (M + ridge)⁻¹ M (M + ridge)⁻¹ c ) where M = Xᵀ W X,
+    W = μ / (1 + α μ). Per pydeseq2/utils.py:770-776.
+    Stat = cᵀ β / SE.
+    Returns (stat, se) each of shape (G,).
+    """
+    G = coefficients.shape[0]
+    P = design.shape[1]
+    device = coefficients.device
+    dtype = coefficients.dtype
+    eye = ridge * torch.eye(P, dtype=dtype, device=device)
+
+    alpha = dispersions.unsqueeze(1)  # (G, 1)
+    W = mu / (1.0 + mu * alpha)       # (G, S)
+    M = torch.einsum("sp,gs,sq->gpq", design, W, design)  # (G, P, P)
+    H = torch.linalg.inv(M + eye)     # (G, P, P)
+    Hc = torch.einsum("gpq,q->gp", H, contrast)           # (G, P)
+    # SE^2 = Hcᵀ M Hc
+    se_sq = torch.einsum("gp,gpq,gq->g", Hc, M, Hc)
+    se = torch.sqrt(se_sq.clamp_min(1e-30))
+    effects = torch.einsum("gp,p->g", coefficients, contrast)  # natural log
+    stat = effects / se
+    return stat, se
 
 
 def results(
@@ -338,13 +414,21 @@ def results(
     contrast: str | Iterable[float] | torch.Tensor | None = None,
     alpha: float = 0.1,
     p_adjust: str = "bh",
+    cooks_filter: bool = True,
+    independent_filter: bool = True,
 ) -> pd.DataFrame:
+    """Assemble the results DataFrame.
+
+    For Wald tests, SE uses pydeseq2's sandwich form; log2FoldChange and lfcSE
+    are in log₂ scale (natural-log divided by ln(2)).
+    """
     if p_adjust != "bh":
         raise ValueError("only Benjamini-Hochberg adjustment is supported")
     gene_ids = fit.gene_ids or [f"gene_{idx}" for idx in range(fit.coefficients.shape[0])]
     base_mean = fit.base_mean.detach().cpu().numpy()
+
     if fit.test_type == "lrt":
-        assert fit.reduced_log_likelihood is not None
+        assert fit.reduced_log_likelihood is not None and fit.log_likelihood is not None
         assert fit.degrees_of_freedom is not None
         stat = 2.0 * (fit.log_likelihood - fit.reduced_log_likelihood).detach().cpu().numpy()
         pvalue = chi2.sf(stat, fit.degrees_of_freedom)
@@ -369,19 +453,66 @@ def results(
     if resolved_contrast is None:
         raise ValueError("a contrast is required for Wald results")
 
-    covariance = fit.covariance
-    assert covariance is not None
-    effects = (fit.coefficients @ resolved_contrast).detach().cpu().numpy()
-    variances = torch.einsum("p,gpq,q->g", resolved_contrast, covariance, resolved_contrast).clamp_min(1e-12)
-    se = torch.sqrt(variances).detach().cpu().numpy()
-    stat = effects / se
-    pvalue = 2.0 * norm.sf(np.abs(stat))
-    padj = _bh_adjust(pvalue)
+    assert fit.mu is not None and fit.dispersions is not None and fit.non_zero_mask is not None
+    assert fit.design_matrix is not None, "Wald result must carry design_matrix"
+
+    # Full-length outputs with NaN for all-zero genes.
+    n_genes = fit.coefficients.shape[0]
+    lfc = np.full(n_genes, np.nan, dtype=np.float64)
+    se = np.full(n_genes, np.nan, dtype=np.float64)
+    stat = np.full(n_genes, np.nan, dtype=np.float64)
+    pvalue = np.full(n_genes, np.nan, dtype=np.float64)
+
+    nz_idx = torch.nonzero(fit.non_zero_mask, as_tuple=False).squeeze(-1)
+    if nz_idx.numel() > 0:
+        stat_nz, se_nz = _wald_se_and_stat(
+            fit.coefficients[nz_idx],
+            fit.mu[nz_idx],
+            fit.dispersions[nz_idx],
+            fit.design_matrix,
+            resolved_contrast,
+        )
+        effects_nz = torch.einsum("gp,p->g", fit.coefficients[nz_idx], resolved_contrast)
+        effects_np = effects_nz.detach().cpu().numpy()
+        se_np = se_nz.detach().cpu().numpy()
+        stat_np = stat_nz.detach().cpu().numpy()
+        pval_np = 2.0 * norm.sf(np.abs(stat_np))
+
+        idx_np = nz_idx.detach().cpu().numpy()
+        lfc[idx_np] = effects_np / np.log(2.0)
+        se[idx_np] = se_np / np.log(2.0)
+        stat[idx_np] = stat_np
+        pvalue[idx_np] = pval_np
+
+        # Cook's distance filter: set pvalue = NaN for flagged genes.
+        if cooks_filter and fit.hat_diagonals is not None and fit.counts is not None \
+                and fit.normalized_counts is not None and fit.design_df is not None:
+            from ._filters import cooks_distance, cooks_outlier_mask
+            # pydeseq2 expects (samples, genes); our tensors are (genes, samples).
+            counts_sg = fit.counts[nz_idx].T.detach().cpu().numpy()
+            normed_sg = fit.normalized_counts[nz_idx].T.detach().cpu().numpy()
+            mu_sg = fit.mu[nz_idx].T.detach().cpu().numpy()
+            hat_sg = fit.hat_diagonals[nz_idx].T.detach().cpu().numpy()
+            cooks, _ = cooks_distance(counts_sg, normed_sg, mu_sg, hat_sg, fit.design_df)
+            outlier_nz = cooks_outlier_mask(
+                cooks, counts_sg, fit.design_df,
+                num_vars=fit.coefficients.shape[1],
+            )
+            outlier_full = np.zeros(n_genes, dtype=bool)
+            outlier_full[idx_np] = outlier_nz
+            pvalue = np.where(outlier_full, np.nan, pvalue)
+
+    if independent_filter and np.isfinite(pvalue).any():
+        from ._filters import independent_filtering
+        padj = independent_filtering(pvalue, base_mean, alpha)
+    else:
+        padj = _bh_adjust(pvalue)
+
     frame = pd.DataFrame(
         {
             "baseMean": base_mean,
-            "log2FoldChange": effects / np.log(2.0),
-            "lfcSE": se / np.log(2.0),
+            "log2FoldChange": lfc,
+            "lfcSE": se,
             "stat": stat,
             "pvalue": pvalue,
             "padj": padj,
