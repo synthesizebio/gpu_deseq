@@ -57,7 +57,9 @@ def fit_size_factors(counts: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     filtered = ~any_zero_per_gene  # genes with all-positive counts
     logmeans = torch.log(counts[filtered]).mean(dim=1)  # (n_filtered,)
     log_ratios = torch.log(counts[filtered]).T - logmeans  # (n_samples, n_filtered)
-    log_medians = torch.median(log_ratios, dim=1).values  # (n_samples,)
+    # NB: torch.median returns the lower-mid element for even-length inputs;
+    # R/numpy/DESeq2 take the average of the two middle values. Use quantile.
+    log_medians = torch.quantile(log_ratios, 0.5, dim=1)  # (n_samples,)
     size_factors = torch.exp(log_medians)
     normed_counts = counts / size_factors[None, :]
     return size_factors, normed_counts
@@ -82,7 +84,7 @@ def _poscounts_size_factors(counts: torch.Tensor) -> tuple[torch.Tensor, torch.T
         mask = filtered_genes & positive[:, j]
         if mask.any():
             log_ratio = torch.log(counts[mask, j]) - logmeans_all[mask]
-            sf[j] = torch.exp(torch.median(log_ratio))
+            sf[j] = torch.exp(torch.quantile(log_ratio, 0.5))
         else:
             sf[j] = 1.0
     sf = sf / torch.exp(torch.log(sf).mean())  # geom mean 1
@@ -340,6 +342,231 @@ def _cr_term_batched_per_gene(
     return 0.5 * logabsdet
 
 
+def _lp_and_dlp(
+    counts: torch.Tensor,   # (G, S)
+    mu: torch.Tensor,       # (G, S)
+    design: torch.Tensor,   # (S, P)
+    log_alpha: torch.Tensor,  # (G,)
+    *,
+    log_alpha_prior_mean: torch.Tensor | None = None,  # (G,) for usePrior=True
+    log_alpha_prior_sigmasq: float | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Cox-Reid log-posterior and its gradient w.r.t. log α — analytical
+    port of DESeq2 src/DESeq2.cpp::log_posterior + dlog_posterior with
+    useCR=TRUE, useWeights=FALSE. usePrior toggled by passing prior args.
+
+    Returns (lp, dlp), each shape (G,).
+    """
+    alpha = torch.exp(log_alpha)                       # (G,)
+    alpha_inv = 1.0 / alpha                             # (G,)
+    a_col = alpha.unsqueeze(1)                          # (G, 1)
+    ainv_col = alpha_inv.unsqueeze(1)                   # (G, 1)
+
+    # Cox-Reid term: w_diag = 1 / (1/μ + α); dw = -w_diag^2
+    inv_mu_plus_a = (1.0 / mu) + a_col                  # (G, S)
+    w_diag = 1.0 / inv_mu_plus_a                        # (G, S)
+    dw_diag = -w_diag * w_diag                          # (G, S)
+
+    # b = X^T diag(w) X     — (G, P, P)
+    b = torch.einsum("sp,gs,sq->gpq", design, w_diag, design)
+    db = torch.einsum("sp,gs,sq->gpq", design, dw_diag, design)
+
+    # logdet(b), and trace(b^{-1} db) for d/dα log det(b).
+    sign_b, logdet_b = torch.linalg.slogdet(b)
+    cr_term = -0.5 * logdet_b                           # (G,)
+    # b_i_db[g] = b[g]^{-1} @ db[g]; trace per gene.
+    b_i_db = torch.linalg.solve(b, db)
+    tr_bi_db = torch.diagonal(b_i_db, dim1=-2, dim2=-1).sum(dim=-1)  # (G,)
+    cr_grad_alpha = -0.5 * tr_bi_db                      # d/dα cr_term
+
+    # Log-likelihood per sample (NB), summed.
+    #   ll_s = lgamma(y + α^-1) - lgamma(α^-1) - y log(μ + α^-1) - α^-1 log(1 + μα)
+    log_one_plus_mua = torch.log1p(mu * a_col)          # (G, S)
+    ll_per_sample = (
+        torch.lgamma(counts + ainv_col)
+        - torch.lgamma(ainv_col)
+        - counts * torch.log(mu + ainv_col)
+        - ainv_col * log_one_plus_mua
+    )
+    ll_part = ll_per_sample.sum(dim=1)                   # (G,)
+
+    lp = ll_part + cr_term                               # (G,)
+
+    # d/dα ll_part = α^-2 * sum_s [digamma(α^-1) + log(1+μα) - μα/(1+μα)
+    #                              - digamma(y + α^-1) + y/(μ + α^-1)]
+    digamma_ainv = torch.digamma(ainv_col)               # (G, 1)
+    mu_alpha = mu * a_col                                # (G, S)
+    bracket = (
+        digamma_ainv
+        + log_one_plus_mua
+        - mu_alpha / (1.0 + mu_alpha)
+        - torch.digamma(counts + ainv_col)
+        + counts / (mu + ainv_col)
+    )                                                    # (G, S)
+    ll_grad_alpha = alpha_inv * alpha_inv * bracket.sum(dim=1)  # α^-2 * sum (G,)
+
+    # d/d(log α) lp = α * d/dα lp
+    dlp = (ll_grad_alpha + cr_grad_alpha) * alpha        # (G,)
+
+    if log_alpha_prior_mean is not None and log_alpha_prior_sigmasq is not None:
+        diff = log_alpha - log_alpha_prior_mean
+        lp = lp - 0.5 * diff * diff / log_alpha_prior_sigmasq
+        dlp = dlp - diff / log_alpha_prior_sigmasq
+
+    return lp, dlp
+
+
+def _r_fit_alpha_mle(
+    counts: torch.Tensor,   # (G, S)
+    mu: torch.Tensor,       # (G, S)
+    design: torch.Tensor,   # (S, P)
+    alpha_init: torch.Tensor,  # (G,) starting α (rough/MoM, clipped)
+    *,
+    min_disp: float = MIN_DISP,
+    max_disp: float = MAX_DISP,
+    grid_length: int = GRID_LENGTH,
+    maxit: int = 100,
+    dispTol: float = 1e-6,
+    kappa_0: float = 1.0,
+    log_alpha_prior_mean: torch.Tensor | None = None,
+    log_alpha_prior_sigmasq: float | None = None,
+    apply_no_increase_revert: bool = True,
+    apply_grid_fallback: bool = True,
+) -> torch.Tensor:
+    """Batched faithful port of DESeq2 src/DESeq2.cpp::fitDisp.
+
+    Gradient ascent on log-posterior w.r.t. log α with Armijo backtracking.
+    Per iteration t, with state (a, kappa, lp, dlp):
+
+        a_propose = a + kappa * dlp
+        # bound a_propose to [-30, 10] by adjusting kappa
+        theta_kappa     = -lp(a + kappa * dlp)
+        theta_hat_kappa = -lp - kappa * eps * dlp^2          # eps = 1e-4
+        if theta_kappa <= theta_hat_kappa:
+            iter_accept += 1
+            a = a + kappa * dlp
+            change = lp(a) - lp_prev
+            if change < tol: break
+            if a < min_log_alpha: break
+            lp = lp(a); dlp = dlp(a)
+            kappa = min(kappa * 1.1, kappa_0)
+            if iter_accept % 5 == 0: kappa /= 2     # periodic halving
+        else:
+            kappa /= 2
+
+    Followed by R's `noIncrease` revert to alpha_init and grid fallback for
+    non-converged genes (matches estimateDispersionsGeneEst).
+
+    Returns (G,) α estimates clipped to [min_disp, max_disp].
+    """
+    device, dtype = counts.device, counts.dtype
+    eps = 1e-4
+    log_lo, log_hi = -30.0, 10.0
+    n_samples = counts.shape[1]
+    max_disp_eff = float(max(max_disp, n_samples))      # R: maxDisp = max(10, ncol)
+    min_log_alpha = float(np.log(min_disp / 10.0))      # R: log(minDisp/10)
+
+    alpha_init_clip = alpha_init.clamp(min_disp, max_disp_eff)
+    a = torch.log(alpha_init_clip).clamp(log_lo, log_hi).clone()
+
+    prior_kwargs = dict(log_alpha_prior_mean=log_alpha_prior_mean,
+                         log_alpha_prior_sigmasq=log_alpha_prior_sigmasq)
+    lp, dlp = _lp_and_dlp(counts, mu, design, a, **prior_kwargs)
+    initial_lp = lp.clone()
+
+    G = counts.shape[0]
+    kap = torch.full((G,), kappa_0, dtype=dtype, device=device)
+    iter_accept = torch.zeros(G, dtype=torch.long, device=device)
+    iter_count = torch.zeros(G, dtype=torch.long, device=device)
+    done = torch.zeros(G, dtype=torch.bool, device=device)
+
+    for _ in range(maxit):
+        active = ~done
+        if not active.any():
+            break
+        iter_count = torch.where(active, iter_count + 1, iter_count)
+
+        # Bounds: shrink kappa to land exactly on boundary if proposal exits [-30, 10].
+        a_prop_naive = a + kap * dlp
+        # if a_prop_naive < -30: kap = (-30 - a)/dlp (assumes dlp<0 in this case)
+        too_low = active & (a_prop_naive < log_lo) & (dlp != 0)
+        kap = torch.where(too_low, (log_lo - a) / dlp, kap)
+        too_high = active & (a_prop_naive > log_hi) & (dlp != 0)
+        kap = torch.where(too_high, (log_hi - a) / dlp, kap)
+
+        a_propose = a + kap * dlp
+        lp_propose, _ = _lp_and_dlp(counts, mu, design, a_propose, **prior_kwargs)
+
+        theta_kap = -lp_propose
+        theta_hat = -lp - kap * eps * dlp * dlp
+        accepted = active & (theta_kap <= theta_hat)
+        rejected = active & ~accepted
+
+        # Accepted branch: take step, recompute lp/dlp.
+        a_new_acc = torch.where(accepted, a_propose, a)
+        lp_new_acc = torch.where(accepted, lp_propose, lp)
+
+        # change = lp_new - lp (pre-update)
+        change = lp_new_acc - lp
+        # Convergence on accepted: change < tol → done.
+        conv_now = accepted & (change < dispTol)
+        # Below-floor on accepted: a < min_log_alpha → done (without updating lp).
+        below_floor = accepted & (a_new_acc < min_log_alpha)
+
+        a = a_new_acc
+        lp = lp_new_acc
+        # Recompute dlp at new a (only matters for genes that take another iter).
+        # We compute for all and let masks handle the rest.
+        _lp_recompute, dlp_new = _lp_and_dlp(counts, mu, design, a, **prior_kwargs)
+        # Use lp_recompute = lp_propose (already computed); dlp from analytical.
+        dlp = torch.where(accepted, dlp_new, dlp)
+
+        iter_accept = torch.where(accepted, iter_accept + 1, iter_accept)
+
+        # κ updates
+        # Accepted: κ ← min(κ*1.1, κ_0); if iter_accept % 5 == 0: κ /= 2
+        kap_after_acc = torch.minimum(kap * 1.1,
+                                       torch.full_like(kap, kappa_0))
+        periodic_halve = accepted & (iter_accept > 0) & (iter_accept % 5 == 0)
+        kap_after_acc = torch.where(periodic_halve, kap_after_acc / 2.0, kap_after_acc)
+        # Rejected: κ /= 2
+        kap_after_rej = kap / 2.0
+
+        kap = torch.where(accepted, kap_after_acc, kap)
+        kap = torch.where(rejected, kap_after_rej, kap)
+
+        # Mark done (matching R's `break` semantics).
+        done = done | conv_now | below_floor
+
+    # noIncrease (R: revert to alpha_init if last_lp didn't substantially improve).
+    if apply_no_increase_revert:
+        no_increase = lp < initial_lp + initial_lp.abs() / 1e6
+        a = torch.where(no_increase, torch.log(alpha_init_clip), a)
+
+    # Grid fallback for genes flagged non-converged in R's sense:
+    # dispGeneEstConv = iter < maxit AND iter != 1; refit when !conv AND α > min_disp*10.
+    if apply_grid_fallback:
+        not_conv_R = (iter_count >= maxit) | (iter_count == 1)
+        refit_mask = not_conv_R & (torch.exp(a) > min_disp * 10)
+        if refit_mask.any():
+            idx = torch.nonzero(refit_mask, as_tuple=False).squeeze(-1)
+            # The grid fallback in DESeq2 uses the same usePrior setting and
+            # log_alpha_prior_mean/var if provided.
+            prior_var_for_grid = (log_alpha_prior_sigmasq
+                                  if log_alpha_prior_mean is not None else None)
+            alpha_hat_for_grid = (torch.exp(log_alpha_prior_mean[idx])
+                                  if log_alpha_prior_mean is not None else None)
+            grid_alpha = _grid_fit_alpha(
+                counts[idx], mu[idx], design,
+                alpha_hat=alpha_hat_for_grid, prior_disp_var=prior_var_for_grid,
+                min_disp=min_disp, max_disp=max_disp,
+                grid_length=grid_length,
+            )
+            a[idx] = torch.log(grid_alpha)
+
+    return torch.exp(a).clamp(min_disp, max_disp_eff)
+
+
 def fit_alpha_mle(
     counts: torch.Tensor,
     mu: torch.Tensor,
@@ -347,12 +574,33 @@ def fit_alpha_mle(
     min_disp: float = MIN_DISP,
     max_disp: float = MAX_DISP,
     grid_length: int = GRID_LENGTH,
+    *,
+    alpha_init: torch.Tensor | None = None,
+    use_nr: bool = True,
 ) -> torch.Tensor:
     """Batched Cox-Reid adjusted MLE dispersion per gene.
 
-    Ports `pydeseq2.utils.fit_alpha_mle` (utils.py:441-564) via its grid-search
-    fallback path with cr_reg=True, prior_reg=False.
+    By default uses Newton-Raphson with the same noIncrease+grid-fallback
+    structure as R DESeq2's `estimateDispersionsGeneEst` so that we match R's
+    behaviour bit-for-bit for genes where its NR fails to make progress.
+
+    Pass `alpha_init` (the rough/MoM estimate, clipped) to mirror R's NR
+    starting point exactly. If omitted, falls back to a quick MoM-style init
+    from the supplied μ̂.
+
+    When `use_nr=False`, uses the pure grid search path instead (finds the
+    actual CR-NLL minimum but disagrees with R on ~30% of genes where R's
+    NR reverts to alpha_init).
     """
+    if use_nr:
+        if alpha_init is None:
+            rde = (((counts - mu) ** 2 - mu) /
+                    ((counts.shape[1] - design.shape[1]) * mu**2)).sum(dim=1).clamp_min(0.0)
+            alpha_init = rde.clamp(min_disp, max_disp)
+        return _r_fit_alpha_mle(
+            counts, mu, design, alpha_init,
+            min_disp=min_disp, max_disp=max_disp, grid_length=grid_length,
+        )
     return _grid_fit_alpha(
         counts, mu, design,
         alpha_hat=None, prior_disp_var=None,
@@ -365,17 +613,36 @@ def fit_alpha_map(
     counts: torch.Tensor,
     mu: torch.Tensor,
     design: torch.Tensor,
-    alpha_hat: torch.Tensor,  # per-gene trend dispersion (G,)
+    alpha_hat: torch.Tensor,  # per-gene trend dispersion (G,) — prior mean
     prior_disp_var: float,
     min_disp: float = MIN_DISP,
     max_disp: float = MAX_DISP,
     grid_length: int = GRID_LENGTH,
+    *,
+    alpha_init: torch.Tensor | None = None,
+    use_nr: bool = True,
 ) -> torch.Tensor:
     """Batched MAP dispersion: CR-MLE + Gaussian prior on log α.
 
-    Ports `fit_MAP_dispersions` (dds.py:888-933) via its grid-search fallback
-    with cr_reg=True, prior_reg=True.
+    By default, runs R DESeq2's `fitDisp` algorithm with `usePrior=TRUE`
+    (port of src/DESeq2.cpp). When `use_nr=False`, uses the grid fallback.
+
+    R DESeq2's `estimateDispersionsMAP` calls fitDisp initialized at
+    log(dispGeneEst), with prior centered at log(dispFit), sigma² = priorVar.
+    Pass `alpha_init` to mirror R exactly. Note that R does NOT apply the
+    noIncrease revert / grid refit branches at the MAP step.
     """
+    if use_nr:
+        if alpha_init is None:
+            alpha_init = alpha_hat
+        return _r_fit_alpha_mle(
+            counts, mu, design, alpha_init=alpha_init,
+            min_disp=min_disp, max_disp=max_disp, grid_length=grid_length,
+            log_alpha_prior_mean=torch.log(alpha_hat),
+            log_alpha_prior_sigmasq=float(prior_disp_var),
+            apply_no_increase_revert=False,
+            apply_grid_fallback=False,
+        )
     return _grid_fit_alpha(
         counts, mu, design,
         alpha_hat=alpha_hat, prior_disp_var=prior_disp_var,
@@ -454,6 +721,47 @@ def fit_parametric_trend(
 
     trend = coeffs[0] + coeffs[1] / np.asarray(normed_means, dtype=np.float64)
     return trend, "parametric"
+
+
+def fit_local_trend(
+    genewise_disp: np.ndarray,
+    normed_means: np.ndarray,
+) -> tuple[np.ndarray, str]:
+    """Fit a LOESS dispersion trend on (log μ̄, log α), matching DESeq2 fitType="local".
+
+    Uses statsmodels' lowess with the same span/iterations DESeq2 uses
+    (frac=0.3, it=3). Falls back to the parametric path if lowess returns
+    non-finite predictions (e.g. too few genes).
+    """
+    from statsmodels.nonparametric.smoothers_lowess import lowess
+    x = np.log(np.asarray(normed_means, dtype=np.float64))
+    y = np.log(np.asarray(genewise_disp, dtype=np.float64))
+    mask = np.isfinite(x) & np.isfinite(y)
+    if mask.sum() < 10:
+        # Too few genes for a reliable lowess; punt to parametric.
+        return fit_parametric_trend(genewise_disp, normed_means)
+    smoothed = lowess(y[mask], x[mask], frac=0.3, it=3, return_sorted=False)
+    # Interpolate back to every gene (predictor is log μ̄).
+    order = np.argsort(x[mask])
+    xs = x[mask][order]; ys = smoothed[order]
+    trend = np.interp(x, xs, ys, left=ys[0], right=ys[-1])
+    return np.exp(trend), "local"
+
+
+def fit_mean_trend(
+    genewise_disp: np.ndarray,
+) -> tuple[np.ndarray, str]:
+    """Constant trimmed-mean dispersion trend, matching DESeq2 fitType="mean".
+
+    Shares the fallback used inside fit_parametric_trend but forced on.
+    """
+    from scipy.stats import trim_mean
+    keep = genewise_disp > 10 * MIN_DISP
+    if not keep.any():
+        mean_disp = float(np.asarray(genewise_disp, dtype=np.float64).mean())
+    else:
+        mean_disp = float(trim_mean(genewise_disp[keep], proportiontocut=0.001))
+    return np.full_like(genewise_disp, mean_disp, dtype=np.float64), "mean"
 
 
 def _dispersion_trend_gamma_glm(covariates: np.ndarray, targets: np.ndarray):

@@ -3,6 +3,7 @@ from .api import (
     DeseqResult,
     fit_dispersions,
     fit_size_factors,
+    lfc_shrink,
     lrt_test,
     results,
     wald_test,
@@ -16,4 +17,5 @@ __all__ = [
     "wald_test",
     "lrt_test",
     "results",
+    "lfc_shrink",
 ]

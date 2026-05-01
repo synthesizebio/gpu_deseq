@@ -12,7 +12,9 @@ dependencies = [
   "formulaic>=1.0",
   "numpy>=2.0",
   "pandas>=2.2",
+  "pydeseq2>=0.5",
   "scipy>=1.14",
+  "statsmodels>=0.14",
   "torch>=2.4",
 ]
 

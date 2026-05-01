@@ -10,6 +10,7 @@ from formulaic import model_matrix
 from scipy.stats import chi2, norm
 
 from . import _deseq2_core as _core
+from . import _shrink as _shrink_core
 
 # Public aliases, in case callers imported these before
 MIN_DISP = _core.MIN_DISP
@@ -68,6 +69,8 @@ class DeseqResult:
     degrees_of_freedom: int | None = None
     gene_ids: list[str] | None = None
     non_zero_mask: torch.Tensor | None = None
+    # Populated by lfc_shrink(): shrunk standard errors (natural log scale).
+    shrunk_se: torch.Tensor | None = None
 
 
 class DESeqDataset:
@@ -109,7 +112,10 @@ class DESeqDataset:
         self.non_zero_mask: torch.Tensor | None = None
         self.dispersions_gene_wise: torch.Tensor | None = None
         self.dispersion_trend: torch.Tensor | None = None
+        self.dispersions_map: torch.Tensor | None = None
         self.dispersions: torch.Tensor | None = None
+        self.prior_disp_var: float | None = None
+        self.squared_logres: float | None = None
 
     @property
     def n_genes(self) -> int:
@@ -130,6 +136,7 @@ class DESeqDataset:
             "non_zero_mask",
             "dispersions_gene_wise",
             "dispersion_trend",
+            "dispersions_map",
             "dispersions",
         ):
             t = getattr(self, attr, None)
@@ -172,9 +179,14 @@ def fit_size_factors(dataset: DESeqDataset, method: str = "median_ratio") -> DES
 
 
 def fit_dispersions(dataset: DESeqDataset, fit_type: str = "parametric") -> DESeqDataset:
-    """Faithful port of pydeseq2's fit_genewise + trend + MAP + outlier rule."""
-    if fit_type != "parametric":
-        raise ValueError("only parametric dispersion fitting is supported")
+    """Faithful port of pydeseq2's fit_genewise + trend + MAP + outlier rule.
+
+    fit_type matches R DESeq2's fitType argument: "parametric" (default),
+    "local" (LOESS on log-dispersion vs log-mean), or "mean" (trimmed-mean
+    trend — forces the fallback regardless of whether parametric would work).
+    """
+    if fit_type not in ("parametric", "local", "mean"):
+        raise ValueError(f"unknown fit_type: {fit_type!r} (choose parametric, local, mean)")
     if dataset.normalized_counts is None or dataset.size_factors is None:
         raise ValueError("size factors must be estimated before dispersions")
 
@@ -193,9 +205,12 @@ def fit_dispersions(dataset: DESeqDataset, fit_type: str = "parametric") -> DESe
     trend_full = torch.full((n_genes,), float("nan"), dtype=torch.float64, device=dataset.device)
     disp_full = torch.full((n_genes,), float("nan"), dtype=torch.float64, device=dataset.device)
 
+    map_full = torch.full((n_genes,), float("nan"), dtype=torch.float64, device=dataset.device)
+
     if int(non_zero_mask.sum().item()) == 0:
         dataset.dispersions_gene_wise = genewise_full
         dataset.dispersion_trend = trend_full
+        dataset.dispersions_map = map_full
         dataset.dispersions = disp_full
         return dataset
 
@@ -213,15 +228,26 @@ def fit_dispersions(dataset: DESeqDataset, fit_type: str = "parametric") -> DESe
         _, mu_hat, _, _ = _core.irls_batched(counts_nz, size_factors, design, alpha_init)
         mu_hat = mu_hat.clamp_min(_core.MIN_MU)
 
-    # Cox-Reid adjusted MLE at fixed mu_hat.
-    alpha_mle = _core.fit_alpha_mle(counts_nz, mu_hat, design)
+    # Cox-Reid adjusted MLE at fixed mu_hat. Pass alpha_init so the NR loop
+    # starts from R's exact rough/MoM init (otherwise NR would derive a
+    # different init from μ̂ and we'd lose bit-parity on R's noIncrease check).
+    alpha_mle = _core.fit_alpha_mle(counts_nz, mu_hat, design, alpha_init=alpha_init)
     genewise_full[idx] = alpha_mle
 
     # Trend fit on CPU.
     normed_means_nz = normed_nz.mean(dim=1).cpu().numpy()
-    trend_values_nz, trend_type = _core.fit_parametric_trend(
-        alpha_mle.cpu().numpy(), normed_means_nz
-    )
+    if fit_type == "parametric":
+        trend_values_nz, trend_type = _core.fit_parametric_trend(
+            alpha_mle.cpu().numpy(), normed_means_nz
+        )
+    elif fit_type == "local":
+        trend_values_nz, trend_type = _core.fit_local_trend(
+            alpha_mle.cpu().numpy(), normed_means_nz
+        )
+    else:  # "mean"
+        trend_values_nz, trend_type = _core.fit_mean_trend(
+            alpha_mle.cpu().numpy()
+        )
     trend_nz = torch.as_tensor(trend_values_nz, dtype=torch.float64, device=dataset.device)
     trend_full[idx] = trend_nz
 
@@ -233,11 +259,14 @@ def fit_dispersions(dataset: DESeqDataset, fit_type: str = "parametric") -> DESe
     )
 
     # MAP shrinkage at fixed mu_hat with prior centered at trend.
+    # R initializes the optimizer at log(dispGeneEst) — pass alpha_mle.
     alpha_map = _core.fit_alpha_map(
         counts_nz, mu_hat, design,
         alpha_hat=trend_nz, prior_disp_var=prior_var,
+        alpha_init=alpha_mle,
     )
     alpha_map = alpha_map.clamp(_core.MIN_DISP, _core.MAX_DISP)
+    map_full[idx] = alpha_map
 
     # Outlier rule: keep MLE for very-high genewise vs trend.
     alpha_final = _core.apply_outlier_keep_mle(alpha_map, alpha_mle, trend_nz, sq_logres)
@@ -245,7 +274,10 @@ def fit_dispersions(dataset: DESeqDataset, fit_type: str = "parametric") -> DESe
 
     dataset.dispersions_gene_wise = genewise_full
     dataset.dispersion_trend = trend_full
+    dataset.dispersions_map = map_full
     dataset.dispersions = disp_full
+    dataset.prior_disp_var = float(prior_var)
+    dataset.squared_logres = float(sq_logres)
     return dataset
 
 
@@ -312,6 +344,105 @@ def _contrast_vector(result: DeseqResult, contrast: str | Iterable[float] | torc
     if vector.shape != (len(result.design_columns),):
         raise ValueError("contrast vector has the wrong shape")
     return vector
+
+
+def lfc_shrink(
+    fit: DeseqResult,
+    coeff: str,
+    method: str = "apeglm",
+    adapt: bool = True,
+    prior_no_shrink_scale: float = 15.0,
+) -> DeseqResult:
+    """Shrink LFCs using an apeGLM Cauchy prior (matches DESeq2 lfcShrink).
+
+    Args:
+        fit: a DeseqResult from `wald_test()` (i.e. test_type == "wald").
+        coeff: the design column to shrink (e.g. "condition[T.treated]").
+        method: only "apeglm" is supported for now.
+        adapt: if True, estimate prior scale by empirical Bayes from MLE LFCs.
+        prior_no_shrink_scale: prior SD for coefficients NOT being shrunk
+            (intercept, batch, etc.). DESeq2/pydeseq2 default = 15.
+
+    Returns: a new DeseqResult with shrunk coefficients and SE replacing the
+    MLE values on `fit`. p-values are left unchanged (per apeGLM convention).
+    """
+    if method != "apeglm":
+        raise ValueError("only method='apeglm' is supported")
+    if fit.test_type != "wald":
+        raise ValueError("lfc_shrink requires a Wald fit")
+    assert fit.mu is not None and fit.dispersions is not None
+    assert fit.design_matrix is not None and fit.non_zero_mask is not None
+    assert fit.counts is not None
+
+    if coeff not in fit.design_columns:
+        raise ValueError(f"unknown coefficient: {coeff}")
+    shrink_index = fit.design_columns.index(coeff)
+
+    # Size factors: reconstruct from counts / normalized_counts (elementwise).
+    assert fit.normalized_counts is not None
+    sf_col = torch.where(fit.normalized_counts[0] > 0,
+                         fit.counts[0] / fit.normalized_counts[0],
+                         torch.ones_like(fit.counts[0]))
+    # More robust: use any gene (pick the one with max minimum count).
+    # Since counts[g, s] / normed[g, s] == sf[s] by construction, any gene works.
+    size_factors = sf_col
+
+    # Estimate prior scale (empirical Bayes) using MLE LFCs at the shrink index.
+    nz = torch.nonzero(fit.non_zero_mask, as_tuple=False).squeeze(-1)
+    mle_beta_nat = fit.coefficients[nz, shrink_index].detach().cpu().numpy()
+    # Per-gene Wald SE at this coefficient: rebuild from the sandwich form.
+    _, se_nat = _wald_se_and_stat(
+        fit.coefficients[nz], fit.mu[nz], fit.dispersions[nz],
+        fit.design_matrix, _contrast_vector(fit, coeff),
+    )
+    se_nat_np = se_nat.detach().cpu().numpy()
+    if adapt:
+        prior_var = _shrink_core.fit_prior_var(mle_beta_nat, se_nat_np)
+        prior_scale = float(min(np.sqrt(prior_var), 1.0))
+    else:
+        prior_scale = 1.0
+
+    # Batched Newton MAP.
+    counts_nz = fit.counts[nz]
+    disp_nz = fit.dispersions[nz]
+    beta_shrunk_nz, inv_hess_diag_nz, _conv = _shrink_core.apeglm_shrink_batched(
+        counts_nz, disp_nz, size_factors, fit.design_matrix,
+        shrink_index=shrink_index,
+        prior_scale=prior_scale,
+        prior_no_shrink_scale=prior_no_shrink_scale,
+    )
+
+    # Write shrunk coefficients back (only the shrink column).
+    coefficients_new = fit.coefficients.clone()
+    coefficients_new[nz, shrink_index] = beta_shrunk_nz[:, shrink_index]
+
+    # SE from Hessian diagonal: SE = sqrt(|inv_hess[idx, idx]|).
+    se_new_full = torch.full((fit.coefficients.shape[0],), float("nan"),
+                             dtype=torch.float64, device=fit.coefficients.device)
+    se_new_full[nz] = torch.sqrt(inv_hess_diag_nz[:, shrink_index].abs())
+
+    # Contrast vector for the shrunk coefficient (unit vector at shrink_index).
+    contrast_vector = torch.zeros(len(fit.design_columns), dtype=torch.float64,
+                                  device=fit.coefficients.device)
+    contrast_vector[shrink_index] = 1.0
+
+    return DeseqResult(
+        test_type="wald_shrunk",
+        design_columns=fit.design_columns,
+        coefficients=coefficients_new,
+        mu=fit.mu,
+        dispersions=fit.dispersions,
+        base_mean=fit.base_mean,
+        design_matrix=fit.design_matrix,
+        hat_diagonals=fit.hat_diagonals,
+        counts=fit.counts,
+        normalized_counts=fit.normalized_counts,
+        design_df=fit.design_df,
+        contrast_vector=contrast_vector,
+        gene_ids=fit.gene_ids,
+        non_zero_mask=fit.non_zero_mask,
+        shrunk_se=se_new_full,
+    )
 
 
 def wald_test(dataset: DESeqDataset, contrast: str | Iterable[float] | torch.Tensor) -> DeseqResult:
@@ -483,6 +614,15 @@ def results(
         se[idx_np] = se_np / np.log(2.0)
         stat[idx_np] = stat_np
         pvalue[idx_np] = pval_np
+
+        # For shrunk Wald results, replace LFC + lfcSE with the shrunk MAP values
+        # (natural log in `coefficients`, stored SE in natural log). p-value stays
+        # at the MLE Wald p-value per DESeq2 lfcShrink convention.
+        if fit.test_type == "wald_shrunk" and fit.shrunk_se is not None:
+            shrunk_effects = torch.einsum("gp,p->g",
+                                          fit.coefficients[nz_idx], resolved_contrast)
+            lfc[idx_np] = shrunk_effects.detach().cpu().numpy() / np.log(2.0)
+            se[idx_np] = fit.shrunk_se[nz_idx].detach().cpu().numpy() / np.log(2.0)
 
         # Cook's distance filter: set pvalue = NaN for flagged genes.
         if cooks_filter and fit.hat_diagonals is not None and fit.counts is not None \
