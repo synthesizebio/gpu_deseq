@@ -343,6 +343,37 @@ measurement. The full-pipeline **eager** column here (15–38× on A100 vs this
 host's R) is the like-for-like analog and lands in the same range — not a
 regression. The dispersion-stage table isolates what the kernel work changed.
 
+### 2026-07-14 — per-step breakdown (all 5 steps) — exposes the lfc_shrink bottleneck
+
+[`bench_per_step.py`](bench_per_step.py) + [`time_r_steps.R`](time_r_steps.R) time
+each pipeline step separately, ours (eager/graph/triton) and R. Raw:
+[`results_per_step.json`](results_per_step.json). ms, A100 vs single-thread R,
+reps=3.
+
+60 × 20000 (`~condition`):
+
+| step | R DESeq2 | eager | graph | triton |
+|---|---:|---:|---:|---:|
+| normalization | 452 | 1.2 | 1.2 | 1.2 |
+| dispersion | 14214 | 391 | 239 | 112 |
+| glm_fit | 5242 | 11 | 11 | 11 |
+| significance | 284 | 151 | 151 | 151 |
+| lfc_shrink | 8599 | **24806** | 24806 | 24806 |
+| **TOTAL** | 28791 | 25360 | 25208 | 25082 |
+
+**Key finding: `lfc_shrink` (apeGLM) is the real end-to-end bottleneck.** Steps
+1–4 run 36–464× faster than R (normalization ~377×, glm_fit ~464×, dispersion up
+to 127× with Triton), but our apeGLM shrinkage is **3–5× *slower* than R** (24.8 s
+vs 8.6 s at 20k) and dominates the total — so with shrinkage included, gpu_deseq
+is only ~1.1× faster than R end-to-end (and slower at small n: 0.6–0.9×).
+
+This is why every earlier "full pipeline 15–74×" number looked so good: it
+**excluded** `lfc_shrink` (SF→disp→Wald→results only). The per-step split is the
+honest end-to-end picture. Likely cause: the per-gene scipy L-BFGS-B fallback in
+`_shrink.py` firing for a large fraction of genes (cost scales per-gene: ~5 s/2k,
+~25 s/20k). **`lfc_shrink` is the clear next optimization target** — it now
+dwarfs the dispersion stage this work accelerated.
+
 ## Summary of the three accelerators (as of 2026-07-14, single A100)
 
 | | mechanism | bit-identical to eager? | R parity | full-stage speedup | notes |
