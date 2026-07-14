@@ -399,6 +399,15 @@ scaling is far from linear (12 cores → 2×) because size factors, the trend fi
 and `results()` are serial. So against the *fairest* R, Triton is still
 **13–28×** (not the "5–10×" a naive near-linear multi-core assumption predicts).
 
+Verified this is *not* a threading artifact (an earlier guess was BLAS
+oversubscription). R's BLAS is OpenBLAS-pthread, but DESeq2's serial time is
+identical with 12 vs 1 BLAS threads (60×2000: 4262 vs 4119 ms; 60×20000: 20986
+vs 20954 ms) — its per-gene C++ work does not go through multithreaded BLAS, so
+the single-thread column is a genuine ~single-core number, and the multi-core
+slowdown on small data persists with BLAS pinned to 1 thread (0.7–0.8×). It is
+real `MulticoreParam` fork/serialization overhead, exactly as the DESeq2 docs
+warn (parallelization helps only with many genes).
+
 Caveat: this is **12 cores**. A 32–64-core box would improve the 20k case further
 (perhaps 3–4× vs serial), which would pull that column's Triton advantage toward
 ~15–20×; the small/medium cases stay serial-optimal (fork overhead persists).
