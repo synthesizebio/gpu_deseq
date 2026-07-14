@@ -80,39 +80,47 @@ def time_r(casedir, reps, ncores):
     return {t: dict(norm=float(rt.loc[t, "r_norm_ms"]), disp=float(rt.loc[t, "r_disp_ms"]),
                     glm=float(rt.loc[t, "r_glm_ms"]), sig=float(rt.loc[t, "r_sig_ms"]),
                     shrink=float(rt.loc[t, "r_shrink_ms"]),
-                    full=float(rt.loc[t, "r_full_ms"]), full_mc=float(rt.loc[t, "r_full_mc_ms"]))
+                    deseqpar=float(rt.loc[t, "r_deseqpar_ms"]),
+                    sig_par=float(rt.loc[t, "r_sig_par_ms"]),
+                    shrink_par=float(rt.loc[t, "r_shrink_par_ms"]))
             for t in rt.index}
 
 
 def print_table(tag, o, r, ncores):
-    # Per-step rows (R is single-thread; DESeq2 exposes parallelism only at the
-    # DESeq() level, so "optimal R" is a full-pipeline total, not per-step).
-    sh_norm, sh_glm, sh_sig, sh_shr = o["norm"], o["glm"], o["sig"], o["shrink"]
-    rowdefs = [
-        ("normalization", r["norm"],   sh_norm, sh_norm, sh_norm),
-        ("dispersion",    r["disp"],   o["disp_eager"], o["disp_graph"], o["disp_triton"]),
-        ("glm_fit",       r["glm"],    sh_glm, sh_glm, sh_glm),
-        ("significance",  r["sig"],    sh_sig, sh_sig, sh_sig),
-        ("lfc_shrink",    r["shrink"], sh_shr, sh_shr, sh_shr),
+    # Full 5-step x 5-column table. R 12-core: normalization isn't parallelized
+    # (= serial); DESeq2 parallelizes dispersion+GLM as ONE bundle
+    # (r["deseqpar"], incl. size factors) so those two rows share it; results and
+    # lfc_shrink take their own parallel flag. ours: only dispersion changes
+    # across eager/graph/triton.
+    e_n, e_g, e_s, e_sh = o["norm"], o["glm"], o["sig"], o["shrink"]
+    # R 12-core per row: dispersion carries (deseqpar - size factors); glm folded in.
+    r12_disp_glm = max(r["deseqpar"] - r["norm"], 0.0)  # bundled dispersion+GLM, parallel
+    rows = [
+        # label, R1, R12, eager, graph, triton
+        ("normalization", r["norm"], r["norm"],       e_n, e_n, e_n),
+        ("dispersion",    r["disp"], r12_disp_glm,    o["disp_eager"], o["disp_graph"], o["disp_triton"]),
+        ("glm_fit",       r["glm"],  None,            e_g, e_g, e_g),   # None => bundled above
+        ("significance",  r["sig"],  r["sig_par"],    e_s, e_s, e_s),
+        ("lfc_shrink",    r["shrink"], r["shrink_par"], e_sh, e_sh, e_sh),
     ]
-    tot_e = sh_norm + o["disp_eager"] + sh_glm + sh_sig + sh_shr
-    tot_g = sh_norm + o["disp_graph"] + sh_glm + sh_sig + sh_shr
-    tot_t = sh_norm + o["disp_triton"] + sh_glm + sh_sig + sh_shr
-    # R totals: measured end-to-end (serial and multi-core), not the sum of steps.
-    r_1c, r_mc = r["full"], r["full_mc"]
+    tot_r1 = r["norm"] + r["disp"] + r["glm"] + r["sig"] + r["shrink"]
+    tot_r12 = r["deseqpar"] + r["sig_par"] + r["shrink_par"]  # measured multi-core end-to-end
+    tot_e = e_n + o["disp_eager"] + e_g + e_s + e_sh
+    tot_g = e_n + o["disp_graph"] + e_g + e_s + e_sh
+    tot_t = e_n + o["disp_triton"] + e_g + e_s + e_sh
+
+    def cell(v):
+        return "  bundled↑" if v is None else f"{v:>9.1f}"
 
     print(f"\n=== {tag} — per-step time (ms) ===")
-    print(f"  {'step':<15}{'R (1-thread)':>13}{'eager':>9}{'graph':>9}{'triton':>9}")
-    for lbl, rr, e, g, t in rowdefs:
-        print(f"  {lbl:<15}{rr:>13.1f}{e:>9.1f}{g:>9.1f}{t:>9.1f}")
-    r_best = min(r_1c, r_mc)  # charitable baseline (multi-core can be slower on small data)
-    print(f"\n  totals — Benchmarks [R 1-thread, R {ncores}-core] vs ours [eager, graph, triton]:")
-    print(f"  {'':<16}{'R 1-thr':>10}{f'R {ncores}c':>9}{'eager':>9}{'graph':>9}{'triton':>9}")
-    print(f"  {'TOTAL ms':<16}{r_1c:>10.0f}{r_mc:>9.0f}{tot_e:>9.0f}{tot_g:>9.0f}{tot_t:>9.0f}")
-    print(f"  {'x vs 1-thread':<16}{'1.0x':>10}{r_1c/r_mc:>8.1f}x{r_1c/tot_e:>8.1f}x{r_1c/tot_g:>8.1f}x{r_1c/tot_t:>8.1f}x")
-    print(f"  {'x vs best R':<16}{r_best/r_1c:>9.1f}x{r_best/r_mc:>8.1f}x{r_best/tot_e:>8.1f}x{r_best/tot_g:>8.1f}x{r_best/tot_t:>8.1f}x")
-    return dict(rows=rowdefs, total=dict(R_1thread=r_1c, R_multicore=r_mc,
-                                         eager=tot_e, graph=tot_g, triton=tot_t))
+    print(f"  {'step':<15}{'R 1-thr':>10}{f'R {ncores}c':>10}{'eager':>9}{'graph':>9}{'triton':>9}")
+    for lbl, r1, r12, e, g, t in rows:
+        print(f"  {lbl:<15}{r1:>10.1f}{cell(r12):>10}{e:>9.1f}{g:>9.1f}{t:>9.1f}")
+    r_best = min(tot_r1, tot_r12)
+    print(f"  {'TOTAL':<15}{tot_r1:>10.1f}{tot_r12:>10.1f}{tot_e:>9.1f}{tot_g:>9.1f}{tot_t:>9.1f}")
+    print(f"  {'x vs best R':<15}{r_best/tot_r1:>9.1f}x{r_best/tot_r12:>9.1f}x{r_best/tot_e:>8.1f}x{r_best/tot_g:>8.1f}x{r_best/tot_t:>8.1f}x")
+    return dict(rows=rows, total=dict(R_1thread=tot_r1, R_multicore=tot_r12,
+                                      eager=tot_e, graph=tot_g, triton=tot_t))
 
 
 def main():

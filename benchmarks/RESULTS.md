@@ -367,6 +367,39 @@ accelerators route only `fit_dispersions`.)
 clean (92/92).** End-to-end totals vs both a single-thread R and a charitable
 multi-core R are in the next section.
 
+### 2026-07-14 — full per-step table, all 5 columns
+
+5 steps + total × [R 1-thread, R 12-core, eager, graph, triton], ms, A100 vs R on
+this 12-core box. R 12-core: normalization isn't parallelized (=serial); DESeq2
+parallelizes dispersion+GLM as one gene-chunked bundle (shown in the dispersion
+row, glm_fit folded in); results/lfcShrink use their own `parallel=TRUE`. Ours:
+only dispersion changes across eager/graph/triton. Raw: `results_per_step.json`.
+
+60 × 20000 (`~condition`):
+
+| step | R 1-thr | R 12-core | eager | graph | triton |
+|---|---:|---:|---:|---:|---:|
+| normalization | 473 | 473 | 1.2 | 1.2 | 1.2 |
+| dispersion | 13923 | 8397 † | 349 | 213 | 80 |
+| glm_fit | 5137 | ↑ bundled | 11 | 11 | 11 |
+| significance | 284 | 285 | 145 | 145 | 145 |
+| lfc_shrink | 8470 | 3201 | 92 | 92 | 92 |
+| **TOTAL** | **28287** | **12356** | **598** | **462** | **330** |
+
+Totals for all four cases, and Triton speedup vs the best R config per case:
+
+| case | R 1-thr | R 12-core | eager | graph | triton | triton vs best R |
+|---|---:|---:|---:|---:|---:|---:|
+| 6 × 2000 | 3126 | 5280 | 557 | 216 | 162 | **19.3×** |
+| 60 × 2000 | 4474 | 5810 | 271 | 178 | 155 | **28.9×** |
+| 60 × 20000 | 28287 | 12356 | 598 | 462 | 330 | **37.5×** |
+| 60 × 1500 (P=4) | 4951 | 6248 | 359 | 214 | 186 | **26.6×** |
+
+† R 12-core dispersion cell = the parallel `DESeq()` dispersion+GLM bundle minus
+size factors; glm_fit folds into it (DESeq2 can't split them under parallel).
+Multi-core R only beats serial at 20k genes; below that serial R is the faster
+(charitable) baseline. Against the best R config, Triton is **19–38×** end-to-end.
+
 ### 2026-07-14 — fair CPU baseline: single-thread AND multi-core R
 
 The earlier tables timed R single-threaded. For a defensible "GPU vs CPU" claim
