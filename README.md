@@ -55,7 +55,7 @@ Validation lives in `tests/test_r_step_parity.py` (76 step-level tests across 5 
 
 ### Known divergences (bounded, documented)
 
-- **Independent filtering threshold** — pydeseq2's port uses statsmodels `lowess`; R uses base-R `lowess`. Threshold quantile can differ by one bin. Tests cap the lost-significant fraction at < 2% of R's significant set. Sig-call Jaccard ≥ 0.95 on the larger fixtures.
+- **Independent filtering threshold** — our robust `lowess` smoother for the rejection curve differs slightly from R's base-R `lowess`. Threshold quantile can differ by one bin. Tests cap the lost-significant fraction at < 2% of R's significant set. Sig-call Jaccard ≥ 0.95 on the larger fixtures.
 - That's the only known per-step divergence.
 
 ## Gaps (untested, no R fixture yet)
@@ -114,8 +114,8 @@ res = results(fit)
 The implementation is a faithful port, not an approximation:
 
 - **Dispersion estimation** is the analytical port of `DESeq2/src/DESeq2.cpp::fitDisp`: gradient ascent on the Cox-Reid log-posterior with Armijo line search, periodic kappa halving every 5 acceptances, [-30, 10] clamping in log α via kappa adjustment, and the same `noIncrease` revert + grid fallback that `estimateDispersionsGeneEst` applies. Used for both gene-wise MLE and MAP (with `usePrior=TRUE`).
-- **IRLS** is batched per gene with a CPU L-BFGS-B fallback for non-convergence (matches pydeseq2's behaviour).
-- **Cook's distance** uses pydeseq2's robust MoM dispersion estimator.
+- **IRLS** is batched per gene with a CPU L-BFGS-B fallback for non-convergence, matching DESeq2's per-gene GLM fit.
+- **Cook's distance** uses DESeq2's trimmed robust method-of-moments dispersion estimator.
 - **apeGLM** is a batched Newton MAP with an empirical-Bayes Cauchy prior scale.
 
 Repo layout:

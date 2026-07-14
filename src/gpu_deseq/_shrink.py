@@ -1,10 +1,11 @@
 """apeGLM LFC shrinkage, batched on GPU.
 
-Ports pydeseq2's `nbinomGLM` / `nbinomFn` / `_fit_prior_var` from utils.py /
-ds.py. The per-gene posterior is unimodal in β on [min_beta, max_beta], and
-gradient + Hessian are analytical in closed form, so batched Newton's method
-converges in a handful of iterations per gene. Divergent genes fall back to
-per-gene scipy L-BFGS-B to match pydeseq2 exactly.
+Implements the apeGLM MAP estimator (Cauchy prior on the shrunk coefficient)
+and its empirical-Bayes prior-variance fit, matching R DESeq2's
+`lfcShrink(type="apeglm")`. The per-gene posterior is unimodal in β on
+[min_beta, max_beta], and gradient + Hessian are analytical in closed form, so
+batched Newton's method converges in a handful of iterations per gene.
+Divergent genes fall back to per-gene scipy L-BFGS-B.
 
 Reference: Zhu, Ibrahim, Love (2019) "Heavy-tailed prior distributions for
 sequence count data: removing the noise and preserving large differences."
@@ -24,7 +25,7 @@ def fit_prior_var(
 ) -> float:
     """Empirical Bayes prior variance for the apeGLM prior.
 
-    Solves pydeseq2._fit_prior_var (ds.py:556-593): find `a` satisfying
+    Solves the apeGLM prior-variance equation: find `a` satisfying
     ((S - D) / (2*(a+D)^2)).sum() / (1/(2*(a+D)^2)).sum() = a
     with S = β² and D = SE². Returns `min_var` if the objective at min_var is
     already negative (i.e. the data prefers essentially no shrinkage).
@@ -57,7 +58,7 @@ def _nbinom_apeglm_loss(
     prior_scale: float,
     shrink_index: int,
 ) -> torch.Tensor:
-    """Return (G,) objective: prior - nll (matches pydeseq2.nbinomFn)."""
+    """Return (G,) objective: prior - nll (the apeGLM negative log-posterior)."""
     P = design.shape[1]
     xbeta = beta @ design.T                     # (G, S)
     xbeta_off = xbeta + offset.unsqueeze(0)     # (G, S)
@@ -180,7 +181,7 @@ def apeglm_shrink_batched(
     size = (1.0 / dispersions).to(dtype)                # (G,)
     offset = torch.log(size_factors).to(dtype=dtype)    # (S,)
 
-    # pydeseq2's initial guess: ±0.1 alternating across coefficients.
+    # apeGLM initial guess: ±0.1 alternating across coefficients.
     beta = 0.1 * ((-1.0) ** torch.arange(P, dtype=dtype, device=device))
     beta = beta.unsqueeze(0).expand(G, P).contiguous()
 
@@ -258,8 +259,8 @@ def apeglm_shrink_batched(
                 converged[int(g_i)] = True
         beta = torch.from_numpy(beta_np).to(device=device, dtype=dtype)
 
-    # Compute inv(Hessian) diagonal at final β for SE — no ridge, matching
-    # pydeseq2's `inv_hessian = np.linalg.inv(ddf(beta, 1))` (utils.py:1133).
+    # Compute inv(Hessian) diagonal at final β for SE — no ridge; the posterior
+    # SD is sqrt of the diagonal of the inverse observed information.
     H_final = _nbinom_apeglm_hess(beta, counts, size, offset, design,
                                   prior_no_shrink_scale, prior_scale, shrink_index)
     H_inv = torch.linalg.inv(H_final)

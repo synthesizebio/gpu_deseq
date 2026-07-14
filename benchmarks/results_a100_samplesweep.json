@@ -1,0 +1,135 @@
+{
+  "provenance": {
+    "utc": "2026-07-14 00:23 UTC",
+    "gpu": "NVIDIA A100-SXM4-40GB",
+    "cuda": "12.4",
+    "torch": "2.6.0+cu124",
+    "python": "3.10.17",
+    "platform": "Linux-5.10.0-45-cloud-amd64-x86_64-with-glibc2.31",
+    "commit": "ba296fb",
+    "working_tree_dirty": true,
+    "n_timed": 15,
+    "default_chunk": 10
+  },
+  "sample_sweep": [
+    {
+      "n_samples": 4,
+      "n_genes": 2000,
+      "design": "~ condition",
+      "max_abs_diff": {
+        "final": 0.0,
+        "genewise": 0.0,
+        "map": 0.0
+      },
+      "eager_iters": 100,
+      "fit_alpha_mle_eager_ms": 337.96,
+      "fit_alpha_mle_graph_ms": 46.54,
+      "fit_alpha_mle_speedup": 7.26,
+      "fit_dispersions_eager_ms": 443.81,
+      "fit_dispersions_graph_ms": 91.54,
+      "fit_dispersions_speedup": 4.85
+    },
+    {
+      "n_samples": 6,
+      "n_genes": 2000,
+      "design": "~ condition",
+      "max_abs_diff": {
+        "final": 0.0,
+        "genewise": 0.0,
+        "map": 0.0
+      },
+      "eager_iters": 100,
+      "fit_alpha_mle_eager_ms": 342.27,
+      "fit_alpha_mle_graph_ms": 46.89,
+      "fit_alpha_mle_speedup": 7.3,
+      "fit_dispersions_eager_ms": 440.5,
+      "fit_dispersions_graph_ms": 92.52,
+      "fit_dispersions_speedup": 4.76
+    },
+    {
+      "n_samples": 30,
+      "n_genes": 2000,
+      "design": "~ condition",
+      "max_abs_diff": {
+        "final": 0.0,
+        "genewise": 0.0,
+        "map": 0.0
+      },
+      "eager_iters": 13,
+      "fit_alpha_mle_eager_ms": 45.8,
+      "fit_alpha_mle_graph_ms": 10.94,
+      "fit_alpha_mle_speedup": 4.19,
+      "fit_dispersions_eager_ms": 137.79,
+      "fit_dispersions_graph_ms": 40.87,
+      "fit_dispersions_speedup": 3.37
+    },
+    {
+      "n_samples": 60,
+      "n_genes": 2000,
+      "design": "~ condition",
+      "max_abs_diff": {
+        "final": 0.0,
+        "genewise": 0.0,
+        "map": 0.0
+      },
+      "eager_iters": 15,
+      "fit_alpha_mle_eager_ms": 51.97,
+      "fit_alpha_mle_graph_ms": 11.51,
+      "fit_alpha_mle_speedup": 4.52,
+      "fit_dispersions_eager_ms": 156.54,
+      "fit_dispersions_graph_ms": 50.42,
+      "fit_dispersions_speedup": 3.1
+    },
+    {
+      "n_samples": 200,
+      "n_genes": 2000,
+      "design": "~ condition",
+      "max_abs_diff": {
+        "final": 0.0,
+        "genewise": 0.0,
+        "map": 0.0
+      },
+      "eager_iters": 16,
+      "fit_alpha_mle_eager_ms": 55.64,
+      "fit_alpha_mle_graph_ms": 14.71,
+      "fit_alpha_mle_speedup": 3.78,
+      "fit_dispersions_eager_ms": 153.95,
+      "fit_dispersions_graph_ms": 55.16,
+      "fit_dispersions_speedup": 2.79
+    },
+    {
+      "n_samples": 1000,
+      "n_genes": 2000,
+      "design": "~ condition",
+      "max_abs_diff": {
+        "final": 0.0,
+        "genewise": 0.0,
+        "map": 0.0
+      },
+      "eager_iters": 18,
+      "fit_alpha_mle_eager_ms": 65.14,
+      "fit_alpha_mle_graph_ms": 44.24,
+      "fit_alpha_mle_speedup": 1.47,
+      "fit_dispersions_eager_ms": 175.33,
+      "fit_dispersions_graph_ms": 127.23,
+      "fit_dispersions_speedup": 1.38
+    },
+    {
+      "n_samples": 2000,
+      "n_genes": 2000,
+      "design": "~ condition",
+      "max_abs_diff": {
+        "final": 0.0,
+        "genewise": 0.0,
+        "map": 0.0
+      },
+      "eager_iters": 25,
+      "fit_alpha_mle_eager_ms": 129.45,
+      "fit_alpha_mle_graph_ms": 133.8,
+      "fit_alpha_mle_speedup": 0.97,
+      "fit_dispersions_eager_ms": 248.52,
+      "fit_dispersions_graph_ms": 228.1,
+      "fit_dispersions_speedup": 1.09
+    }
+  ]
+}

@@ -62,7 +62,7 @@ class DeseqResult:
     hat_diagonals: torch.Tensor | None = None      # (G, S) IRLS H diag (Cook's)
     counts: torch.Tensor | None = None             # (G, S) raw counts
     normalized_counts: torch.Tensor | None = None  # (G, S) counts / size_factors
-    design_df: pd.DataFrame | None = None          # pandas frame (pydeseq2 uses value_counts)
+    design_df: pd.DataFrame | None = None          # pandas frame (used for cohort value_counts)
     contrast_vector: torch.Tensor | None = None
     reduced_log_likelihood: torch.Tensor | None = None
     log_likelihood: torch.Tensor | None = None  # for LRT only
@@ -169,7 +169,7 @@ def _bh_adjust(pvalues: np.ndarray) -> np.ndarray:
 
 
 def fit_size_factors(dataset: DESeqDataset, method: str = "median_ratio") -> DESeqDataset:
-    """Median-of-ratios size factors (pydeseq2 default, with poscounts fallback)."""
+    """Median-of-ratios size factors (DESeq2 default, with poscounts fallback)."""
     if method != "median_ratio":
         raise ValueError("only median_ratio is supported")
     sf, normed = _core.fit_size_factors(dataset.counts)
@@ -178,13 +178,38 @@ def fit_size_factors(dataset: DESeqDataset, method: str = "median_ratio") -> DES
     return dataset
 
 
-def fit_dispersions(dataset: DESeqDataset, fit_type: str = "parametric") -> DESeqDataset:
-    """Faithful port of pydeseq2's fit_genewise + trend + MAP + outlier rule.
+def fit_dispersions(
+    dataset: DESeqDataset,
+    fit_type: str = "parametric",
+    use_cuda_graph: bool = False,
+    use_triton: bool = False,
+) -> DESeqDataset:
+    """Faithful port of DESeq2's gene-wise fit + trend + MAP + outlier rule.
 
     fit_type matches R DESeq2's fitType argument: "parametric" (default),
     "local" (LOESS on log-dispersion vs log-mean), or "mean" (trimmed-mean
     trend — forces the fallback regardless of whether parametric would work).
+
+    The dispersion Newton-Raphson loops (gene-wise + MAP) can be accelerated on
+    CUDA without changing the R-parity result:
+
+    - ``use_cuda_graph``: replay the loops from a captured CUDA graph (removes
+      per-iteration launch overhead; bit-identical to eager).
+    - ``use_triton``: run each gene's whole loop fused in one Triton kernel with
+      per-gene early exit (fastest; matches R to ~1e-14 but not bit-identical to
+      eager). Falls back to eager for designs Triton doesn't cover (P not in
+      {2, 4}) or on CPU.
+
+    Either can also be selected via the ``GPU_DESEQ_ACCEL`` env var
+    (``graph`` / ``triton``), which is convenient for benchmarking and running
+    the parity suite through an accelerated path.
     """
+    import os
+    _accel = os.environ.get("GPU_DESEQ_ACCEL", "").lower()
+    if _accel == "graph":
+        use_cuda_graph = True
+    elif _accel == "triton":
+        use_triton = True
     if fit_type not in ("parametric", "local", "mean"):
         raise ValueError(f"unknown fit_type: {fit_type!r} (choose parametric, local, mean)")
     if dataset.normalized_counts is None or dataset.size_factors is None:
@@ -195,7 +220,7 @@ def fit_dispersions(dataset: DESeqDataset, fit_type: str = "parametric") -> DESe
     design = dataset.design_matrix
     size_factors = dataset.size_factors
 
-    # non-zero genes: those not all-zero across samples (pydeseq2 dds.py:729).
+    # non-zero genes: those not all-zero across samples (DESeq2 drops these).
     non_zero_mask = ~torch.all(counts == 0, dim=1)
     dataset.non_zero_mask = non_zero_mask
 
@@ -221,7 +246,7 @@ def fit_dispersions(dataset: DESeqDataset, fit_type: str = "parametric") -> DESe
     # Initial MoM (clipped).
     alpha_init = _core.fit_initial_dispersions(normed_nz, size_factors, design)
 
-    # mu_hat initialization per pydeseq2 (dds.py:747-765).
+    # mu_hat initialization per DESeq2 (lin-reg for saturated designs, else IRLS).
     if _core.is_saturated_design(design):
         mu_hat = _core.lin_reg_mu(counts_nz, size_factors, design)
     else:
@@ -231,7 +256,8 @@ def fit_dispersions(dataset: DESeqDataset, fit_type: str = "parametric") -> DESe
     # Cox-Reid adjusted MLE at fixed mu_hat. Pass alpha_init so the NR loop
     # starts from R's exact rough/MoM init (otherwise NR would derive a
     # different init from μ̂ and we'd lose bit-parity on R's noIncrease check).
-    alpha_mle = _core.fit_alpha_mle(counts_nz, mu_hat, design, alpha_init=alpha_init)
+    alpha_mle = _core.fit_alpha_mle(counts_nz, mu_hat, design, alpha_init=alpha_init,
+                                    use_cuda_graph=use_cuda_graph, use_triton=use_triton)
     genewise_full[idx] = alpha_mle
 
     # Trend fit on CPU.
@@ -264,6 +290,7 @@ def fit_dispersions(dataset: DESeqDataset, fit_type: str = "parametric") -> DESe
         counts_nz, mu_hat, design,
         alpha_hat=trend_nz, prior_disp_var=prior_var,
         alpha_init=alpha_mle,
+        use_cuda_graph=use_cuda_graph, use_triton=use_triton,
     )
     alpha_map = alpha_map.clamp(_core.MIN_DISP, _core.MAX_DISP)
     map_full[idx] = alpha_map
@@ -361,7 +388,7 @@ def lfc_shrink(
         method: only "apeglm" is supported for now.
         adapt: if True, estimate prior scale by empirical Bayes from MLE LFCs.
         prior_no_shrink_scale: prior SD for coefficients NOT being shrunk
-            (intercept, batch, etc.). DESeq2/pydeseq2 default = 15.
+            (intercept, batch, etc.). DESeq2 default = 15.
 
     Returns: a new DeseqResult with shrunk coefficients and SE replacing the
     MLE values on `fit`. p-values are left unchanged (per apeGLM convention).
@@ -514,10 +541,10 @@ def _wald_se_and_stat(
     contrast: torch.Tensor,        # (P,)
     ridge: float = _core.RIDGE,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """pydeseq2's wald_test sandwich SE + Wald statistic.
+    """DESeq2's Wald sandwich SE + Wald statistic.
 
     SE = sqrt( cᵀ (M + ridge)⁻¹ M (M + ridge)⁻¹ c ) where M = Xᵀ W X,
-    W = μ / (1 + α μ). Per pydeseq2/utils.py:770-776.
+    W = μ / (1 + α μ).
     Stat = cᵀ β / SE.
     Returns (stat, se) each of shape (G,).
     """
@@ -550,7 +577,7 @@ def results(
 ) -> pd.DataFrame:
     """Assemble the results DataFrame.
 
-    For Wald tests, SE uses pydeseq2's sandwich form; log2FoldChange and lfcSE
+    For Wald tests, SE uses DESeq2's sandwich form; log2FoldChange and lfcSE
     are in log₂ scale (natural-log divided by ln(2)).
     """
     if p_adjust != "bh":
@@ -628,7 +655,7 @@ def results(
         if cooks_filter and fit.hat_diagonals is not None and fit.counts is not None \
                 and fit.normalized_counts is not None and fit.design_df is not None:
             from ._filters import cooks_distance, cooks_outlier_mask
-            # pydeseq2 expects (samples, genes); our tensors are (genes, samples).
+            # the filter helpers expect (samples, genes); our tensors are (genes, samples).
             counts_sg = fit.counts[nz_idx].T.detach().cpu().numpy()
             normed_sg = fit.normalized_counts[nz_idx].T.detach().cpu().numpy()
             mu_sg = fit.mu[nz_idx].T.detach().cpu().numpy()

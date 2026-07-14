@@ -1,0 +1,372 @@
+# CUDA-graph dispersion fitting — benchmark log
+
+Running log of the CUDA-graph work on gpu-deseq's dispersion Newton-Raphson
+loops. Kept reproducible for a write-up: every result records hardware, library
+versions, git commit, and the exact harness that produced it.
+
+## What & why
+
+Profiling showed the dispersion stage (`fit_dispersions`) is the pipeline's
+dominant GPU cost, and inside it the two Newton-Raphson loops (`fit_alpha_mle`
+gene-wise, and the MAP refit) are the hotspot. Those loops fire ~6k tiny CUDA
+kernels per call and, at typical sizes, leave the GPU ~40–60 % idle waiting on
+launches. CUDA-graph replay collapses the per-iteration launches into one graph
+launch, targeting that idle time — without changing the math.
+
+## Method
+
+Harness: [`benchmarks/bench_cuda_graph.py`](bench_cuda_graph.py). Run with:
+
+```bash
+PYTHONPATH=src .venv/bin/python benchmarks/bench_cuda_graph.py --json benchmarks/results_a100.json
+```
+
+- **Data**: negative-binomial counts, fixed seed per size (`seed = n_genes`),
+  60 samples split control/treated, 20 % DE genes. `~ condition` design.
+- **Timing**: median of 10 runs, `torch.cuda.synchronize()` on both sides of
+  each timed region, 2 warm-up iterations discarded.
+- **Warm vs cold**: graph timings are **warm** (capture cached, then replayed) —
+  the fair number for a service fitting many same-shaped matrices. The one-time
+  **cold** cost (capture + first replay) is reported separately.
+- **Correctness gate**: every run first asserts graph mode is **bit-identical**
+  to eager (max |Δ| on gene-wise, MAP, and final dispersions). A speedup that
+  changed the numbers would be disqualified.
+- Two quantities are timed: `fit_alpha_mle` (the isolated NR loop, i.e. the part
+  the graph actually accelerates) and `fit_dispersions` (the whole stage, which
+  also includes CPU trend fitting and other non-graphed work).
+
+### Implementation notes (what's being compared)
+
+- **eager**: the reference loop — one Python-driven iteration at a time, early
+  exit once all genes converge (~14–37 iters). Kernels launched individually.
+- **graph (chunked)**: capture a graph of `GRAPH_CHUNK = 10` NR iterations over
+  persistent state buffers, replay it in a loop, check convergence between
+  chunks. `GRAPH_CHUNK` divides `maxit = 100`, so total iterations are capped at
+  `maxit` and done genes are frozen no-ops → **bit-identical to eager**.
+- To make the loop capturable, the Cox-Reid `slogdet`/`solve` (cuSOLVER, which
+  host-syncs and cannot be captured) were replaced by a no-pivot LU that matches
+  `torch.linalg` to ~1e-15. This is used in both modes, so eager and graph run
+  identical arithmetic.
+
+## Results
+
+### 2026-07-14 — A100, chunked replay (P=2 and P=4)
+
+Provenance: NVIDIA A100-SXM4-40GB · torch 2.6.0+cu124 · CUDA 12.4 · Python
+3.10.17 · commit `ba296fb` (working tree dirty: CUDA-graph changes uncommitted)
+· median of 15 · `GRAPH_CHUNK=10`. Raw: [`results_a100.json`](results_a100.json).
+
+| matrix | design | quantity | eager | graph (warm) | speedup | graph cold |
+|---|---|---|---:|---:|---:|---:|
+| 60 × 2000  | `~condition` (P=2)       | `fit_alpha_mle`   |  91.2 ms | 16.5 ms | **5.54×** | — |
+| 60 × 2000  | `~condition` (P=2)       | `fit_dispersions` | 164.4 ms | 47.8 ms | **3.44×** | 514 ms |
+| 60 × 20000 | `~condition` (P=2)       | `fit_alpha_mle`   | 142.4 ms | 57.7 ms | **2.47×** | — |
+| 60 × 20000 | `~condition` (P=2)       | `fit_dispersions` | 391.3 ms | 235.4 ms | **1.66×** | 738 ms |
+| 60 × 2000  | `~batch+condition` (P=4) | `fit_alpha_mle`   |  87.9 ms | 18.1 ms | **4.87×** | — |
+| 60 × 2000  | `~batch+condition` (P=4) | `fit_dispersions` | 233.7 ms | 74.1 ms | **3.15×** | 771 ms |
+| 60 × 20000 | `~batch+condition` (P=4) | `fit_alpha_mle`   |  97.2 ms | 41.0 ms | **2.37×** | — |
+| 60 × 20000 | `~batch+condition` (P=4) | `fit_dispersions` | 367.4 ms | 181.0 ms | **2.03×** | 911 ms |
+
+Bit-identity graph vs eager: max |Δ| = 0.0e+00 on gene-wise, MAP, and final α in
+**every** case (both designs, both sizes). Eager NR iterations: P=2 → 26 (2k) /
+40 (20k); P=4 → 14 (2k) / 15 (20k). Chunked graph rounds up to the next multiple
+of 10. Timings vary ~±10 % run to run; medians are stable in these ranges.
+
+### 2026-07-14 — A100, GRAPH_CHUNK sweep
+
+`fit_alpha_mle` (isolated NR loop), `~condition`, sweeping the captured chunk
+size. Raw: [`results_a100_sweep.json`](results_a100_sweep.json). Every chunk is
+bit-identical (max |Δ| = 0.0e+00) — chunk size never affects the result, only
+speed.
+
+| chunk | 60×2000 (eager 26 it) | iters | 60×20000 (eager 40 it) | iters |
+|---:|---:|---:|---:|---:|
+| 2  | 4.83× | 26 | 2.41× | 40 |
+| 5  | 5.44× | 30 | 2.44× | 40 |
+| **10** | **5.48×** | 30 | **2.45×** | 40 |
+| 20 | 4.27× | 40 | 2.45× | 40 |
+| 25 | 3.48× | 50 | 1.98× | 50 |
+| 50 | 3.47× | 50 | 1.98× | 50 |
+
+**Chosen default `GRAPH_CHUNK = 10`.** It's at or within noise of the best chunk
+at both sizes. The trade is visible: too small (2) adds replay/sync rounds; too
+large (25, 50) runs wasted iterations past convergence. The sweet spot is a
+chunk near — but not far above — the eager iteration count.
+
+**Read**: the graph accelerates the NR loop 2.4–4.4×; diluted over the full
+stage (which includes ungraphed CPU trend fitting) that's 1.6–3.2×. The win is
+larger at 2000 genes, where the loop is more launch-bound; at 20000 genes the
+loop is more compute-bound, so removing launch overhead helps less. Cold capture
+is a one-time ~0.5–0.7 s, amortized after the first fit of a given shape.
+
+### 2026-07-14 — A100, fixed-length capture (superseded)
+
+Earlier attempt: capture the whole `maxit`-iteration loop as one graph (no early
+exit). Same bit-identity, but a **poor trade** and now replaced by chunked.
+
+| matrix | `fit_dispersions` eager | graph (warm) | speedup |
+|---|---:|---:|---:|
+| 60 × 2000  | 145 ms | 129 ms | 1.12× |
+| 60 × 20000 | 309 ms | 386 ms | **0.80× (slower)** |
+
+Why it lost: eager early-exits at ~14–37 iterations, but a fixed capture must run
+all 100, so the extra iterations outweigh the launch savings — and cold capture
+was ~3.3 s (10× the chunked cost, since it records 10× the iterations). This is
+the key finding that motivated chunked replay.
+
+### 2026-07-14 — A100, sample-count axis
+
+`fit_alpha_mle` and `fit_dispersions`, fixed `n_genes = 2000`, `~condition`,
+varying `n_samples` from a 2-vs-2 pilot to biobank scale. Median of 7. Raw:
+[`results_a100_samplesweep.json`](results_a100_samplesweep.json).
+
+| n_samples | eager iters | NR loop speedup | full stage speedup | max&#124;Δ&#124; |
+|---:|---:|---:|---:|:--|
+| 4 (2v2)   | 100 | **7.26×** | **4.85×** | 0.0 |
+| 6 (3v3)   | 100 | **7.30×** | **4.76×** | 0.0 |
+| 30        | 13  | 4.19× | 3.37× | 0.0 |
+| 60        | 15  | 4.52× | 3.10× | 0.0 |
+| 200       | 16  | 3.78× | 2.79× | 0.0 |
+| 1000      | 18  | 1.47× | 1.38× | 0.0 |
+| 2000      | 25  | 0.97× | 1.09× | 0.0 |
+
+**Sample count strongly controls the payoff — it does not "barely move the cost".**
+Two effects, both pushing the same way:
+
+- **Tiny n is the best case (7.3×).** At 2v2 / 3v3 the dispersion fit is
+  degenerate and never converges, so eager runs all 100 NR iterations of *tiny*
+  kernels — maximally launch-bound. The graph erases those launches. (These small
+  n are below the R-fixture range (n≥12); numerics are the known degenerate
+  regime, but graph is still bit-identical to eager.)
+- **Thousands of samples ≈ break-even (0.97–1.09×).** Each NR iteration is now
+  large enough to be compute-bound; there is no launch overhead left to remove.
+
+Crossover is ~1000 samples. The graph is a 1.5–7× win from pilot scale through a
+few hundred samples — the overwhelming majority of bulk RNA-seq — and neutral to
+slightly negative in the thousands. Practical guidance: enable `use_cuda_graph`
+below ~1000 samples; above that it's a wash.
+
+### 2026-07-14 — A100, empirical roofline (what kind of bottleneck?)
+
+Nsight Compute is blocked on this VM (`ERR_NVGPUCTRPERM` — GPU perf counters need
+root). Measured the roofline empirically instead
+([`roofline_empirical.py`](roofline_empirical.py)): sustainable bandwidth from a
+large streaming op, then achieved bandwidth of the actual loop kernels. Run:
+`PYTHONPATH=src .venv/bin/python benchmarks/roofline_empirical.py`.
+
+- **Sustainable HBM BW** (fp64 add, 64M elements): **1258 GB/s** (87% of the
+  1555 GB/s spec) — the GPU *can* saturate bandwidth, given large arrays.
+- **The loop's `(genes × 60)` arrays are 1–10 MB — far too small.** Individual
+  kernels reach only a fraction of sustained BW: elementwise `1/(1/μ+α)` 22%
+  (20k genes) / 3% (2k); `lgamma` 44% / 7%; `digamma` 37% / 8%. Neither the
+  bandwidth roof nor the compute roof is reached.
+- **Smoking gun**: one `_lp_and_dlp` call takes **1347 µs at 20000 genes and
+  1355 µs at 2000 genes** — identical time for 10× the data. If it were memory-
+  or compute-bound, 10× data → ~10× time. Flat ⇒ time is **fixed per-kernel
+  overhead**.
+
+**Verdict: launch/latency-bound**, not memory-bandwidth-bound and not
+compute-bound, at typical sizes — the far-left "overhead" region of the roofline
+(too little work per kernel to amortize launch + startup). Consequences:
+
+- CUDA graphs are the correct fix (they remove launch overhead) — consistent
+  with the measured 3–7× and with the graph going to ~1× once arrays get big
+  enough (thousands of samples) to leave the overhead region.
+- A fused (Triton) kernel would help via *further kernel-count / latency*
+  reduction, **not** by cutting HBM traffic — an earlier note in this repo
+  guessed "memory-bound", which this measurement corrects.
+
+### 2026-07-14 — A100, Triton full-loop fusion (prototype)
+
+Tested whether a fused Triton kernel beats the CUDA-graph baseline, since the
+roofline says we're launch/latency-bound (fusing removes per-kernel overhead,
+which is the actual bottleneck). Prototype: the *entire* gene-est NR loop fused
+into one kernel — one program per gene, all `maxit` iterations in registers,
+counts/mu/design loaded once. P=2, no prior (gene-est only). digamma
+hand-implemented to match ATen's `calc_digamma` (args always positive here);
+`lgamma`/`log1p` from libdevice. Prototype:
+[`triton_fit_prototype.py`](triton_fit_prototype.py).
+
+`fit_alpha_mle`, median (eager / CUDA-graph / Triton):
+
+| case | eager | graph | Triton | Triton vs graph | Triton vs eager |
+|---|---:|---:|---:|---:|---:|
+| 6 × 2000 (tiny samples) | 338 ms | 47 ms | **8.5 ms** | **5.5×** | 40× |
+| 60 × 2000 | 50 ms | 13 ms | **7.2 ms** | **1.8×** | 6.9× |
+| 60 × 20000 | 114 ms | 57 ms | 60 ms | 0.95× (tie) | 1.9× |
+
+Parity: Triton gene-est vs **R DESeq2 `dispGeneEst`** — p95 ≈ 1e-14, median ≈
+1e-15 on `medium_30x500` and `large_60x2000` (same as eager; passes the
+`test_step_disp_gene_est` bounds of p95<1e-7, med<1e-9). Vs eager on simulated
+data, ≤4e-8 — i.e. **within R tolerance but NOT bit-identical** (the graph is
+bit-identical; Triton introduces ~1e-13–1e-8 from the reduction order + the
+digamma approximation).
+
+**This corrects the earlier note that Triton would be "a smaller win."** Full
+fusion beats the already-optimized graph most exactly where the roofline is
+worst — the tiny-sample, maximally launch/latency-bound regime (5.5× over the
+graph; that case was the slowest for both eager *and* graph). At large n they
+tie (both efficient). So the two techniques are complementary: graphs are cheap,
+bit-identical, and universal; Triton wins the launch-bound small-n regime.
+
+Reproduce: `PYTHONPATH=src .venv/bin/python benchmarks/triton_fit_prototype.py`
+(logged prototype, commit `ba296fb` + working-tree CUDA-graph/Triton changes).
+
+Not yet done to productionize: MAP step (needs the prior term in-kernel), general
+P (P=4 hardcoded to P=2 here), wiring into `fit_dispersions`, and the full
+92-test parity suite. And it's not bit-identical to eager, unlike the graph.
+
+**Why the extension could give a further boost:** the prototype only fuses the
+*gene-est* NR loop. `fit_dispersions` runs a *second* NR loop — the MAP refit —
+which the CUDA graph already accelerates but Triton currently does not. Fusing
+MAP too would apply the same launch-overhead win to the other half of the
+dispersion cost. Biggest expected payoff is again small-n (the loops dominate
+there), where the gene-est loop alone already beat the graph 5.5×.
+
+### 2026-07-14 — A100, Triton + MAP (both NR loops fused)
+
+Extended the prototype with the Gaussian log-prior so the **MAP** refit is fused
+too (P=2). MAP matches R's `dispMAP` to p95 ≈ 4e-8 (passes `test_step_disp_map`
+bound 1e-5) and eager to ~7e-15. Prototype:
+[`triton_map_prototype.py`](triton_map_prototype.py).
+
+Combined **gene-est + MAP** timing (the two loops the graph accelerates):
+
+| case | eager | graph | Triton | Triton vs graph |
+|---|---:|---:|---:|---:|
+| 6 × 2000 (tiny) | 402 ms | 60 ms | 14.5 ms | **4.13×** |
+| 60 × 2000 | 106 ms | 25 ms | 13.9 ms | **1.82×** |
+| 60 × 20000 | 155 ms | 83 ms | 120 ms | **0.69× (slower)** |
+
+**Fusing MAP confirms the further boost — but only at small/moderate n.** At
+20000 genes Triton now *loses* to the graph. Root cause: the Triton kernel runs
+a **fixed 100 iterations** (no early exit), while the chunked graph stops at ~40
+once converged. At tiny n the fit never converges (100 iters regardless) so
+Triton's fusion dominates (4×); at 20k genes convergence is fast, so fixed-100
+wastes ~2.5× the work and erases the fusion win. Same trap the naive full-length
+graph hit — the fix is to give the Triton kernel early exit (chunked relaunch, or
+per-block "all done" check), an open item.
+
+Net so far: Triton wins the small-n / launch-bound regime decisively (up to 4×
+over the already-fast graph); the graph wins large gene counts until the Triton
+kernel gets early termination. They remain complementary.
+
+### 2026-07-14 — A100, Triton + MAP + per-gene early exit
+
+Added early termination to the Triton kernel: one program per gene runs a
+`while (it < maxit) & (~done)` loop, so each gene runs *only its own* iterations
+and stops at its own convergence — no fixed count, no host round-trip, no warp
+waiting beyond its slowest gene. This is the Triton analog of the graph's
+chunking, but finer-grained (per gene, not per chunk). Parity unchanged.
+
+Combined gene-est + MAP, median (reproduced across two runs):
+
+| case | eager | graph | Triton (early-exit) | Triton vs graph | Triton vs eager |
+|---|---:|---:|---:|---:|---:|
+| 6 × 2000 (tiny) | 402 ms | 60 ms | **6.0 ms** | **10.0×** | 68× |
+| 60 × 2000 | 107 ms | 25 ms | **4.2 ms** | **5.9×** | 25× |
+| 60 × 20000 | 157 ms | 83 ms | **15.2 ms** | **5.5×** | 10× |
+
+**Early exit fixes the large-n regression and makes Triton dominate everywhere:
+5.5–10× over the already-optimized CUDA graph, R-parity clean.** The 60×20000
+case went from 0.69× (fixed-100 iters) to 5.5×. This is the headline Triton
+result: full-loop fusion + per-gene early exit beats both eager and the graph
+across every regime tested.
+
+Still P=2 / not wired into `fit_dispersions` / full 92-test suite pending; and
+not bit-identical to eager (~1e-13–1e-8; within R tolerance). Next: generalize
+to P=4, wire in behind a flag, run the full parity suite.
+
+### 2026-07-14 — A100, Triton PRODUCTIONIZED (P=2 & P=4, wired, full suite)
+
+The Triton path now lives in `src/gpu_deseq/_triton_fit.py` and is wired into
+`fit_dispersions(..., use_triton=True)` (also selectable via
+`GPU_DESEQ_ACCEL=triton`). It covers P ∈ {2, 4} — the 4×4 Cox-Reid logdet /
+trace(b⁻¹db) is an unrolled no-pivot LU in named scalars (Triton has no scalar
+lists) — and falls back to eager for other P or on CPU.
+
+**Full 92-test R-parity suite passes in all three modes:** eager, `graph`,
+`triton` (each 92/92). P=4 Triton matches R's `dispGeneEst` to p95 1e-9 and
+`dispMAP` to 7e-8; P=2 to ~1e-14.
+
+Full-stage `fit_dispersions` timing (includes the un-accelerated CPU trend fit),
+[`bench_full_stage.py`](bench_full_stage.py):
+
+| case | eager | graph | Triton | Triton vs graph | Triton vs eager |
+|---|---:|---:|---:|---:|---:|
+| 6 × 2000 (tiny) | 429 ms | 85 ms | 29 ms | **2.9×** | 14.7× |
+| 60 × 2000 | 147 ms | 42 ms | 20 ms | **2.1×** | 7.4× |
+| 60 × 20000 | 356 ms | 214 ms | 111 ms | **1.9×** | 3.2× |
+| 60 × 1500 (`~batch+condition`, P=4) | 233 ms | 73 ms | 45 ms | **1.6×** | 5.2× |
+
+Triton wins at every size now (the early-exit `while` removed the large-n
+regression), including the P=4 multi-factor design. Full-stage multipliers are
+lower than the loop-only 5.5–10× because the CPU trend fit and prior-variance
+step are not accelerated — those are the next end-to-end lever.
+
+### 2026-07-14 — speedup vs R DESeq2 1.30.1 (one reproducible driver)
+
+Produced by [`bench_vs_r.py`](bench_vs_r.py) — a single driver that simulates the
+cases, times gpu_deseq (eager/graph/triton) on the A100, and shells out to
+[`time_r_disp.R`](time_r_disp.R) to time R DESeq2 1.30.1 on the identical
+matrices. R is CPU single-threaded; ours is one A100 (same "R vs GPU" framing as
+the README, not a same-device compare). Reps=3; raw in
+[`results_vs_r.json`](results_vs_r.json). Run:
+`PYTHONPATH=src .venv/bin/python benchmarks/bench_vs_r.py --json benchmarks/results_vs_r.json`.
+
+**Dispersion stage** — `fit_dispersions` vs R `estimateDispersions`:
+
+| case | R (ms) | eager | CUDA graph | Triton |
+|---|---:|---:|---:|---:|
+| 6 × 2000 (tiny) | 924 | 2.1× | 9.9× | **24.2×** |
+| 60 × 2000 | 1974 | 11.9× | 37.0× | **76.2×** |
+| 60 × 20000 | 14203 | 39.8× | 60.4× | **126.3×** |
+| 60 × 1500 (P=4) | 2282 | 9.8× | 32.3× | **62.7×** |
+
+**Full pipeline** — SF → dispersions → Wald → results, vs R `DESeq()`+`results()`:
+
+| case | R (ms) | eager | CUDA graph | Triton |
+|---|---:|---:|---:|---:|
+| 6 × 2000 (tiny) | 2193 | 4.3× | 13.1× | **20.6×** |
+| 60 × 2000 | 3754 | 17.2× | 26.4× | **32.8×** |
+| 60 × 20000 | 21425 | 38.0× | 51.6× | **74.2×** |
+| 60 × 1500 (P=4) | 4397 | 14.9× | 24.2× | **29.6×** |
+
+All three modes are R-parity clean (92/92). Dispersion-stage speedups exceed
+full-pipeline because the accelerators touch only the dispersion loops; the
+pipeline also pays for size factors, Wald, and the CPU `results()` step. Speedup
+grows with gene count (R fits genes sequentially; ours batches).
+
+**Reconciling the README's old table:** its headline (17–45×) is the *full
+pipeline* on an *L4* against R on a *different host* — a separate, earlier
+measurement. The full-pipeline **eager** column here (15–38× on A100 vs this
+host's R) is the like-for-like analog and lands in the same range — not a
+regression. The dispersion-stage table isolates what the kernel work changed.
+
+## Summary of the three accelerators (as of 2026-07-14, single A100)
+
+| | mechanism | bit-identical to eager? | R parity | full-stage speedup | notes |
+|---|---|---|---|---|---|
+| eager | per-op torch kernels | — | 92/92 | 1× | default, any P |
+| CUDA graph | replay captured launches | **yes** | 92/92 | 1.5–3.4× | ~50 LOC, any P, off by default |
+| Triton | fused per-gene loop + early exit | no (~1e-14 vs R) | 92/92 | **1.9–2.9×** (up to 14.7× vs eager at tiny n) | P∈{2,4}, hand-rolled digamma |
+
+## Caveats / open items
+
+- All numbers are single-A100. L4 (the numbers in the README's headline table)
+  will differ; re-run there before publishing cross-device claims.
+- `fit_dispersions` speedup is capped by the ungraphed CPU trend fit and, at high
+  gene counts, by the CPU `results()` stage downstream — neither is touched here.
+  Optimizing those (or moving them on-GPU) is the next lever for end-to-end gains.
+- `GRAPH_CHUNK = 10` chosen from the sweep above (near-optimal at both sizes,
+  bit-identical at all chunks). Could be auto-tuned per (size, design) but the
+  flat plateau around 5–20 makes a fixed 10 a safe default.
+- Designs benchmarked: `~ condition` (P=2) and `~ batch + condition` (P=4). The
+  graph's capturable LU handles general small P; the Triton kernel currently
+  implements only P ∈ {2, 4} (named-scalar LU) and falls back to eager otherwise.
+- Triton is not bit-identical to eager (~1e-14 vs R, reduction order + hand-rolled
+  digamma); the CUDA graph is. Both pass the full parity suite. If exact
+  bit-identity to eager is a product requirement, use the graph.
+- Not yet accelerated (next end-to-end lever): the CPU trend fit inside
+  `fit_dispersions` and the CPU `results()` stage (Cook's + independent filtering)
+  downstream. These now dominate the Triton-accelerated stage at high gene counts.
