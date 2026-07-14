@@ -163,6 +163,7 @@ def apeglm_shrink_batched(
     prior_no_shrink_scale: float = 15.0,
     max_iter: int = 500,
     gtol: float = 1e-10,
+    btol: float = 1e-10,
     min_beta: float = -30.0,
     max_beta: float = 30.0,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -187,8 +188,18 @@ def apeglm_shrink_batched(
 
     converged = torch.zeros(G, dtype=torch.bool, device=device)
     active = torch.ones(G, dtype=torch.bool, device=device)
-    ridge_p = 1e-6 * torch.eye(P, dtype=dtype, device=device)
+    eye = torch.eye(P, dtype=dtype, device=device)
 
+    # Levenberg-Marquardt damped Newton. The apeGLM Hessian is indefinite for
+    # extreme-LFC genes (the MLE β wants to run off to ±inf), so a plain Newton
+    # step ascends and overshoots to the β boundary and stalls. Per-gene adaptive
+    # damping λ fixes this: solve (H + λI); accept the step and shrink λ (toward
+    # Newton) when the loss drops, else reject it and grow λ (toward gradient
+    # descent, always a descent direction). Every gene converges to its interior
+    # MAP, so the per-gene scipy fallback below almost never fires.
+    lam = torch.full((G,), 1e-2, dtype=dtype, device=device)
+    cur_loss = _nbinom_apeglm_loss(beta, counts, size, offset, design,
+                                   prior_no_shrink_scale, prior_scale, shrink_index)
     for _ in range(max_iter):
         g = _nbinom_apeglm_grad(beta, counts, size, offset, design,
                                 prior_no_shrink_scale, prior_scale, shrink_index)
@@ -200,24 +211,27 @@ def apeglm_shrink_batched(
 
         H = _nbinom_apeglm_hess(beta, counts, size, offset, design,
                                 prior_no_shrink_scale, prior_scale, shrink_index)
-        # Damped Newton step with tiny ridge for numerical safety.
-        step = torch.linalg.solve(H + ridge_p, g.unsqueeze(-1)).squeeze(-1)
-        # Line search: simple step-halving if loss increased.
-        cur_loss = _nbinom_apeglm_loss(beta, counts, size, offset, design,
+        damped = H + lam.view(-1, 1, 1) * eye
+        step = torch.linalg.solve(damped, g.unsqueeze(-1)).squeeze(-1)
+        trial = (beta - step).clamp(min_beta, max_beta)
+        new_loss = _nbinom_apeglm_loss(trial, counts, size, offset, design,
                                        prior_no_shrink_scale, prior_scale, shrink_index)
-        t = torch.ones(G, dtype=dtype, device=device)
-        for _ls in range(10):
-            trial = beta - t.unsqueeze(1) * step
-            trial = trial.clamp(min_beta, max_beta)
-            new_loss = _nbinom_apeglm_loss(trial, counts, size, offset, design,
-                                           prior_no_shrink_scale, prior_scale, shrink_index)
-            bad = active & (new_loss > cur_loss + 1e-12)
-            if not bad.any():
-                break
-            t = torch.where(bad, t * 0.5, t)
-        # Apply step only to active rows.
-        update_mask = active.unsqueeze(1)
-        beta = torch.where(update_mask, trial, beta)
+        improved = active & (new_loss < cur_loss)
+        # Accept improving steps; reject the rest (β unchanged).
+        new_beta = torch.where(improved.unsqueeze(1), trial, beta)
+        step_taken = (new_beta - beta).abs().max(dim=1).values
+        beta = new_beta
+        cur_loss = torch.where(improved, new_loss, cur_loss)
+        # LM damping: shrink λ on success, grow it on failure.
+        lam = torch.where(improved, (lam * 0.5).clamp_min(1e-8),
+                          (lam * 4.0).clamp_max(1e12))
+        # Pinned convergence: a gene whose damping has blown up while β stops
+        # moving is at its constrained optimum (extreme-LFC genes sit at the ±β
+        # boundary, where |grad| never reaches gtol). Mark them converged so the
+        # loop exits instead of grinding to max_iter + the scipy fallback.
+        pinned = active & (lam > 1e6) & (step_taken < btol)
+        converged = converged | pinned
+        active = active & ~pinned
 
     # Any still-active gene: fall back to scipy L-BFGS-B per gene.
     if active.any():

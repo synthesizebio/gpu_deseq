@@ -343,36 +343,57 @@ measurement. The full-pipeline **eager** column here (15–38× on A100 vs this
 host's R) is the like-for-like analog and lands in the same range — not a
 regression. The dispersion-stage table isolates what the kernel work changed.
 
-### 2026-07-14 — per-step breakdown (all 5 steps) — exposes the lfc_shrink bottleneck
+### 2026-07-14 — per-step breakdown (all 5 steps), after the apeGLM fix
 
 [`bench_per_step.py`](bench_per_step.py) + [`time_r_steps.R`](time_r_steps.R) time
-each pipeline step separately, ours (eager/graph/triton) and R. Raw:
+each step separately, ours (eager/graph/triton) and R. Raw:
 [`results_per_step.json`](results_per_step.json). ms, A100 vs single-thread R,
-reps=3.
+reps=3. (dispersion is the only row that changes across eager/graph/triton — the
+accelerators route only `fit_dispersions`.)
 
 60 × 20000 (`~condition`):
 
 | step | R DESeq2 | eager | graph | triton |
 |---|---:|---:|---:|---:|
-| normalization | 452 | 1.2 | 1.2 | 1.2 |
-| dispersion | 14214 | 391 | 239 | 112 |
-| glm_fit | 5242 | 11 | 11 | 11 |
-| significance | 284 | 151 | 151 | 151 |
-| lfc_shrink | 8599 | **24806** | 24806 | 24806 |
-| **TOTAL** | 28791 | 25360 | 25208 | 25082 |
+| normalization | 443 | 1.2 | 1.2 | 1.2 |
+| dispersion | 14234 | 392 | 238 | 112 |
+| glm_fit | 5185 | 11 | 11 | 11 |
+| significance | 278 | 146 | 146 | 146 |
+| lfc_shrink | 8590 | 92 | 92 | 92 |
+| **TOTAL** | 28730 | 643 | 489 | 362 |
+| **(vs R)** | 1.0× | **44.7×** | **58.8×** | **79.3×** |
 
-**Key finding: `lfc_shrink` (apeGLM) is the real end-to-end bottleneck.** Steps
-1–4 run 36–464× faster than R (normalization ~377×, glm_fit ~464×, dispersion up
-to 127× with Triton), but our apeGLM shrinkage is **3–5× *slower* than R** (24.8 s
-vs 8.6 s at 20k) and dominates the total — so with shrinkage included, gpu_deseq
-is only ~1.1× faster than R end-to-end (and slower at small n: 0.6–0.9×).
+End-to-end totals (all 5 steps) vs R, all four cases:
 
-This is why every earlier "full pipeline 15–74×" number looked so good: it
-**excluded** `lfc_shrink` (SF→disp→Wald→results only). The per-step split is the
-honest end-to-end picture. Likely cause: the per-gene scipy L-BFGS-B fallback in
-`_shrink.py` firing for a large fraction of genes (cost scales per-gene: ~5 s/2k,
-~25 s/20k). **`lfc_shrink` is the clear next optimization target** — it now
-dwarfs the dispersion stage this work accelerated.
+| case | R (ms) | eager | graph | triton |
+|---|---:|---:|---:|---:|
+| 6 × 2000 (tiny) | 3138 | 5.2× | 13.8× | **18.2×** |
+| 60 × 2000 | 4508 | 15.1× | 24.2× | **28.4×** |
+| 60 × 20000 | 28730 | 44.7× | 58.8× | **79.3×** |
+| 60 × 1500 (P=4) | 5204 | 13.7× | 23.6× | **27.1×** |
+
+**gpu_deseq now beats R on every one of the 5 steps and end-to-end (18–79× with
+Triton), R-parity clean (92/92).**
+
+#### The lfc_shrink fix (was the end-to-end bottleneck)
+
+Before this fix, `lfc_shrink` (apeGLM) ran **5–25 s** — 3–5× *slower* than R — and
+dominated the total (gpu_deseq was ~1.1× or *below* R end-to-end with shrinkage).
+Diagnosis: the apeGLM Hessian is **indefinite** for extreme-LFC genes (MLE β runs
+to ±∞), so the plain Newton step ascended and overshot to the β = ±30 boundary;
+those ~27% of genes never reached `gtol=1e-10`, burned all 500 iterations, then
+got "rescued" one-by-one by a slow per-gene scipy L-BFGS-B (~2.5 ms/gene, Python).
+
+Fix (`_shrink.py`): **Levenberg–Marquardt damping** (per-gene adaptive λ: shrink
+on a successful step toward Newton, grow on failure toward gradient descent — a
+guaranteed descent direction), plus **pinned-boundary convergence** (a gene whose
+λ blows up while β stops moving is at its constrained optimum). At 60 × 2000:
+500 → **39 iterations**, scipy fallback fires on **0** genes (was ~540),
+**5285 → 91 ms (58×)**, R-parity intact. Now 10–93× faster than R's `lfcShrink`
+instead of 3–5× slower.
+
+Earlier "full pipeline 15–74×" numbers had *excluded* `lfc_shrink`; with it fixed
+the full 5-step pipeline beats R by the totals above.
 
 ## Summary of the three accelerators (as of 2026-07-14, single A100)
 
