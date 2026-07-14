@@ -363,17 +363,46 @@ accelerators route only `fit_dispersions`.)
 | **TOTAL** | 28730 | 643 | 489 | 362 |
 | **(vs R)** | 1.0× | **44.7×** | **58.8×** | **79.3×** |
 
-End-to-end totals (all 5 steps) vs R, all four cases:
+**gpu_deseq now beats R on every one of the 5 steps and end-to-end, R-parity
+clean (92/92).** End-to-end totals vs both a single-thread R and a charitable
+multi-core R are in the next section.
 
-| case | R (ms) | eager | graph | triton |
+### 2026-07-14 — fair CPU baseline: single-thread AND multi-core R
+
+The earlier tables timed R single-threaded. For a defensible "GPU vs CPU" claim
+the CPU should also use all its cores: DESeq2 fans the per-gene dispersion + GLM
+work across workers via `DESeq(parallel=TRUE, BPPARAM=MulticoreParam(k))`. Added
+that as a column (`time_r_steps.R` now times serial *and* k-core full pipeline).
+This box has **12 cores**; reps=3. Full-pipeline totals (ms):
+
+| case | R 1-thread | R 12-core | eager | graph | triton |
+|---|---:|---:|---:|---:|---:|
+| 6 × 2000 (tiny) | 2190 | 5199 | 584 | 225 | 171 |
+| 60 × 2000 | 3744 | 5752 | 299 | 185 | 161 |
+| 60 × 20000 | 21324 | 10530 | 652 | 499 | 375 |
+| 60 × 1500 (P=4) | 4401 | 6809 | 385 | 230 | 196 |
+
+Speedup vs the **best** R config per case (the charitable baseline):
+
+| case | best R (ms) | eager | graph | triton |
 |---|---:|---:|---:|---:|
-| 6 × 2000 (tiny) | 3138 | 5.2× | 13.8× | **18.2×** |
-| 60 × 2000 | 4508 | 15.1× | 24.2× | **28.4×** |
-| 60 × 20000 | 28730 | 44.7× | 58.8× | **79.3×** |
-| 60 × 1500 (P=4) | 5204 | 13.7× | 23.6× | **27.1×** |
+| 6 × 2000 | 2190 (1-thr) | 3.7× | 9.7× | **12.8×** |
+| 60 × 2000 | 3744 (1-thr) | 12.5× | 20.2× | **23.3×** |
+| 60 × 20000 | 10530 (12-core) | 16.1× | 21.1× | **28.1×** |
+| 60 × 1500 (P=4) | 4401 (1-thr) | 11.4× | 19.1× | **22.5×** |
 
-**gpu_deseq now beats R on every one of the 5 steps and end-to-end (18–79× with
-Triton), R-parity clean (92/92).**
+**Key finding: multi-core R does *not* claw back the headline the way one might
+assume.** `MulticoreParam` forks workers and serializes the dataset to each, so
+below ~20k genes the fork/serialization overhead makes 12-core R *slower* than
+single-thread (0.4–0.7×); it only helps at 20k genes (~2×), and even there
+scaling is far from linear (12 cores → 2×) because size factors, the trend fit,
+and `results()` are serial. So against the *fairest* R, Triton is still
+**13–28×** (not the "5–10×" a naive near-linear multi-core assumption predicts).
+
+Caveat: this is **12 cores**. A 32–64-core box would improve the 20k case further
+(perhaps 3–4× vs serial), which would pull that column's Triton advantage toward
+~15–20×; the small/medium cases stay serial-optimal (fork overhead persists).
+Always report the core count with a multi-core R comparison.
 
 #### The lfc_shrink fix (was the end-to-end bottleneck)
 

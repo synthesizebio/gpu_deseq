@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -71,59 +72,72 @@ def time_ours(casedir, device, reps):
     return rows
 
 
-def time_r(casedir, reps):
+def time_r(casedir, reps, ncores):
     here = Path(__file__).resolve().parent
-    print("  running Rscript time_r_steps.R (slow: includes apeglm shrinkage) ...")
-    subprocess.run(["Rscript", str(here / "time_r_steps.R"), casedir, str(reps)], check=True)
+    print(f"  running Rscript time_r_steps.R (serial + {ncores}-core; slow) ...")
+    subprocess.run(["Rscript", str(here / "time_r_steps.R"), casedir, str(reps), str(ncores)], check=True)
     rt = pd.read_csv(f"{casedir}/r_step_timings.csv").set_index("tag")
     return {t: dict(norm=float(rt.loc[t, "r_norm_ms"]), disp=float(rt.loc[t, "r_disp_ms"]),
                     glm=float(rt.loc[t, "r_glm_ms"]), sig=float(rt.loc[t, "r_sig_ms"]),
-                    shrink=float(rt.loc[t, "r_shrink_ms"])) for t in rt.index}
+                    shrink=float(rt.loc[t, "r_shrink_ms"]),
+                    full=float(rt.loc[t, "r_full_ms"]), full_mc=float(rt.loc[t, "r_full_mc_ms"]))
+            for t in rt.index}
 
 
-def print_table(tag, o, r):
-    # rows: (label, R, eager, graph, triton)
-    shared_glm, shared_sig, shared_shrink, shared_norm = o["glm"], o["sig"], o["shrink"], o["norm"]
+def print_table(tag, o, r, ncores):
+    # Per-step rows (R is single-thread; DESeq2 exposes parallelism only at the
+    # DESeq() level, so "optimal R" is a full-pipeline total, not per-step).
+    sh_norm, sh_glm, sh_sig, sh_shr = o["norm"], o["glm"], o["sig"], o["shrink"]
     rowdefs = [
-        ("normalization", r["norm"], shared_norm, shared_norm, shared_norm),
-        ("dispersion",    r["disp"], o["disp_eager"], o["disp_graph"], o["disp_triton"]),
-        ("glm_fit",       r["glm"],  shared_glm, shared_glm, shared_glm),
-        ("significance",  r["sig"],  shared_sig, shared_sig, shared_sig),
-        ("lfc_shrink",    r["shrink"], shared_shrink, shared_shrink, shared_shrink),
+        ("normalization", r["norm"],   sh_norm, sh_norm, sh_norm),
+        ("dispersion",    r["disp"],   o["disp_eager"], o["disp_graph"], o["disp_triton"]),
+        ("glm_fit",       r["glm"],    sh_glm, sh_glm, sh_glm),
+        ("significance",  r["sig"],    sh_sig, sh_sig, sh_sig),
+        ("lfc_shrink",    r["shrink"], sh_shr, sh_shr, sh_shr),
     ]
-    tot_r = sum(rd[1] for rd in rowdefs)
-    tot_e = shared_norm + o["disp_eager"] + shared_glm + shared_sig + shared_shrink
-    tot_g = shared_norm + o["disp_graph"] + shared_glm + shared_sig + shared_shrink
-    tot_t = shared_norm + o["disp_triton"] + shared_glm + shared_sig + shared_shrink
+    tot_e = sh_norm + o["disp_eager"] + sh_glm + sh_sig + sh_shr
+    tot_g = sh_norm + o["disp_graph"] + sh_glm + sh_sig + sh_shr
+    tot_t = sh_norm + o["disp_triton"] + sh_glm + sh_sig + sh_shr
+    # R totals: measured end-to-end (serial and multi-core), not the sum of steps.
+    r_1c, r_mc = r["full"], r["full_mc"]
+
     print(f"\n=== {tag} — per-step time (ms) ===")
-    print(f"  {'step':<15}{'R DESeq2':>10}{'eager':>9}{'graph':>9}{'triton':>9}")
+    print(f"  {'step':<15}{'R (1-thread)':>13}{'eager':>9}{'graph':>9}{'triton':>9}")
     for lbl, rr, e, g, t in rowdefs:
-        print(f"  {lbl:<15}{rr:>10.1f}{e:>9.1f}{g:>9.1f}{t:>9.1f}")
-    print(f"  {'TOTAL':<15}{tot_r:>10.1f}{tot_e:>9.1f}{tot_g:>9.1f}{tot_t:>9.1f}")
-    print(f"  {'(vs R)':<15}{'1.0x':>10}{tot_r/tot_e:>8.1f}x{tot_r/tot_g:>8.1f}x{tot_r/tot_t:>8.1f}x")
-    return dict(rows=rowdefs, total=dict(R=tot_r, eager=tot_e, graph=tot_g, triton=tot_t))
+        print(f"  {lbl:<15}{rr:>13.1f}{e:>9.1f}{g:>9.1f}{t:>9.1f}")
+    r_best = min(r_1c, r_mc)  # charitable baseline (multi-core can be slower on small data)
+    print(f"\n  totals — Benchmarks [R 1-thread, R {ncores}-core] vs ours [eager, graph, triton]:")
+    print(f"  {'':<16}{'R 1-thr':>10}{f'R {ncores}c':>9}{'eager':>9}{'graph':>9}{'triton':>9}")
+    print(f"  {'TOTAL ms':<16}{r_1c:>10.0f}{r_mc:>9.0f}{tot_e:>9.0f}{tot_g:>9.0f}{tot_t:>9.0f}")
+    print(f"  {'x vs 1-thread':<16}{'1.0x':>10}{r_1c/r_mc:>8.1f}x{r_1c/tot_e:>8.1f}x{r_1c/tot_g:>8.1f}x{r_1c/tot_t:>8.1f}x")
+    print(f"  {'x vs best R':<16}{r_best/r_1c:>9.1f}x{r_best/r_mc:>8.1f}x{r_best/tot_e:>8.1f}x{r_best/tot_g:>8.1f}x{r_best/tot_t:>8.1f}x")
+    return dict(rows=rowdefs, total=dict(R_1thread=r_1c, R_multicore=r_mc,
+                                         eager=tot_e, graph=tot_g, triton=tot_t))
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", type=str, default=None)
     ap.add_argument("--reps", type=int, default=3)
+    ap.add_argument("--ncores", type=int, default=os.cpu_count(),
+                    help="cores for the charitable multi-core R column")
     ap.add_argument("--casedir", type=str, default=None)
     args = ap.parse_args()
     if not torch.cuda.is_available():
         sys.exit("CUDA required.")
     prov = provenance(args.reps)
-    print("provenance:", {k: prov[k] for k in ("gpu", "torch", "cuda", "commit")})
+    prov["r_ncores"] = args.ncores
+    print("provenance:", {k: prov[k] for k in ("gpu", "torch", "cuda", "commit")}, "r_ncores:", args.ncores)
     casedir = args.casedir or tempfile.mkdtemp(prefix="gpudeseq_perstep_")
     print("case dir:", casedir)
 
     ours = time_ours(casedir, "cuda", args.reps)
-    rmap = time_r(casedir, args.reps)
-    tables = {tag: print_table(tag, ours[tag], rmap[tag]) for (_, _, _, _, tag) in CASES}
+    rmap = time_r(casedir, args.reps, args.ncores)
+    tables = {tag: print_table(tag, ours[tag], rmap[tag], args.ncores) for (_, _, _, _, tag) in CASES}
 
     if args.json:
         with open(args.json, "w") as f:
-            json.dump({"provenance": prov, "ours_ms": ours, "r_ms": rmap}, f, indent=2)
+            json.dump({"provenance": prov, "ours_ms": ours, "r_ms": rmap, "tables": tables}, f, indent=2)
         print(f"\nwrote {args.json}")
 
 
