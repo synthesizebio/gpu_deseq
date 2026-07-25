@@ -1,0 +1,263 @@
+\documentclass[11pt]{article}
+
+% ---------------------------------------------------------------------------
+% gpu-deseq whitepaper — OUTLINE / SCAFFOLD
+% Draft numbers are from benchmarks/RESULTS.md (single A100, R DESeq2 1.30.1).
+% \todo{...} marks content to write; \fact{...} marks a measured claim to cite.
+% Build:  cd paper && pdflatex main && bibtex main && pdflatex main && pdflatex main
+% ---------------------------------------------------------------------------
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\todo}[1]{\textcolor{red}{[\textbf{TODO:} #1]}}
+\newcommand{\note}[1]{\textcolor{blue!70!black}{\small$\langle$#1$\rangle$}}
+\newcommand{\fact}[1]{\textcolor{teal!60!black}{#1}} % a measured claim to cite
+\newcommand{\gpudeseq}{\texttt{gpu-deseq}}
+\newcommand{\R}{\textsf{R}}
+
+\lstset{basicstyle=\ttfamily\footnotesize,columns=fullflexible,breaklines=true}
+
+\title{\gpudeseq: A GPU-Native, R-Faithful Reimplementation of DESeq2\\
+\large Bit-exact differential expression at 20--130$\times$ on a single GPU}
+\author{Max \note{authors/affiliations} \\ Synthesize Bio}
+\date{\today \quad \textcolor{red}{DRAFT OUTLINE}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\note{DRAFT.} Differential expression (DE) analysis with DESeq2 is a de-facto
+standard for bulk RNA-seq, but its per-gene dispersion and generalized-linear-model
+fits run sequentially on a single CPU core and dominate wall-clock time on modern,
+many-sample datasets. We present \gpudeseq, a from-scratch reimplementation of the
+DESeq2 pipeline in PyTorch that reproduces R DESeq2 1.30.1 to floating-point
+precision at every pipeline step, while batching the embarrassingly-parallel
+per-gene work across the GPU. We contribute (i) a bit-exact batched port of
+DESeq2's Cox--Reid dispersion fitter; (ii) a CUDA-graph execution mode that
+removes per-iteration kernel-launch overhead, enabled by a capture-safe
+matrix-free linear solve; (iii) a fully fused Triton kernel that runs each gene's
+entire Newton--Raphson dispersion loop in registers with per-gene early exit; and
+(iv) a Levenberg--Marquardt reformulation of the apeGLM shrinkage optimizer that
+fixes a convergence failure on extreme-fold-change genes. Across dataset sizes,
+\gpudeseq{} matches R's differential-expression output (\fact{92/92 parity tests})
+and is \fact{19--38$\times$} faster end-to-end than the fastest R configuration on
+a single A100. \todo{finalize headline numbers + real-data validation sentence.}
+\end{abstract}
+
+% ===========================================================================
+\section{Introduction}
+\note{Argues: DESeq2 is the standard; its cost is per-gene and sequential; GPUs
+map perfectly; but existing GPU/accelerated ports sacrifice numerical fidelity.
+Our goal: identical numbers to R, much faster.}
+\begin{itemize}[leftmargin=1.4em]
+  \item Motivation: cohort/pseudobulk scale (hundreds--thousands of samples),
+        many-condition designs, iterative analysis loops.
+  \item The fidelity requirement: results feed downstream decisions, so ``close''
+        is not enough --- we target the reference (R DESeq2) bit-for-bit.
+  \item \todo{Position vs prior work (pyDESeq2 CPU port; any GPU DE tools).
+        Confirm novelty via literature search.}
+  \item \textbf{Contributions} (one sentence each):
+  \begin{enumerate}[leftmargin=1.6em,label=C\arabic*.]
+    \item A batched GPU port of DESeq2's \texttt{fitDisp} (Cox--Reid gradient
+          ascent) validated bit-exact against R at every intermediate.
+    \item A CUDA-graph mode (chunked replay) that removes launch overhead from the
+          dispersion loops, using a capture-safe no-pivot LU in place of cuSOLVER.
+    \item A fully fused Triton kernel: one program per gene runs the whole NR loop
+          in registers with per-gene early exit.
+    \item A Levenberg--Marquardt + pinned-boundary reformulation of the apeGLM
+          MAP optimizer, fixing a $3$--$5\times$ slowdown vs R into a $10$--$93\times$
+          speedup while preserving parity.
+    \item A per-step, reproducible benchmark methodology against single- and
+          multi-core R, with an empirical roofline analysis.
+  \end{enumerate}
+\end{itemize}
+
+% ===========================================================================
+\section{Background: the DESeq2 pipeline}
+\note{Just enough DESeq2 to make the methods legible. Five steps, the per-gene
+compute, and where R spends time.}
+\begin{enumerate}[leftmargin=1.6em]
+  \item \textbf{Normalization} --- median-of-ratios size factors.
+  \item \textbf{Dispersion estimation} --- gene-wise CR-MLE, parametric trend,
+        MAP shrinkage, outlier rule. \emph{The dominant cost.}
+  \item \textbf{GLM fit / testing} --- IRLS negative-binomial GLM, Wald / LRT.
+  \item \textbf{Significance} --- Cook's-distance filter, independent filtering,
+        BH adjustment.
+  \item \textbf{LFC shrinkage} --- apeGLM (Cauchy-prior MAP).
+\end{enumerate}
+\note{Key point for the paper: steps 2, 3, 5 are per-gene iterative fits, done
+sequentially in R's C++ core --- exactly the work a GPU batches.}
+\todo{One equation block: the Cox--Reid adjusted profile likelihood being maximized.}
+
+% ===========================================================================
+\section{Design}
+\subsection{Batched, bit-exact port}
+\note{How we get identical numbers: faithful port of the exact algorithm
+(gradient ascent + Armijo + $\kappa$ halving + noIncrease revert + grid fallback),
+same clamps/constants, fp64 throughout.}
+\todo{Describe the parity-first design and the fp64 requirement.}
+
+\subsection{Three execution modes}
+\note{eager (per-op kernels), CUDA graph, Triton --- same math, different dispatch.
+Table of tradeoffs (bit-identity, generality, effort).}
+
+\subsection{CUDA-graph chunked replay}
+\note{Problem: the NR loop fires $\sim$6k tiny kernels; the GPU is launch-bound.
+A fixed full-length capture loses (early-exit); chunked replay of a $K$-iteration
+graph with between-chunk convergence checks wins. cuSOLVER \texttt{slogdet}/\texttt{solve}
+cannot be captured $\Rightarrow$ replaced by a capture-safe no-pivot LU
+(\texttt{\_logdet\_and\_tr\_binv\_db}), matching \texttt{linalg} to $\sim$1e-15.}
+\todo{Algorithm box for chunked replay + the LU substitution.}
+
+\subsection{Triton full-loop fusion}
+\note{One program per gene; counts/$\mu$/design loaded once; all iterations,
+Cox--Reid $P\times P$ solve (unrolled LU, $P\in\{2,4\}$), NB log-likelihood and
+gradient (\texttt{lgamma}/\texttt{digamma}/\texttt{log1p}), and the Armijo loop
+run in registers; per-gene \texttt{while} early exit. digamma hand-implemented to
+match ATen's \texttt{calc\_digamma}.}
+\todo{Kernel structure figure; note $\sim$1e-14 vs R (not bit-identical to eager).}
+
+\subsection{Fixing apeGLM shrinkage}
+\note{The most novel piece. Diagnosis: the apeGLM Hessian is indefinite for
+extreme-LFC genes ($\hat\beta\to\pm\infty$), so Newton ascends and overshoots to
+the $\beta$ boundary; $\sim$27\% of genes never converge, burning all iterations
+then a slow per-gene scipy rescue. Fix: per-gene Levenberg--Marquardt damping
+(shrink $\lambda$ on success toward Newton, grow toward gradient descent) +
+pinned-boundary convergence.}
+\todo{Before/after: 500$\to$39 iters, 0 fallback genes, 5285$\to$91 ms; parity kept.}
+
+% ===========================================================================
+\section{Correctness / Validation}
+\note{The whole value prop. Parity methodology: R fixtures generated by
+generate\_r\_fixtures.R; every intermediate checked (size factors, dispGeneEst,
+dispFit, dispMAP, $\beta$, $\mu$, H, Cook's, Wald SE, LRT, apeGLM); measured p95
+relative errors; designs P=2 and P=4.}
+
+\begin{table}[h]\centering
+\caption{Per-step agreement with R DESeq2 1.30.1 (measured p95 relative error).
+\todo{fill from test\_r\_step\_parity tolerances.}}
+\begin{tabular}{lll}
+\toprule
+Step / quantity & Designs & p95 rel.\ err \\
+\midrule
+Size factors & all & $<$1e-10 \\
+Gene-wise dispersion & all & $\sim$1e-9 \\
+MAP / final dispersion & all & $\sim$1e-6 \\
+$\beta$, $\mu$, H, Wald SE & all & $\sim$1e-6--1e-7 \\
+apeGLM shrunk LFC/SE & all & \todo{} \\
+\bottomrule
+\end{tabular}
+\end{table}
+\todo{One paragraph: the three accelerators all pass the full 92-test suite;
+Triton matches R (not eager) at $\sim$1e-14.}
+\todo{\textbf{GAP:} real published RNA-seq dataset --- identical significant-gene
+set and LFC correlation vs R. Needed for a methods venue.}
+
+% ===========================================================================
+\section{Performance evaluation}
+\subsection{Setup}
+\note{Provenance: A100-SXM4-40GB, torch 2.6/CUDA 12.4, R DESeq2 1.30.1 (12-core
+box), median-of-N, warm timings, CUDA-synced. Reproducible harnesses in
+benchmarks/.}
+\todo{\textbf{GAP:} add a second GPU (L4) and a larger-core R box (32--64).}
+
+\subsection{The bottleneck is launch overhead (roofline)}
+\note{ncu counters blocked $\Rightarrow$ empirical roofline: sustainable BW
+1258 GB/s, but the loop's 1--10 MB arrays reach only 3--44\% of it, and
+\_lp\_and\_dlp takes the same time for 2k vs 20k genes $\Rightarrow$
+launch/latency-bound, not memory- or compute-bound. Motivates graphs/fusion.}
+
+\subsection{Per-step results vs R}
+\note{The headline table --- 5 steps + total, R 1-thread and 12-core, eager,
+graph, Triton. Also the artifact figure. R 12-core: dispersion+GLM bundled.}
+
+\begin{table}[h]\centering
+\caption{Per-step wall time (ms), $60\times20000$ genes, single A100 vs R
+DESeq2 (12-core box). \fact{Reproduce: \texttt{benchmarks/bench\_per\_step.py}.}}
+\begin{tabular}{lrrrrr}
+\toprule
+Step & R 1-thr & R 12-core & eager & graph & Triton \\
+\midrule
+normalization & 473 & 473 & 1.2 & 1.2 & 1.2 \\
+dispersion & 13923 & 8397$^\dagger$ & 349 & 213 & 80 \\
+glm\_fit & 5137 & (bundled) & 11 & 11 & 11 \\
+significance & 284 & 285 & 145 & 145 & 145 \\
+lfc\_shrink & 8470 & 3201 & 92 & 92 & 92 \\
+\midrule
+\textbf{TOTAL} & \textbf{28287} & \textbf{12356} & \textbf{598} & \textbf{462} & \textbf{330} \\
+\bottomrule
+\end{tabular}
+\\[2pt]
+{\footnotesize $^\dagger$ DESeq2 parallelizes dispersion+GLM as one gene-chunked
+bundle; the two rows share it.}
+\end{table}
+
+\note{Totals across the four cases and Triton-vs-best-R: 19.3/28.9/37.5/26.6$\times$.}
+
+\subsection{Scaling}
+\note{Gene axis (2k vs 20k) and sample axis (2v2 pilot to 2000 samples). Key
+findings: accelerators help most in the launch-bound small-sample regime
+(Triton up to 7$\times$ over eager at n=6); at $>$1000 samples the loop becomes
+compute-bound. Multi-core R only beats single-thread at $\geq$20k genes (fork
+overhead below that).}
+
+\subsection{Ablations}
+\begin{itemize}[leftmargin=1.4em]
+  \item Fixed-length vs chunked CUDA graph (0.8$\times$ $\to$ 5.5$\times$).
+  \item Fixed-iteration vs per-gene early-exit Triton (fixes the 20k regression).
+  \item apeGLM: Newton+scipy vs LM+pinned (58$\times$ on the step; parity kept).
+  \item \texttt{GRAPH\_CHUNK} sweep (chunk 10 near-optimal).
+\end{itemize}
+
+% ===========================================================================
+\section{Related work}
+\todo{DESeq2 (Love et al. 2014); apeGLM (Zhu et al. 2019); pyDESeq2 (CPU
+reimplementation); GPU acceleration in genomics; Triton (Tillet et al. 2019);
+CUDA graphs. Position \gpudeseq{} as: GPU-native + reference-faithful.
+Verify all citations via literature search before submission.}
+
+% ===========================================================================
+\section{Limitations}
+\note{Honest scope from README/RESULTS.}
+\begin{itemize}[leftmargin=1.4em]
+  \item Tested designs: single factor, additive multi-factor (P=4), continuous.
+        Not yet: interaction designs, $>$3-level factors, $n<6$.
+  \item Not implemented: \texttt{replaceOutliers} refit, \texttt{lfcShrink}
+        types \texttt{normal}/\texttt{ashr}, \texttt{glmGamPoi}, VST/rlog.
+  \item Triton path: $P\in\{2,4\}$ only (falls back to eager otherwise); not
+        bit-identical to eager ($\sim$1e-14 vs R).
+  \item Benchmarks: single A100, 12-core R host.
+  \item DESeq2 versions other than 1.30.1 untested.
+\end{itemize}
+
+% ===========================================================================
+\section{Conclusion}
+\todo{Reference-faithful GPU DE is feasible and fast; the wins come from treating
+per-gene fits as batched GPU work and from removing launch overhead, not from
+approximation. Future: real-data validation at scale, more designs, GPU-side
+independent filtering / trend fit.}
+
+% ===========================================================================
+\appendix
+\section{Reproducibility}
+\note{Commit hashes, harness commands, fixture generation, environment.}
+\begin{lstlisting}
+# parity (all three modes)
+GPU_DESEQ_ACCEL={eager|graph|triton} pytest tests/
+# per-step vs R (1-thread + k-core)
+python benchmarks/bench_per_step.py --ncores 12
+# roofline
+python benchmarks/roofline_empirical.py
+\end{lstlisting}
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}
