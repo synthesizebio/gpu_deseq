@@ -1,4 +1,4 @@
-# Whitepaper — cuDESeq (gpu-deseq)
+# Whitepaper — cuDESeq2 (gpu-deseq)
 
 Draft outline for the gpu-deseq whitepaper.
 
