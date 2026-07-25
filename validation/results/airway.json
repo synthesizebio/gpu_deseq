@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "name": "airway",
+    "design": "~ cell + dex",
+    "factor": "dex",
+    "ref": "untrt",
+    "coef": "dex_trt_vs_untrt",
+    "n_samples": 8,
+    "n_genes": 33469
+  },
+  "n_genes_compared": 33469,
+  "lfc_pearson": 0.9997953084088411,
+  "lfc_spearman": 0.9997982382896697,
+  "lfc_p95_abs": 0.031527739375740715,
+  "stat_pearson": 0.9960343184562239,
+  "pvalue_pearson": 0.998360280897004,
+  "padj_p95_abs": 0.07914181994792174,
+  "dispersion_p95_rel": 0.3702347459042155,
+  "shrunk_lfc_pearson": 0.993662773795419,
+  "shrunk_lfc_p95_abs": 0.022166120594365422,
+  "sig_jaccard_0.05": 0.903076171875,
+  "sig_jaccard_0.10": 0.9138455301033853,
+  "n_sig_ours_0.05": 3802,
+  "n_sig_r_0.05": 3993
+}

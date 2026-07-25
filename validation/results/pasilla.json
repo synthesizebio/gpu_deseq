@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "name": "pasilla",
+    "design": "~ condition",
+    "factor": "condition",
+    "ref": "untreated",
+    "coef": "condition_treated_vs_untreated",
+    "n_samples": 7,
+    "n_genes": 12359
+  },
+  "n_genes_compared": 12359,
+  "lfc_pearson": 0.9999883548097627,
+  "lfc_spearman": 0.9999802374307708,
+  "lfc_p95_abs": 0.007683859848369183,
+  "stat_pearson": 0.9998168992720561,
+  "pvalue_pearson": 0.9995304629559297,
+  "padj_p95_abs": 0.01352032651564168,
+  "dispersion_p95_rel": 0.11330067258767983,
+  "shrunk_lfc_pearson": 0.9869227784486178,
+  "shrunk_lfc_p95_abs": 0.08744407517758901,
+  "sig_jaccard_0.05": 0.977725674091442,
+  "sig_jaccard_0.10": 0.9764816556914393,
+  "n_sig_ours_0.05": 847,
+  "n_sig_r_0.05": 840
+}
