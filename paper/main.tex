@@ -19,13 +19,15 @@
 \newcommand{\todo}[1]{\textcolor{red}{[\textbf{TODO:} #1]}}
 \newcommand{\note}[1]{\textcolor{blue!70!black}{\small$\langle$#1$\rangle$}}
 \newcommand{\fact}[1]{\textcolor{teal!60!black}{#1}} % a measured claim to cite
-\newcommand{\gpudeseq}{\texttt{gpu-deseq}}
+\newcommand{\cudeseq}{cuDESeq}                    % the tool
+\newcommand{\gpudeseq}{\texttt{gpu-deseq}}        % the implementation / repo
 \newcommand{\R}{\textsf{R}}
 
 \lstset{basicstyle=\ttfamily\footnotesize,columns=fullflexible,breaklines=true}
 
-\title{\gpudeseq: A GPU-Native, R-Faithful Reimplementation of DESeq2\\
-\large Bit-exact differential expression at 20--130$\times$ on a single GPU}
+\title{\cudeseq: Reference-faithful DESeq2 on the GPU\\
+\large Bit-exact with R DESeq2 1.30.1, up to ${\sim}40\times$ faster end-to-end
+(${\approx}130\times$ on dispersion fitting) on a single GPU}
 \author{Max \note{authors/affiliations} \\ Synthesize Bio}
 \date{\today \quad \textcolor{red}{DRAFT OUTLINE}}
 
@@ -36,7 +38,7 @@
 \note{DRAFT.} Differential expression (DE) analysis with DESeq2 is a de-facto
 standard for bulk RNA-seq, but its per-gene dispersion and generalized-linear-model
 fits run sequentially on a single CPU core and dominate wall-clock time on modern,
-many-sample datasets. We present \gpudeseq, a from-scratch reimplementation of the
+many-sample datasets. We present \cudeseq, a from-scratch reimplementation of the
 DESeq2 pipeline in PyTorch that reproduces R DESeq2 1.30.1 to floating-point
 precision at every pipeline step, while batching the embarrassingly-parallel
 per-gene work across the GPU. We contribute (i) a bit-exact batched port of
@@ -46,7 +48,7 @@ matrix-free linear solve; (iii) a fully fused Triton kernel that runs each gene'
 entire Newton--Raphson dispersion loop in registers with per-gene early exit; and
 (iv) a Levenberg--Marquardt reformulation of the apeGLM shrinkage optimizer that
 fixes a convergence failure on extreme-fold-change genes. Across dataset sizes,
-\gpudeseq{} matches R's differential-expression output (\fact{92/92 parity tests})
+\cudeseq{} matches R's differential-expression output (\fact{92/92 parity tests})
 and is \fact{19--38$\times$} faster end-to-end than the fastest R configuration on
 a single A100. \todo{finalize headline numbers + real-data validation sentence.}
 \end{abstract}
@@ -220,7 +222,7 @@ overhead below that).}
 \section{Related work}
 \todo{DESeq2 (Love et al. 2014); apeGLM (Zhu et al. 2019); pyDESeq2 (CPU
 reimplementation); GPU acceleration in genomics; Triton (Tillet et al. 2019);
-CUDA graphs. Position \gpudeseq{} as: GPU-native + reference-faithful.
+CUDA graphs. Position \cudeseq{} as: GPU-native + reference-faithful.
 Verify all citations via literature search before submission.}
 
 % ===========================================================================
