@@ -292,7 +292,11 @@ def fit_dispersions(
         alpha_init=alpha_mle,
         use_cuda_graph=use_cuda_graph, use_triton=use_triton,
     )
-    alpha_map = alpha_map.clamp(_core.MIN_DISP, _core.MAX_DISP)
+    # R: maxDisp <- max(10, ncol(object)); clamping to the constant MAX_DISP (10)
+    # truncates legitimate high dispersions once n_samples > 10 (surfaces on large
+    # cohorts, e.g. GTEx n=300 where R reports dispersions up to ~300).
+    max_disp_eff = max(_core.MAX_DISP, n_samples)
+    alpha_map = alpha_map.clamp(_core.MIN_DISP, max_disp_eff)
     map_full[idx] = alpha_map
 
     # Outlier rule: keep MLE for very-high genewise vs trend.

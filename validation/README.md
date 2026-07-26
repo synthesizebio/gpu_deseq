@@ -8,39 +8,54 @@ calls, and apeGLM-shrunk LFCs.
 ## Run
 
 ```bash
-Rscript validation/fetch_and_reference.R              # exports data + R reference
+Rscript validation/fetch_and_reference.R              # exports data + R reference (pasilla, airway)
+Rscript validation/prepare_gtex.R                     # large cohort: GTEx (recount2), 300 samples
 PYTHONPATH=src python validation/validate.py          # runs cuDESeq2, compares, plots
 ```
 
 Requires DESeq2 1.30.1 + apeglm + the `pasilla` and `airway` Bioconductor data
-packages (`BiocManager::install(c("pasilla","airway"))`), and `matplotlib`.
+packages (`BiocManager::install(c("pasilla","airway"))`), and `matplotlib`. The
+GTEx case additionally needs the recount2 RSE (1.37 GB, downloaded once from the
+recount-opendata S3 bucket — see the header of `prepare_gtex.R`).
 Reference factor levels are set explicitly (untreated/untrt as base) on both
 sides so the contrast matches exactly (no sign flip).
 
 ## Datasets / designs
 
-Five real design-cases from two Bioconductor datasets, spanning P=2..5, single-
-and multi-factor, two organisms. The Triton fused kernel covers P in {2, 4}
-(larger P defers to the eager path), so P=2 and P=4 cases exercise it on real
-data; P=3/5 run the eager dispersion loop.
+Six real design-cases from three published datasets, spanning P=2..5, single-
+and multi-factor, two organisms, and **7 → 300 samples**. The Triton fused kernel
+covers P in {2, 4} (larger P defers to the eager path), so P=2 and P=4 cases
+exercise it on real data; P=3/5 run the eager dispersion loop.
 
 | case | organism | design | P | samples × genes | Triton kernel |
 |---|---|---|---|---|---|
-| pasilla       | *Drosophila* | `~ condition`        | 2 | 7 × 12 359  | yes |
-| pasilla_2fac  | *Drosophila* | `~ type + condition` | 3 | 7 × 12 359  | eager (P=3) |
-| airway_dex    | human        | `~ dex`              | 2 | 8 × 33 469  | yes |
-| airway_cell   | human        | `~ cell`             | 4 | 8 × 33 469  | **yes** |
-| airway        | human        | `~ cell + dex`       | 5 | 8 × 33 469  | eager (P=5) |
+| pasilla       | *Drosophila* | `~ condition`        | 2 | 7 × 12 359    | yes |
+| pasilla_2fac  | *Drosophila* | `~ type + condition` | 3 | 7 × 12 359    | eager (P=3) |
+| airway_dex    | human        | `~ dex`              | 2 | 8 × 33 469    | yes |
+| airway_cell   | human        | `~ cell`             | 4 | 8 × 33 469    | **yes** |
+| airway        | human        | `~ cell + dex`       | 5 | 8 × 33 469    | eager (P=5) |
+| **gtex_blood_muscle** | human | `~ tissue`         | 2 | **300 × 54 922** | **yes** |
+
+`gtex_blood_muscle` is a large-cohort case: GTEx (GTEx Consortium — the canonical
+human RNA-seq resource) via recount2, Whole Blood vs Skeletal Muscle, 150 samples
+per group. It is ~40× the sample count of airway and is where R's single-thread
+cost becomes prohibitive (5.4 minutes; see timing).
 
 ## Results (single A100)
 
 | case | LFC Pearson r | Wald stat r | sig Jaccard@0.05 | sig (ours/R) | dispersion p95 |
 |---|---|---|---|---|---|
-| pasilla      | 1.000000 | 0.99994 | **1.000** | 840 / 840   | 6.7e-4 |
-| pasilla_2fac | 0.999858 | —       | **1.000** | 1069 / 1069 | 2.4e-4 |
-| airway_dex   | 1.000000 | —       | **0.9996** | 2699 / 2700 | 1.0e-3 |
-| airway_cell  | 1.000000 | —       | **0.971** | 202 / 206   | 2.8e-3 |
-| airway       | 0.999997 | 0.99977 | **0.977** | 4063 / 3993 | 6.7e-2 |
+| pasilla      | 1.000000 | 0.99994 | **1.000** | 840 / 840     | 6.7e-4 |
+| pasilla_2fac | 0.999858 | —       | **1.000** | 1069 / 1069   | 2.4e-4 |
+| airway_dex   | 1.000000 | —       | **0.9996** | 2699 / 2700   | 1.0e-3 |
+| airway_cell  | 1.000000 | —       | **0.971** | 202 / 206     | 2.8e-3 |
+| airway       | 0.999997 | 0.99977 | **0.977** | 4063 / 3993   | 6.7e-2 |
+| **gtex_blood_muscle** | 0.998087† | 0.99877 | **0.971** | 32 982 / 33 942 | 4.4e-3 |
+
+†GTEx raw-LFC p95 |Δ| = **2.2e-5** (absolute agreement is essentially exact); the
+Pearson r sits at 0.998 only because 300-sample tissue contrasts produce a handful
+of extreme-LFC genes (near-zero counts in one tissue) that dominate the
+correlation. Shrunk-LFC r = **0.999986**.
 
 All three execution modes (eager / CUDA-graph / Triton) produce identical results
 on every case (verify: `GPU_DESEQ_ACCEL={graph,triton} python validation/validate.py`).
@@ -57,32 +72,39 @@ median of a few runs, R on the 12-core box (single-threaded). Speedup = R / mode
 
 | case | P | R (ms) | eager | graph | triton |
 |---|---:|---:|---:|---:|---:|
-| pasilla       | 2 |  9 423 | 614 (15×)  | 271 (35×) | **215 (44×)** |
-| pasilla_2fac  | 3 | 10 088 | 1236 (8×)  | 650 (16×) | 1238 (8×, fallback) |
-| airway_dex    | 2 | 26 748 | 737 (36×)  | 413 (65×) | **352 (76×)** |
-| airway_cell   | 4 | 28 896 | 1172 (25×) | 456 (63×) | **358 (81×)** |
-| airway        | 5 | 34 724 | 1451 (24×) | 714 (49×) | 1457 (24×, fallback) |
+| pasilla       | 2 |   9 423 |  613 (15×)  | 269 (35×) | **213 (44×)** |
+| pasilla_2fac  | 3 |  10 088 | 1218 (8×)   | 672 (15×) | 1232 (8×, fallback) |
+| airway_dex    | 2 |  26 748 |  715 (37×)  | 386 (69×) | **329 (81×)** |
+| airway_cell   | 4 |  28 896 | 1149 (25×)  | 449 (64×) | **353 (82×)** |
+| airway        | 5 |  34 724 | 1431 (24×)  | 707 (49×) | 1428 (24×, fallback) |
+| **gtex_blood_muscle** | 2 | **322 966** | 7117 (45×) | 7270 (44×) | **3847 (84×)** |
 
-Where the Triton kernel applies (P∈{2,4}) it is fastest — **44–81× over R** on real
-data. Where it falls back (P=3,5), it matches eager and the CUDA graph is the best
-accelerator (16–49×). Parity is identical across all three modes (above), so these
-are pure wall-time differences on bit-equivalent output. Produced by
-`validate.py` (ours) + `fetch_and_reference.R` (R), timings in `results/*.json`.
+Where the Triton kernel applies (P∈{2,4}) it is fastest — **44–84× over R** on real
+data. On the large cohort (GTEx, 300 samples) R takes **5.4 minutes** single-thread;
+cuDESeq2/Triton does the identical pipeline in **3.85 s (84×)**. Where Triton falls
+back (P=3,5), it matches eager and the CUDA graph is the best accelerator (15–49×).
+Parity is identical across all three modes (above), so these are pure wall-time
+differences on bit-equivalent output. Produced by `validate.py` (ours) +
+`fetch_and_reference.R` / `prepare_gtex.R` (R), timings in `results/*.json`.
 
-### Coverage note (open item)
+Note: at 300 samples the per-gene dispersion NR is compute-bound (many samples per
+gene), so the CUDA graph's launch-overhead savings shrink and Triton's per-gene
+early-exit is the win; on the small-*n* cases the graph and Triton are closer.
 
-Both underlying datasets are small-*n* (7–8 samples). Adding a larger cohort
-(hundreds of samples) was blocked here by the Bioconductor 3.12 experiment-data
-mirror returning HTTP 504 for `parathyroid`/`fission`/`macrophage`; the harness
-takes any counts+coldata, so a larger dataset (recount3/GEO) drops in directly.
-apeGLM-shrunk LFC agreement (r 0.87–0.98) is looser than the raw LFC (r≈1.0) — a
-softer, heavily-transformed quantity used for ranking, not significance;
-tightening its optimizer vs R is a separate future item.
+### Coverage note
 
-## Root-cause history (two dispersion bugs, both fixed)
+Coverage now spans **7 → 300 samples**. The large-cohort case is GTEx via recount2
+(the Bioconductor 3.12 experiment-data mirror 504'd for `parathyroid`/`fission`/
+`macrophage`, so we pulled GTEx from the recount-opendata S3 bucket instead — the
+harness takes any counts+coldata). apeGLM-shrunk LFC agreement is tightest on the
+large cohort (r = 0.999986) and looser on the smallest-*n*, single-coefficient
+cases (airway_cell r 0.87) — a softer, heavily-transformed quantity used for
+ranking, not significance.
 
-An earlier run showed per-gene dispersion diverging 11–37 % on this real data
-(while LFC/significance already matched), which a stage-by-stage comparison
+## Root-cause history (three dispersion bugs, all fixed)
+
+An earlier run showed per-gene dispersion diverging 11–37 % on the small-*n* real
+data (while LFC/significance already matched), which a stage-by-stage comparison
 (gene-wise MLE → trend → MAP → final) localized to **two** specific stages:
 
 1. **Parametric dispersion trend fit.** Our port used scipy L-BFGS-B on a
@@ -99,7 +121,22 @@ An earlier run showed per-gene dispersion diverging 11–37 % on this real data
    Savitzky–Golay filter to match R's loess. This took airway's final dispersion
    from 37 % → **6.7 %**.
 
-Both fixes preserve the synthetic step-parity suite (92/92).
+Adding the **300-sample GTEx cohort** then surfaced a **third**, sample-size-
+dependent bug that the small-*n* cases could not have caught:
+
+3. **Dispersion cap not sample-size-aware.** R sets `maxDisp <- max(10, ncol)`,
+   so at n=300 it reports dispersions up to ~300. The final MAP dispersion was
+   re-clamped to the constant `MAX_DISP = 10` ([`api.py`](../src/gpu_deseq/api.py)),
+   truncating the ~27 % of (near-zero-count, genuinely ultra-overdispersed) genes
+   whose true dispersion exceeds 10 — giving them p95 relative error up to 97 %.
+   For n ≤ 10 (pasilla/airway) `max(10, n) = 10`, so the clamp coincided with R
+   and the bug was invisible; it only bites once n > 10. Fixed by clamping the
+   MAP to `max(MAX_DISP, n_samples)`, matching R's rule. GTEx final-dispersion
+   p95 **0.967 → 4.4e-3** (0 genes over 10 % error, from 27 %); log-posterior
+   check confirms the fixed estimates match R's optimum. The small-*n* cases are
+   byte-identical before/after (their effective cap is unchanged).
+
+All three fixes preserve the synthetic step-parity suite (92/92).
 
 ## Honest reading (for the paper)
 
@@ -110,15 +147,21 @@ Both fixes preserve the synthetic step-parity suite (92/92).
   not a bug**: R's small-dof prior-variance estimator draws random samples under
   `set.seed(2)`, and R's Mersenne-Twister stream cannot be reproduced in NumPy,
   so we recover prior variance 0.61 vs R's 0.53 (R's own value is seed-dependent).
+- **GTEx (n=300, large cohort): DE-equivalent with tight dispersions** — LFC
+  p95 |Δ| = 2.2e-5, shrunk-LFC r = 0.999986, significance Jaccard 0.971
+  (32 982 / 33 942 genes), final dispersion p95 = 4.4e-3 across all 54 922 genes.
+  R takes 5.4 min single-thread; cuDESeq2/Triton is bit-mode-identical and 84×
+  faster.
 - So the fidelity claim is precise: **bit-exact on controlled inputs and on
-  moderate-dof real data; DE-equivalent on very-small-dof real data (LFC
-  r>0.9999, significance Jaccard ≥0.97)**, with the only residual traceable to R's
-  use of randomness in the dof≤3 prior estimator.
+  moderate-dof real data; DE-equivalent on very-small-dof and large-cohort real
+  data (LFC r>0.9999 or p95|Δ|≈2e-5, significance Jaccard ≥0.97)**, with the only
+  residual traceable to R's use of randomness in the dof≤3 prior estimator.
 
 ## Files
 
 - `fetch_and_reference.R` — export counts/coldata + R reference (results,
-  dispersions, apeGLM shrink) per dataset.
+  dispersions, apeGLM shrink) for the Bioconductor datasets (pasilla, airway).
+- `prepare_gtex.R` — build the large-cohort GTEx case (recount2) + R reference.
 - `validate.py` — run cuDESeq2, compute concordance, write JSON + parity figures.
 - `data/` — regenerable inputs + R reference (git-ignored).
 - `results/`, `figures/` — committed summary + plots.

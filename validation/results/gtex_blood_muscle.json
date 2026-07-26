@@ -1,0 +1,34 @@
+{
+  "meta": {
+    "name": "gtex_blood_muscle",
+    "design": "~ tissue",
+    "factor": "tissue",
+    "ref": "blood",
+    "nonref": "muscle",
+    "coef": "tissue_muscle_vs_blood",
+    "P": 2,
+    "n_samples": 300,
+    "n_genes": 54922,
+    "r_full_ms": 322966.1
+  },
+  "n_genes_compared": 54922,
+  "lfc_pearson": 0.9980873181328886,
+  "lfc_spearman": 0.9968963581211246,
+  "lfc_p95_abs": 2.187802576368301e-05,
+  "stat_pearson": 0.9989532297765431,
+  "pvalue_pearson": 0.9995307174078002,
+  "padj_p95_abs": 0.028682559549801256,
+  "dispersion_p95_rel": 0.004391982734822008,
+  "shrunk_lfc_pearson": 0.9999858027175471,
+  "shrunk_lfc_p95_abs": 0.020562217584793818,
+  "sig_jaccard_0.05": 0.9713099060355239,
+  "sig_jaccard_0.10": 0.9706561724698435,
+  "n_sig_ours_0.05": 32982,
+  "n_sig_r_0.05": 33942,
+  "timing_ms": {
+    "eager": 7116.5918089973275,
+    "graph": 7270.046728997841,
+    "triton": 3846.8554869905347
+  },
+  "r_full_ms": 322966.1
+}
