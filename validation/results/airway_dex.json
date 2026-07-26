@@ -1,0 +1,34 @@
+{
+  "meta": {
+    "name": "airway_dex",
+    "design": "~ dex",
+    "factor": "dex",
+    "ref": "untrt",
+    "nonref": "trt",
+    "coef": "dex_trt_vs_untrt",
+    "P": 2,
+    "n_samples": 8,
+    "n_genes": 33469,
+    "r_full_ms": 26747.8
+  },
+  "n_genes_compared": 33469,
+  "lfc_pearson": 0.9999999982316059,
+  "lfc_spearman": 0.9999146474777897,
+  "lfc_p95_abs": 2.503706333966786e-05,
+  "stat_pearson": 0.9997376870367207,
+  "pvalue_pearson": 0.999560424891453,
+  "padj_p95_abs": 0.0002823596434734144,
+  "dispersion_p95_rel": 0.0010405662605654205,
+  "shrunk_lfc_pearson": 0.9769106263794637,
+  "shrunk_lfc_p95_abs": 0.0005317266360852722,
+  "sig_jaccard_0.05": 0.9996296296296296,
+  "sig_jaccard_0.10": 0.9997050147492625,
+  "n_sig_ours_0.05": 2699,
+  "n_sig_r_0.05": 2700,
+  "timing_ms": {
+    "eager": 736.7269399983343,
+    "graph": 413.27843999897595,
+    "triton": 352.1196749934461
+  },
+  "r_full_ms": 26747.8
+}

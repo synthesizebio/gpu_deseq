@@ -1,0 +1,34 @@
+{
+  "meta": {
+    "name": "airway_cell",
+    "design": "~ cell",
+    "factor": "cell",
+    "ref": "N052611",
+    "nonref": "N061011",
+    "coef": "cell_N061011_vs_N052611",
+    "P": 4,
+    "n_samples": 8,
+    "n_genes": 33469,
+    "r_full_ms": 28895.6
+  },
+  "n_genes_compared": 33469,
+  "lfc_pearson": 0.9999999992755978,
+  "lfc_spearman": 0.9999988468474832,
+  "lfc_p95_abs": 8.088202815216826e-05,
+  "stat_pearson": 0.9980118501178848,
+  "pvalue_pearson": 0.9987402403644986,
+  "padj_p95_abs": 1.6781100147245098e-06,
+  "dispersion_p95_rel": 0.002835590922775574,
+  "shrunk_lfc_pearson": 0.8656656306162569,
+  "shrunk_lfc_p95_abs": 0.0004469249016136581,
+  "sig_jaccard_0.05": 0.9710144927536232,
+  "sig_jaccard_0.10": 0.9407114624505929,
+  "n_sig_ours_0.05": 202,
+  "n_sig_r_0.05": 206,
+  "timing_ms": {
+    "eager": 1172.145926990197,
+    "graph": 455.7681849983055,
+    "triton": 358.101671008626
+  },
+  "r_full_ms": 28895.6
+}

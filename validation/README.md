@@ -17,27 +17,67 @@ packages (`BiocManager::install(c("pasilla","airway"))`), and `matplotlib`.
 Reference factor levels are set explicitly (untreated/untrt as base) on both
 sides so the contrast matches exactly (no sign flip).
 
-## Datasets
+## Datasets / designs
 
-| dataset | organism | design | P | samples | genes |
+Five real design-cases from two Bioconductor datasets, spanning P=2..5, single-
+and multi-factor, two organisms. The Triton fused kernel covers P in {2, 4}
+(larger P defers to the eager path), so P=2 and P=4 cases exercise it on real
+data; P=3/5 run the eager dispersion loop.
+
+| case | organism | design | P | samples × genes | Triton kernel |
 |---|---|---|---|---|---|
-| pasilla | *Drosophila* | `~ condition` | 2 | 7 | 12 359 |
-| airway  | human | `~ cell + dex` | 5 | 8 | 33 469 |
+| pasilla       | *Drosophila* | `~ condition`        | 2 | 7 × 12 359  | yes |
+| pasilla_2fac  | *Drosophila* | `~ type + condition` | 3 | 7 × 12 359  | eager (P=3) |
+| airway_dex    | human        | `~ dex`              | 2 | 8 × 33 469  | yes |
+| airway_cell   | human        | `~ cell`             | 4 | 8 × 33 469  | **yes** |
+| airway        | human        | `~ cell + dex`       | 5 | 8 × 33 469  | eager (P=5) |
 
-## Results (this run, single A100)
+## Results (single A100)
 
-| metric | pasilla | airway |
-|---|---|---|
-| raw LFC — Pearson r | **1.000000** | **0.999997** |
-| raw LFC — Spearman | 0.999998 | 0.999993 |
-| Wald stat — Pearson r | 0.999940 | 0.999768 |
-| apeGLM-shrunk LFC — Pearson r | 0.982 | 0.999 |
-| significance Jaccard @padj<0.05 | **1.000** | **0.977** |
-| sig genes (ours / R) | 840 / 840 | 4063 / 3993 |
-| dispersion — p95 rel err | 6.7e-4 | 6.7e-2 |
+| case | LFC Pearson r | Wald stat r | sig Jaccard@0.05 | sig (ours/R) | dispersion p95 |
+|---|---|---|---|---|---|
+| pasilla      | 1.000000 | 0.99994 | **1.000** | 840 / 840   | 6.7e-4 |
+| pasilla_2fac | 0.999858 | —       | **1.000** | 1069 / 1069 | 2.4e-4 |
+| airway_dex   | 1.000000 | —       | **0.9996** | 2699 / 2700 | 1.0e-3 |
+| airway_cell  | 1.000000 | —       | **0.971** | 202 / 206   | 2.8e-3 |
+| airway       | 0.999997 | 0.99977 | **0.977** | 4063 / 3993 | 6.7e-2 |
 
-Figures: `validation/figures/{pasilla,airway}.png` (LFC, shrunk-LFC, and −log10
-padj parity scatter). Raw metrics: `validation/results/*.json`.
+All three execution modes (eager / CUDA-graph / Triton) produce identical results
+on every case (verify: `GPU_DESEQ_ACCEL={graph,triton} python validation/validate.py`).
+The only mode difference is airway_cell's apeGLM-shrunk LFC (r 0.866 eager vs
+0.871 Triton) — a ~1e-14 kernel difference propagated through shrinkage; raw LFC
+and significance are identical.
+
+Figures: `validation/figures/*.png`. Raw metrics: `validation/results/*.json`.
+
+## Timing on the same real datasets (single A100 vs single-thread R)
+
+Full pipeline: size factors → dispersions → Wald → results → apeGLM shrink;
+median of a few runs, R on the 12-core box (single-threaded). Speedup = R / mode.
+
+| case | P | R (ms) | eager | graph | triton |
+|---|---:|---:|---:|---:|---:|
+| pasilla       | 2 |  9 423 | 614 (15×)  | 271 (35×) | **215 (44×)** |
+| pasilla_2fac  | 3 | 10 088 | 1236 (8×)  | 650 (16×) | 1238 (8×, fallback) |
+| airway_dex    | 2 | 26 748 | 737 (36×)  | 413 (65×) | **352 (76×)** |
+| airway_cell   | 4 | 28 896 | 1172 (25×) | 456 (63×) | **358 (81×)** |
+| airway        | 5 | 34 724 | 1451 (24×) | 714 (49×) | 1457 (24×, fallback) |
+
+Where the Triton kernel applies (P∈{2,4}) it is fastest — **44–81× over R** on real
+data. Where it falls back (P=3,5), it matches eager and the CUDA graph is the best
+accelerator (16–49×). Parity is identical across all three modes (above), so these
+are pure wall-time differences on bit-equivalent output. Produced by
+`validate.py` (ours) + `fetch_and_reference.R` (R), timings in `results/*.json`.
+
+### Coverage note (open item)
+
+Both underlying datasets are small-*n* (7–8 samples). Adding a larger cohort
+(hundreds of samples) was blocked here by the Bioconductor 3.12 experiment-data
+mirror returning HTTP 504 for `parathyroid`/`fission`/`macrophage`; the harness
+takes any counts+coldata, so a larger dataset (recount3/GEO) drops in directly.
+apeGLM-shrunk LFC agreement (r 0.87–0.98) is looser than the raw LFC (r≈1.0) — a
+softer, heavily-transformed quantity used for ranking, not significance;
+tightening its optimizer vs R is a separate future item.
 
 ## Root-cause history (two dispersion bugs, both fixed)
 

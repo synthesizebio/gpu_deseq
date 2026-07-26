@@ -1,0 +1,34 @@
+{
+  "meta": {
+    "name": "pasilla_2fac",
+    "design": "~ type + condition",
+    "factor": "condition",
+    "ref": "untreated",
+    "nonref": "treated",
+    "coef": "condition_treated_vs_untreated",
+    "P": 3,
+    "n_samples": 7,
+    "n_genes": 12359,
+    "r_full_ms": 10088.5
+  },
+  "n_genes_compared": 12359,
+  "lfc_pearson": 0.9998576976819912,
+  "lfc_spearman": 0.999706818807526,
+  "lfc_p95_abs": 1.4553944597373025e-05,
+  "stat_pearson": 0.9999509525868774,
+  "pvalue_pearson": 0.9996732760313526,
+  "padj_p95_abs": 0.0001375309539842106,
+  "dispersion_p95_rel": 0.00023539774488991473,
+  "shrunk_lfc_pearson": 0.9286989487486982,
+  "shrunk_lfc_p95_abs": 0.26856594663019123,
+  "sig_jaccard_0.05": 1.0,
+  "sig_jaccard_0.10": 1.0,
+  "n_sig_ours_0.05": 1069,
+  "n_sig_r_0.05": 1069,
+  "timing_ms": {
+    "eager": 1236.0884530062322,
+    "graph": 650.2840839966666,
+    "triton": 1237.9547089949483
+  },
+  "r_full_ms": 10088.5
+}

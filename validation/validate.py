@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 
 import numpy as np
@@ -31,7 +32,9 @@ import matplotlib.pyplot as plt
 
 import sys
 sys.path.insert(0, "src")
+import torch
 from gpu_deseq import DESeqDataset, fit_size_factors, fit_dispersions, wald_test, results, lfc_shrink
+import gpu_deseq._deseq2_core as _core
 
 DATA = Path("validation/data")
 RESD = Path("validation/results"); RESD.mkdir(parents=True, exist_ok=True)
@@ -68,9 +71,8 @@ def run_case(name, device):
     meta = json.loads((d / "meta.json").read_text())
     counts = pd.read_csv(d / "counts.csv", index_col=0)
     coldata = pd.read_csv(d / "coldata.csv", index_col=0)
-    factor, ref = meta["factor"], meta["ref"]
+    factor, ref, nonref = meta["factor"], meta["ref"], meta["nonref"]
     levels = list(pd.unique(coldata[factor]))
-    nonref = [l for l in levels if l != ref][0]
     # base level first => formulaic uses it as reference, matching R's relevel().
     coldata[factor] = pd.Categorical(coldata[factor], categories=[ref] + [l for l in levels if l != ref])
     contrast = f"{factor}[T.{nonref}]"
@@ -119,9 +121,39 @@ def run_case(name, device):
         "n_sig_ours_0.05": int(sig(o_padj, 0.05).sum()),
         "n_sig_r_0.05": int(sig(r_padj, 0.05).sum()),
     }
+    report["timing_ms"] = _time_modes(counts, coldata, meta["design"], contrast, device, reps=5)
+    report["r_full_ms"] = meta.get("r_full_ms")
     _plot(name, o_lfc, r_lfc, o_slfc, r_slfc, o_padj, r_padj, report)
     (RESD / f"{name}.json").write_text(json.dumps(report, indent=2))
     return report
+
+
+def _time_modes(counts, coldata, design, contrast, device, reps=5):
+    """Median wall time (ms) of the full cuDESeq2 pipeline (size factors ->
+    dispersions -> Wald -> results -> apeGLM shrink) in each execution mode."""
+    def build():
+        return DESeqDataset(counts.to_numpy(np.float64), coldata, design=design,
+                            gene_ids=list(counts.index), sample_ids=list(counts.columns),
+                            backend="torch").to(device)
+
+    def run(kw):
+        d = build(); fit_size_factors(d); fit_dispersions(d, **kw)
+        f = wald_test(d, contrast=contrast); results(f); lfc_shrink(f, coeff=contrast)
+
+    out = {}
+    cuda = device == "cuda"
+    for mode, kw in [("eager", {}), ("graph", {"use_cuda_graph": True}), ("triton", {"use_triton": True})]:
+        _core._GRAPH_CACHE.clear()
+        run(kw)                                   # warm / compile / capture
+        if cuda: torch.cuda.synchronize()
+        ts = []
+        for _ in range(reps):
+            if cuda: torch.cuda.synchronize()
+            s = time.perf_counter(); run(kw)
+            if cuda: torch.cuda.synchronize()
+            ts.append(time.perf_counter() - s)
+        out[mode] = float(np.median(ts)) * 1e3
+    return out
 
 
 def _plot(name, o_lfc, r_lfc, o_slfc, r_slfc, o_padj, r_padj, rep):
@@ -157,16 +189,26 @@ def main():
     if not cases:
         sys.exit("No prepared datasets. Run: Rscript validation/fetch_and_reference.R")
     print(f"device={args.device}\n")
+    reports = {}
     for name in cases:
         r = run_case(name, args.device)
+        reports[name] = r
         print(f"=== {name}  ({r['meta']['design']}, {r['meta']['n_samples']} samples) ===")
         print(f"  raw LFC        Pearson r = {r['lfc_pearson']:.6f}   Spearman = {r['lfc_spearman']:.6f}   p95|Δ| = {r['lfc_p95_abs']:.2e}")
-        print(f"  Wald stat      Pearson r = {r['stat_pearson']:.6f}")
         print(f"  dispersion     p95 rel   = {r['dispersion_p95_rel']:.2e}")
-        print(f"  shrunk LFC     Pearson r = {r['shrunk_lfc_pearson']:.6f}   p95|Δ| = {r['shrunk_lfc_p95_abs']:.2e}")
-        print(f"  significance   Jaccard@0.05 = {r['sig_jaccard_0.05']:.4f}  @0.10 = {r['sig_jaccard_0.10']:.4f}"
+        print(f"  shrunk LFC     Pearson r = {r['shrunk_lfc_pearson']:.6f}")
+        print(f"  significance   Jaccard@0.05 = {r['sig_jaccard_0.05']:.4f}"
               f"   (sig: ours={r['n_sig_ours_0.05']}, R={r['n_sig_r_0.05']})")
         print(f"  figure -> validation/figures/{name}.png\n")
+
+    # Timing table: R (1-thread) vs cuDESeq2 eager/graph/triton, full pipeline.
+    print("full-pipeline wall time (ms) + speedup vs R (1-thread):")
+    print(f"  {'case':<14}{'P':>2}{'R 1-thr':>10}{'eager':>9}{'graph':>9}{'triton':>9}{'  triton×R':>10}")
+    for name in cases:
+        r = reports[name]; t = r["timing_ms"]; rf = r.get("r_full_ms")
+        sx = f"{rf / t['triton']:>8.1f}×" if rf else "     n/a"
+        rfs = f"{rf:>10.0f}" if rf else f"{'?':>10}"
+        print(f"  {name:<14}{r['meta'].get('P','?'):>2}{rfs}{t['eager']:>9.0f}{t['graph']:>9.0f}{t['triton']:>9.0f}{sx:>10}")
 
 
 def _cuda():

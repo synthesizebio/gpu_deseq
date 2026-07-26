@@ -4,9 +4,12 @@
     "design": "~ condition",
     "factor": "condition",
     "ref": "untreated",
+    "nonref": "treated",
     "coef": "condition_treated_vs_untreated",
+    "P": 2,
     "n_samples": 7,
-    "n_genes": 12359
+    "n_genes": 12359,
+    "r_full_ms": 9422.8
   },
   "n_genes_compared": 12359,
   "lfc_pearson": 0.9999999994828787,
@@ -21,5 +24,11 @@
   "sig_jaccard_0.05": 1.0,
   "sig_jaccard_0.10": 1.0,
   "n_sig_ours_0.05": 840,
-  "n_sig_r_0.05": 840
+  "n_sig_r_0.05": 840,
+  "timing_ms": {
+    "eager": 613.8792770070722,
+    "graph": 270.55740800278727,
+    "triton": 215.20392299862579
+  },
+  "r_full_ms": 9422.8
 }
