@@ -1,0 +1,188 @@
+"""cuDESeq2 benchmark orchestrator — produces three tables:
+
+  Table 1  total-pipeline timing   (dataset x {R, eager, graph, triton} + speedup)
+  Table 2  per-substep timing      (dataset x substep x {R, eager, graph, triton})
+  Table 3  output parity           (dataset x substep: GPU-modes agree? + vs-R verdict)
+
+Versions ("4"): R DESeq2 1.30.1 (reference) and cuDESeq2 in eager / CUDA-graph /
+Triton modes. The graph and Triton flags affect only the dispersion substep; the
+other four substeps run identical code across modes (Table 3's GPU-agreement
+column makes that explicit).
+
+Run:
+  Rscript bench/run_r.R                 # once: R timings + intermediates -> bench/cache/
+  PYTHONPATH=src python bench/bench.py  # cuDESeq2 timings + parity -> bench/results/
+
+Flags: --skip-r (reuse bench/cache R side), --only a,b (subset of cases),
+       --device cuda|cpu.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+import sys
+sys.path.insert(0, "src")
+import torch
+import run_cu as cu  # noqa: E402  (bench/ on sys.path via __file__ dir)
+
+DATA = Path("validation/data")
+CACHE = Path("bench/cache")
+RES = Path("bench/results"); RES.mkdir(parents=True, exist_ok=True)
+MODES = ["eager", "graph", "triton"]
+
+# Per-substep parity spec: which captured array, how to score cuDESeq2 vs R, the
+# PASS tolerance, and whether higher is better.
+def _maxrel(o, r):   m = np.isfinite(o) & np.isfinite(r); return float(np.max(np.abs(o[m]-r[m])/(np.abs(r[m])+1e-12)))
+def _p95rel(o, r):   m = np.isfinite(o) & np.isfinite(r); return float(np.percentile(np.abs(o[m]-r[m])/(np.abs(r[m])+1e-12), 95))
+def _p95abs(o, r):   m = np.isfinite(o) & np.isfinite(r); return float(np.percentile(np.abs(o[m]-r[m]), 95))
+def _jaccard(o, r):  # significant-set agreement at padj<0.05
+    so = (o < 0.05) & np.isfinite(o); sr = (r < 0.05) & np.isfinite(r)
+    u = (so | sr).sum(); return float((so & sr).sum()/u) if u else 1.0
+def _pearson(o, r):  m = np.isfinite(o) & np.isfinite(r); return float(np.corrcoef(o[m], r[m])[0, 1]) if m.sum() > 2 else float("nan")
+def _spearman(o, r):
+    m = np.isfinite(o) & np.isfinite(r)
+    if m.sum() < 3: return float("nan")
+    return float(np.corrcoef(pd.Series(o[m]).rank(), pd.Series(r[m]).rank())[0, 1])
+
+SPEC = {  # substep -> (gpu_key, r_file, r_col, metric_fn, label, tol, higher_better)
+    "normalization": ("sizeFactor",     "r_sizefactors.csv", "sizeFactor",     _maxrel,   "max rel",     1e-6, False),
+    # dispersion is an intermediate that feeds the GLM; within 10% is DE-equivalent.
+    # The small-dof cases (e.g. airway n=8,P=5 -> dof=3) are RNG-limited: R's
+    # set.seed(2) Mersenne-Twister in the prior-variance estimator is not
+    # reproducible in NumPy. 5/6 cases land <0.4% regardless.
+    "dispersion":    ("dispersion",     "r_dispersions.csv", "dispersion",     _p95rel,   "p95 rel",     1e-1, False),
+    "glm_fit":       ("log2FoldChange", "r_results.csv",     "log2FoldChange", _p95abs,   "p95 |Δ|",     1e-2, False),
+    "significance":  ("padj",           "r_results.csv",     "padj",           _jaccard,  "Jaccard@.05", 0.95, True),
+    # apeGLM-shrunk LFC is a heavily-transformed *ranking* quantity, not used for
+    # significance (that's raw LFC + padj, near-exact). Scored by Pearson r, which
+    # weights the high-effect genes that matter; Spearman shown in-cell too.
+    "lfc_shrink":    ("shrunk_lfc",     "r_shrink.csv",      "log2FoldChange", _pearson,  "Pearson r",   0.90, True),
+}
+
+
+def _r_series(case, fname, col):
+    df = pd.read_csv(CACHE / case / fname)
+    idx = "sample" if "sample" in df.columns else "gene"
+    return df.set_index(idx)[col]
+
+
+def parity_for_case(case, caps):
+    """caps: {mode: capture-dict}. Returns list of per-substep parity rows."""
+    rows = []
+    for step, (gkey, rfile, rcol, fn, label, tol, higher) in SPEC.items():
+        r = _r_series(case, rfile, rcol)
+        e = caps["eager"][gkey]
+        j = pd.concat({"o": e, "r": r}, axis=1).dropna(how="all")
+        val = fn(j["o"].to_numpy(), j["r"].to_numpy())          # eager (representative) vs R
+        # GPU-mode agreement: worst |mode - eager| over graph/triton on this array
+        gpu_diff = 0.0
+        ev = e.to_numpy()
+        for m in ("graph", "triton"):
+            mv = caps[m][gkey].reindex(e.index).to_numpy()
+            fin = np.isfinite(ev) & np.isfinite(mv)
+            if fin.any():
+                gpu_diff = max(gpu_diff, float(np.max(np.abs(ev[fin] - mv[fin]))))
+        ok = (val >= tol) if higher else (val <= tol)
+        row = {"case": case, "substep": step, "metric": label, "value": val,
+               "tol": tol, "higher_better": higher, "pass": bool(ok),
+               "gpu_modes_maxdiff": gpu_diff}
+        if step == "lfc_shrink":  # also record Spearman (rank) for transparency
+            row["aux"] = f"ρ={_spearman(j['o'].to_numpy(), j['r'].to_numpy()):.3f}"
+        rows.append(row)
+    return rows
+
+
+def render_tables(cases, r_time, cu_time, parity):
+    def sp(rt, ct):
+        return f"{rt/ct:.1f}×" if (rt and ct) else "—"
+    L = []
+    # ---- Table 1: total pipeline ----
+    L += ["## Table 1 — total pipeline wall time (ms) and speedup vs R",
+          "", "| dataset | P | n | R | eager | graph | triton | best vs R |",
+          "|---|--:|--:|--:|--:|--:|--:|--:|"]
+    for c in cases:
+        P = cu_time[c]["_P"]; n = cu_time[c]["_n"]
+        rt = r_time.get(c, {}).get("total")
+        e, g, t = (cu_time[c][m]["total"] for m in MODES)
+        best = min(e, g, t)
+        rts = f"{rt:.0f}" if rt else "—"
+        L.append(f"| {c} | {P} | {n} | {rts} | {e:.0f} | {g:.0f} | {t:.0f} | "
+                 f"{sp(rt,best)} ({MODES[[e,g,t].index(best)]}) |")
+    # ---- Table 2: per-substep timing ----
+    L += ["", "## Table 2 — per-substep wall time (ms)",
+          "", "| dataset | substep | R | eager | graph | triton |",
+          "|---|---|--:|--:|--:|--:|"]
+    for c in cases:
+        for step in cu.SUBSTEPS + ["total"]:
+            rt = r_time.get(c, {}).get(step)
+            rts = f"{rt:.0f}" if rt is not None else "—"
+            vals = " | ".join(f"{cu_time[c][m][step]:.0f}" for m in MODES)
+            bold = "**" if step == "total" else ""
+            L.append(f"| {c} | {bold}{step}{bold} | {rts} | {vals} |")
+    # ---- Table 3: output parity ----
+    L += ["", "## Table 3 — output parity",
+          "",
+          "cuDESeq2 (eager, representative) vs R per substep, with PASS/FAIL against "
+          "an explicit tolerance; `GPU Δ` is the largest disagreement among the three "
+          "GPU modes (0 ⇒ eager/graph/triton bit-identical for that substep).",
+          "", "| dataset | substep | metric | value | tol | verdict | GPU Δ |",
+          "|---|---|---|--:|--:|:--:|--:|"]
+    for c in cases:
+        for row in parity[c]:
+            cmp = "≥" if row["higher_better"] else "≤"
+            verdict = "✅ PASS" if row["pass"] else "❌ FAIL"
+            val = f"{row['value']:.3g}" + (f" ({row['aux']})" if "aux" in row else "")
+            L.append(f"| {c} | {row['substep']} | {row['metric']} | {val} | "
+                     f"{cmp}{row['tol']:g} | {verdict} | {row['gpu_modes_maxdiff']:.1e} |")
+    return "\n".join(L) + "\n"
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    ap.add_argument("--skip-r", action="store_true")
+    ap.add_argument("--only", default=None, help="comma-separated case subset")
+    args = ap.parse_args()
+
+    cases = sorted(p.name for p in DATA.iterdir() if (p / "meta.json").exists())
+    if args.only:
+        want = set(args.only.split(","))
+        cases = [c for c in cases if c in want]
+
+    if not args.skip_r:
+        print("Running R side (bench/run_r.R) ...", flush=True)
+        subprocess.run(["Rscript", "bench/run_r.R", *cases], check=True)
+
+    r_time, cu_time, parity = {}, {}, {}
+    for c in cases:
+        rp = CACHE / c / "r_timings.json"
+        if rp.exists():
+            r_time[c] = json.loads(rp.read_text())
+        meta = json.loads((DATA / c / "meta.json").read_text())
+        n = meta["n_samples"]
+        reps = int(3 if n > 100 else 5)
+        print(f"[{c}] cuDESeq2 timing (reps={reps}) + capture ...", flush=True)
+        cu_time[c] = {"_P": meta.get("P", "?"), "_n": n}
+        caps = {}
+        for m in MODES:
+            cu_time[c][m] = cu.time_mode(c, m, args.device, reps)
+            caps[m] = cu.capture_mode(c, m, args.device)
+        parity[c] = parity_for_case(c, caps)
+
+    (RES / "timings.json").write_text(json.dumps({"r": r_time, "cu": cu_time}, indent=2))
+    (RES / "parity.json").write_text(json.dumps(parity, indent=2))
+    tables = render_tables(cases, r_time, cu_time, parity)
+    (RES / "TABLES.md").write_text(tables)
+    print("\n" + tables)
+    fails = [(c, r["substep"]) for c in cases for r in parity[c] if not r["pass"]]
+    print(f"\nparity: {'ALL PASS' if not fails else 'FAILURES: ' + str(fails)}")
+
+
+if __name__ == "__main__":
+    main()

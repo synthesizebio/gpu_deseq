@@ -1,0 +1,320 @@
+{
+  "airway": [
+    {
+      "case": "airway",
+      "substep": "normalization",
+      "metric": "max rel",
+      "value": 4.1416183048968446e-15,
+      "tol": 1e-06,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.0
+    },
+    {
+      "case": "airway",
+      "substep": "dispersion",
+      "metric": "p95 rel",
+      "value": 0.06686196658397814,
+      "tol": 0.1,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 8.881784197001252e-15
+    },
+    {
+      "case": "airway",
+      "substep": "glm_fit",
+      "metric": "p95 |\u0394|",
+      "value": 0.004827032393438689,
+      "tol": 0.01,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 7.815970093361102e-14
+    },
+    {
+      "case": "airway",
+      "substep": "significance",
+      "metric": "Jaccard@.05",
+      "value": 0.9774177712322042,
+      "tol": 0.95,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 2.839395385478838e-13
+    },
+    {
+      "case": "airway",
+      "substep": "lfc_shrink",
+      "metric": "Pearson r",
+      "value": 0.9988334810210882,
+      "tol": 0.9,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.0328512534130141e-07,
+      "aux": "\u03c1=1.000"
+    }
+  ],
+  "airway_cell": [
+    {
+      "case": "airway_cell",
+      "substep": "normalization",
+      "metric": "max rel",
+      "value": 4.1416183048968446e-15,
+      "tol": 1e-06,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.0
+    },
+    {
+      "case": "airway_cell",
+      "substep": "dispersion",
+      "metric": "p95 rel",
+      "value": 0.002835590922775574,
+      "tol": 0.1,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 8.130767631397973e-08
+    },
+    {
+      "case": "airway_cell",
+      "substep": "glm_fit",
+      "metric": "p95 |\u0394|",
+      "value": 8.088202815216826e-05,
+      "tol": 0.01,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 4.3202710228729124e-09
+    },
+    {
+      "case": "airway_cell",
+      "substep": "significance",
+      "metric": "Jaccard@.05",
+      "value": 0.9710144927536232,
+      "tol": 0.95,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.2481590538904186e-08
+    },
+    {
+      "case": "airway_cell",
+      "substep": "lfc_shrink",
+      "metric": "Pearson r",
+      "value": 0.8656656306162569,
+      "tol": 0.9,
+      "higher_better": true,
+      "pass": false,
+      "gpu_modes_maxdiff": 4.965824677314173,
+      "aux": "\u03c1=0.996"
+    }
+  ],
+  "airway_dex": [
+    {
+      "case": "airway_dex",
+      "substep": "normalization",
+      "metric": "max rel",
+      "value": 4.1416183048968446e-15,
+      "tol": 1e-06,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.0
+    },
+    {
+      "case": "airway_dex",
+      "substep": "dispersion",
+      "metric": "p95 rel",
+      "value": 0.0010405662605654205,
+      "tol": 0.1,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 2.2860267456792371e-07
+    },
+    {
+      "case": "airway_dex",
+      "substep": "glm_fit",
+      "metric": "p95 |\u0394|",
+      "value": 2.503706333966786e-05,
+      "tol": 0.01,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.753824863115483e-09
+    },
+    {
+      "case": "airway_dex",
+      "substep": "significance",
+      "metric": "Jaccard@.05",
+      "value": 0.9996296296296296,
+      "tol": 0.95,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.520427176382455e-07
+    },
+    {
+      "case": "airway_dex",
+      "substep": "lfc_shrink",
+      "metric": "Pearson r",
+      "value": 0.9769106263794637,
+      "tol": 0.9,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 2.0312233086627884e-06,
+      "aux": "\u03c1=1.000"
+    }
+  ],
+  "gtex_blood_muscle": [
+    {
+      "case": "gtex_blood_muscle",
+      "substep": "normalization",
+      "metric": "max rel",
+      "value": 5.690190868151395e-15,
+      "tol": 1e-06,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.0
+    },
+    {
+      "case": "gtex_blood_muscle",
+      "substep": "dispersion",
+      "metric": "p95 rel",
+      "value": 0.0037126786099968547,
+      "tol": 0.1,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.2603959758848937
+    },
+    {
+      "case": "gtex_blood_muscle",
+      "substep": "glm_fit",
+      "metric": "p95 |\u0394|",
+      "value": 1.8107087738367073e-05,
+      "tol": 0.01,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.00012239744421860266
+    },
+    {
+      "case": "gtex_blood_muscle",
+      "substep": "significance",
+      "metric": "Jaccard@.05",
+      "value": 0.9905674547147706,
+      "tol": 0.95,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.001798470370123928
+    },
+    {
+      "case": "gtex_blood_muscle",
+      "substep": "lfc_shrink",
+      "metric": "Pearson r",
+      "value": 0.9999889062846175,
+      "tol": 0.9,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.005679741337576649,
+      "aux": "\u03c1=1.000"
+    }
+  ],
+  "pasilla": [
+    {
+      "case": "pasilla",
+      "substep": "normalization",
+      "metric": "max rel",
+      "value": 2.926098047964346e-15,
+      "tol": 1e-06,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.0
+    },
+    {
+      "case": "pasilla",
+      "substep": "dispersion",
+      "metric": "p95 rel",
+      "value": 0.000667198648995966,
+      "tol": 0.1,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.8968723691087375e-07
+    },
+    {
+      "case": "pasilla",
+      "substep": "glm_fit",
+      "metric": "p95 |\u0394|",
+      "value": 2.342118401322811e-05,
+      "tol": 0.01,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.3443008650693145e-09
+    },
+    {
+      "case": "pasilla",
+      "substep": "significance",
+      "metric": "Jaccard@.05",
+      "value": 1.0,
+      "tol": 0.95,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.8289657843229001e-06
+    },
+    {
+      "case": "pasilla",
+      "substep": "lfc_shrink",
+      "metric": "Pearson r",
+      "value": 0.982186730787311,
+      "tol": 0.9,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.357689331654699e-06,
+      "aux": "\u03c1=0.949"
+    }
+  ],
+  "pasilla_2fac": [
+    {
+      "case": "pasilla_2fac",
+      "substep": "normalization",
+      "metric": "max rel",
+      "value": 2.926098047964346e-15,
+      "tol": 1e-06,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.0
+    },
+    {
+      "case": "pasilla_2fac",
+      "substep": "dispersion",
+      "metric": "p95 rel",
+      "value": 0.00023539774488991473,
+      "tol": 0.1,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.7569432419345388e-08
+    },
+    {
+      "case": "pasilla_2fac",
+      "substep": "glm_fit",
+      "metric": "p95 |\u0394|",
+      "value": 1.4553944597373025e-05,
+      "tol": 0.01,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 3.1228887670264882e-09
+    },
+    {
+      "case": "pasilla_2fac",
+      "substep": "significance",
+      "metric": "Jaccard@.05",
+      "value": 1.0,
+      "tol": 0.95,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.4042285600979199e-06
+    },
+    {
+      "case": "pasilla_2fac",
+      "substep": "lfc_shrink",
+      "metric": "Pearson r",
+      "value": 0.9286989487486982,
+      "tol": 0.9,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 5.203103553563793e-07,
+      "aux": "\u03c1=0.694"
+    }
+  ]
+}

@@ -1,0 +1,234 @@
+{
+  "r": {
+    "airway": {
+      "case": "airway",
+      "reps": 3,
+      "normalization": 213.302,
+      "dispersion": 10422.724,
+      "glm_fit": 4738.41,
+      "significance": 364.738,
+      "lfc_shrink": 17717.111,
+      "total": 33456.286
+    },
+    "airway_cell": {
+      "case": "airway_cell",
+      "reps": 3,
+      "normalization": 200.581,
+      "dispersion": 5723.723,
+      "glm_fit": 4189.761,
+      "significance": 361.951,
+      "lfc_shrink": 17422.913,
+      "total": 27898.929
+    },
+    "airway_dex": {
+      "case": "airway_dex",
+      "reps": 3,
+      "normalization": 197.74,
+      "dispersion": 6211.643,
+      "glm_fit": 5665.509,
+      "significance": 1299.152,
+      "lfc_shrink": 12290.369,
+      "total": 25664.413
+    },
+    "gtex_blood_muscle": {
+      "case": "gtex_blood_muscle",
+      "reps": 1,
+      "normalization": 2953.721,
+      "dispersion": 231275.913,
+      "glm_fit": 42321.063,
+      "significance": 17864.851,
+      "lfc_shrink": 56019.58,
+      "total": 350435.127
+    },
+    "pasilla": {
+      "case": "pasilla",
+      "reps": 3,
+      "normalization": 175.401,
+      "dispersion": 2335.063,
+      "glm_fit": 2137.589,
+      "significance": 277.431,
+      "lfc_shrink": 4381.961,
+      "total": 9307.445
+    },
+    "pasilla_2fac": {
+      "case": "pasilla_2fac",
+      "reps": 3,
+      "normalization": 175.936,
+      "dispersion": 2791.035,
+      "glm_fit": 1501.656,
+      "significance": 240.3,
+      "lfc_shrink": 5636.685,
+      "total": 10345.612
+    }
+  },
+  "cu": {
+    "airway": {
+      "_P": 5,
+      "_n": 8,
+      "eager": {
+        "normalization": 0.9689269936643541,
+        "dispersion": 1137.9379409918329,
+        "glm_fit": 55.04457000643015,
+        "significance": 115.47530299867503,
+        "lfc_shrink": 135.953019009321,
+        "total": 1445.3797599999234
+      },
+      "graph": {
+        "normalization": 0.998012998024933,
+        "dispersion": 395.9553010063246,
+        "glm_fit": 53.59437999140937,
+        "significance": 117.97033100447152,
+        "lfc_shrink": 135.24727000913117,
+        "total": 703.7652950093616
+      },
+      "triton": {
+        "normalization": 0.9680570074124262,
+        "dispersion": 1133.171420005965,
+        "glm_fit": 55.51460199058056,
+        "significance": 116.68166499293875,
+        "lfc_shrink": 135.60693500039633,
+        "total": 1441.9426789972931
+      }
+    },
+    "airway_cell": {
+      "_P": 4,
+      "_n": 8,
+      "eager": {
+        "normalization": 0.9797550010262057,
+        "dispersion": 844.923894997919,
+        "glm_fit": 33.178768993820995,
+        "significance": 114.43587299436331,
+        "lfc_shrink": 170.17893299635034,
+        "total": 1163.6972249834798
+      },
+      "graph": {
+        "normalization": 0.9646339894970879,
+        "dispersion": 158.09861500747502,
+        "glm_fit": 32.601497005089186,
+        "significance": 113.46357098955195,
+        "lfc_shrink": 149.58643300633412,
+        "total": 454.71474999794737
+      },
+      "triton": {
+        "normalization": 0.9917529969243333,
+        "dispersion": 54.30559899832588,
+        "glm_fit": 32.893437004531734,
+        "significance": 114.28124699159525,
+        "lfc_shrink": 156.88214800320566,
+        "total": 359.35418399458285
+      }
+    },
+    "airway_dex": {
+      "_P": 2,
+      "_n": 8,
+      "eager": {
+        "normalization": 0.9824439912335947,
+        "dispersion": 428.97054700006265,
+        "glm_fit": 52.11731800227426,
+        "significance": 124.11666399566457,
+        "lfc_shrink": 113.09281599824317,
+        "total": 719.2797889874782
+      },
+      "graph": {
+        "normalization": 0.9650369902374223,
+        "dispersion": 109.20925599930342,
+        "glm_fit": 51.66912300046533,
+        "significance": 121.17794998630416,
+        "lfc_shrink": 111.30894999951124,
+        "total": 394.3303159758216
+      },
+      "triton": {
+        "normalization": 0.9713399922475219,
+        "dispersion": 51.824942987877876,
+        "glm_fit": 52.2656859975541,
+        "significance": 122.50226500327699,
+        "lfc_shrink": 112.43649099196773,
+        "total": 340.0007249729242
+      }
+    },
+    "gtex_blood_muscle": {
+      "_P": 2,
+      "_n": 300,
+      "eager": {
+        "normalization": 3.6941979924449697,
+        "dispersion": 3508.290268990095,
+        "glm_fit": 397.6835320063401,
+        "significance": 2754.555727005936,
+        "lfc_shrink": 399.62781699432526,
+        "total": 7063.851542989141
+      },
+      "graph": {
+        "normalization": 3.680982001242228,
+        "dispersion": 3622.667540999828,
+        "glm_fit": 415.3961209958652,
+        "significance": 2573.8915990077658,
+        "lfc_shrink": 397.2875839972403,
+        "total": 7012.923827001941
+      },
+      "triton": {
+        "normalization": 3.7008930084994063,
+        "dispersion": 200.0442610005848,
+        "glm_fit": 397.45250799751375,
+        "significance": 2571.143380002468,
+        "lfc_shrink": 397.21591900161,
+        "total": 3569.556961010676
+      }
+    },
+    "pasilla": {
+      "_P": 2,
+      "_n": 7,
+      "eager": {
+        "normalization": 1.0467289976077154,
+        "dispersion": 410.2234519959893,
+        "glm_fit": 35.796171010588296,
+        "significance": 60.46294099360239,
+        "lfc_shrink": 102.90797799825668,
+        "total": 610.4372709960444
+      },
+      "graph": {
+        "normalization": 1.0167129948968068,
+        "dispersion": 70.8366280014161,
+        "glm_fit": 35.76359699945897,
+        "significance": 59.52944500313606,
+        "lfc_shrink": 102.62419600621797,
+        "total": 269.7705790051259
+      },
+      "triton": {
+        "normalization": 1.0432929993839934,
+        "dispersion": 18.959413006086834,
+        "glm_fit": 36.10470901185181,
+        "significance": 60.80405099783093,
+        "lfc_shrink": 101.68752098979894,
+        "total": 218.5989870049525
+      }
+    },
+    "pasilla_2fac": {
+      "_P": 3,
+      "_n": 7,
+      "eager": {
+        "normalization": 0.9379479888593778,
+        "dispersion": 722.8725839959225,
+        "glm_fit": 326.2039409892168,
+        "significance": 58.08530199283268,
+        "lfc_shrink": 110.98698899149895,
+        "total": 1219.0867639583303
+      },
+      "graph": {
+        "normalization": 0.9554379939800128,
+        "dispersion": 161.95406499900855,
+        "glm_fit": 326.1890159919858,
+        "significance": 58.21078299777582,
+        "lfc_shrink": 105.47512299672235,
+        "total": 652.7844249794725
+      },
+      "triton": {
+        "normalization": 0.9754579950822517,
+        "dispersion": 729.6415769960731,
+        "glm_fit": 326.8659269961063,
+        "significance": 57.854643993778154,
+        "lfc_shrink": 111.66741099441424,
+        "total": 1227.005016975454
+      }
+    }
+  }
+}
