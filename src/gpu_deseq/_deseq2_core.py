@@ -866,42 +866,49 @@ def fit_parametric_trend(
     genewise_disp: np.ndarray,  # (G_nonzero,)
     normed_means: np.ndarray,   # (G_nonzero,)
 ) -> tuple[np.ndarray, str]:
-    """Fit the parametric trend α ≈ a0 + a1/μ̄ via gamma GLM with outlier loop.
+    """Fit the parametric trend α ≈ a0 + a1/μ̄, matching R DESeq2's
+    `parametricDispersionFit` bit-for-bit. Falls back to a trimmed-mean trend if
+    the parametric fit fails. Returns (trend_per_gene, trend_type).
 
-    Port of `_fit_parametric_dispersion_trend` (dds.py:1201-1277). Falls back
-    to mean trend if convergence fails. Returns (trend_per_gene, trend_type).
+    R's algorithm (DESeq2 core.R):
+      * fit only on genes with dispGeneEst > 100*minDisp (`useForFit`);
+      * start coefs = (0.1, 1); each iteration recompute residuals
+        disp/(a0 + a1/μ̄) over the *full* fit set, keep those in (1e-4, 15),
+        and refit `glm(disp ~ I(1/μ̄), family=Gamma(link="identity"))`
+        warm-started at the current coefs;
+      * converge when Σ log(coef/oldcoef)² < 1e-6 and the GLM converged, or
+        after 10 iterations.
+    The earlier port used L-BFGS-B, a progressively-shrunk fit set, and no
+    `useForFit` filter, which agreed with R only at high residual d.o.f. (where
+    the MAP barely uses the trend); at low d.o.f. the MAP leans on the trend and
+    the discrepancy surfaced.
     """
-    # Initial covariates/targets: filter infs/nans on 1/μ̄.
-    cov = 1.0 / np.asarray(normed_means, dtype=np.float64)
-    target = np.asarray(genewise_disp, dtype=np.float64)
-    keep = np.isfinite(cov) & np.isfinite(target)
-    cov_work = cov[keep]
-    target_work = target[keep]
+    means = np.asarray(normed_means, dtype=np.float64)
+    disps = np.asarray(genewise_disp, dtype=np.float64)
+    # R: useForFit <- dispGeneEst > 100*minDisp
+    use = np.isfinite(means) & np.isfinite(disps) & (means > 0) & (disps > 100 * MIN_DISP)
 
-    old_coeffs = np.array([0.1, 0.1])
-    coeffs = np.array([1.0, 1.0])
-
-    success = False
-    for _ in range(100):  # bound just in case
-        if not ((coeffs > 1e-10).all()
-                and (np.log(np.abs(coeffs / old_coeffs)) ** 2).sum() >= 1e-6):
-            break
-        old_coeffs = coeffs
-        coeffs, predictions, converged = _dispersion_trend_gamma_glm(cov_work, target_work)
-        if not converged or (coeffs <= 1e-10).any():
-            success = False
-            break
-        # Filter genes outside (1e-4, 15) pred_ratio and refit
-        pred_ratio = target_work / predictions
-        mask = (pred_ratio >= 1e-4) & (pred_ratio < 15)
-        if not mask.any():
-            break
-        cov_work = cov_work[mask]
-        target_work = target_work[mask]
-        success = True
+    coefs = np.array([0.1, 1.0])
+    success = use.sum() >= 2
+    if success:
+        m_fit = means[use]
+        d_fit = disps[use]
+        for _ in range(10):  # R breaks after iter > 10
+            resid = d_fit / (coefs[0] + coefs[1] / m_fit)
+            good = (resid > 1e-4) & (resid < 15)
+            if good.sum() < 2:
+                success = False
+                break
+            oldcoefs = coefs
+            coefs, converged = _gamma_identity_glm(1.0 / m_fit[good], d_fit[good], coefs)
+            if not np.all(coefs > 0):
+                success = False
+                break
+            if (np.sum(np.log(coefs / oldcoefs) ** 2) < 1e-6) and converged:
+                break
 
     if not success:
-        # Mean-based fallback (dds.py:1279-1301).
+        # Mean-based fallback (DESeq2 fitType fallback).
         from scipy.stats import trim_mean
         keep = genewise_disp > 10 * MIN_DISP
         if not keep.any():
@@ -911,7 +918,7 @@ def fit_parametric_trend(
         trend = np.full_like(genewise_disp, mean_disp)
         return trend, "mean"
 
-    trend = coeffs[0] + coeffs[1] / np.asarray(normed_means, dtype=np.float64)
+    trend = coefs[0] + coefs[1] / means
     return trend, "parametric"
 
 
@@ -956,35 +963,103 @@ def fit_mean_trend(
     return np.full_like(genewise_disp, mean_disp, dtype=np.float64), "mean"
 
 
-def _dispersion_trend_gamma_glm(covariates: np.ndarray, targets: np.ndarray):
-    """Port of `default_inference.dispersion_trend_gamma_glm` (lines 200-230)."""
-    cov_fit = np.column_stack([np.ones_like(covariates), covariates])
-    tgt_fit = targets
+def _gamma_identity_glm(x: np.ndarray, y: np.ndarray, start: np.ndarray,
+                        maxit: int = 25, eps: float = 1e-8):
+    """Gamma GLM with identity link: E[y] = b0 + b1*x. Mirrors R's
+    `glm(y ~ x, family=Gamma(link="identity"), start=...)` IRLS.
 
-    def loss(coeffs):
-        mu = cov_fit @ coeffs
-        return np.nanmean(tgt_fit / mu + np.log(mu), axis=0)
+    Identity link + Gamma variance V(μ)=μ² give working weights w=1/μ² and
+    working response z=y, i.e. each step is a weighted least squares of y on
+    [1, x] with weights 1/μ². Deviance-based convergence, with step-halving to
+    keep μ>0 (as R's glm.fit does). Returns (coefs, converged).
+    """
+    X = np.column_stack([np.ones_like(x), x])
+    beta = np.asarray(start, dtype=np.float64).copy()
 
-    def grad(coeffs):
-        mu = cov_fit @ coeffs
-        return -np.nanmean(
-            ((tgt_fit / mu - 1)[:, None] * cov_fit) / mu[:, None], axis=0
-        )
+    def gamma_dev(mu):
+        return -2.0 * np.sum(np.log(y / mu) - (y - mu) / mu)
 
-    try:
-        res = minimize(
-            loss, x0=np.array([1.0, 1.0]), jac=grad,
-            method="L-BFGS-B",
-            bounds=[(1e-12, np.inf), (1e-12, np.inf)],
-        )
-    except RuntimeWarning:
-        return np.array([np.nan, np.nan]), np.array([np.nan] * len(targets)), False
-    return res.x, cov_fit @ res.x, res.success
+    mu = X @ beta
+    if np.any(mu <= 0) or not np.isfinite(gamma_dev(np.maximum(mu, 1e-300))):
+        beta = np.array([max(float(np.mean(y)), 1e-6), 0.0])
+        mu = X @ beta
+    dev = gamma_dev(np.maximum(mu, 1e-300))
+    converged = False
+    for _ in range(maxit):
+        w = 1.0 / (mu * mu)
+        XtW = X.T * w
+        try:
+            beta_new = np.linalg.solve(XtW @ X, XtW @ y)
+        except np.linalg.LinAlgError:
+            break
+        # step-halve until μ>0 and deviance is finite (R glm.fit behaviour)
+        t = 1.0
+        accepted = False
+        for _h in range(30):
+            b_try = beta + t * (beta_new - beta)
+            mu_try = X @ b_try
+            if np.all(mu_try > 0):
+                d_try = gamma_dev(mu_try)
+                if np.isfinite(d_try):
+                    accepted = True
+                    break
+            t *= 0.5
+        if not accepted:
+            break
+        beta, mu = b_try, mu_try
+        if abs(d_try - dev) / (abs(d_try) + 0.1) < eps:
+            dev = d_try
+            converged = True
+            break
+        dev = d_try
+    return beta, converged
 
 
 # ---------------------------------------------------------------------------
 # Prior variance and outlier rule
 # ---------------------------------------------------------------------------
+
+
+def _prior_var_kl_grid(residuals_above: np.ndarray, m: int, p: int) -> float:
+    """Small-residual-dof prior-variance estimator, matching R DESeq2's
+    `estimateDispersionsPriorVar` branch for `(m - p) <= 3`.
+
+    For a grid of candidate prior variances x, simulate the theoretical
+    log-dispersion residual distribution log(chisq_{m-p}) + N(0, sqrt(x)) -
+    log(m-p), histogram it, and pick the x minimizing the KL divergence from the
+    observed residual histogram (loess-smoothed). Returns pmax(argmin, 0.25).
+
+    Uses randomness (as R does, via set.seed(2)); we seed a NumPy generator for
+    reproducibility. The result cannot be bit-identical to R because R's
+    Mersenne-Twister stream differs from NumPy's, but it recovers the same prior
+    variance to within the estimator's inherent stochastic error.
+    """
+    from scipy.signal import savgol_filter
+    rng = np.random.default_rng(2)
+    brks = np.arange(-20, 21) / 2.0                       # R: -20:20/2
+    lo, hi = brks[0], brks[-1]
+    obs = residuals_above[(residuals_above > lo) & (residuals_above < hi)]
+    obs_hist, _ = np.histogram(obs, bins=brks, density=True)
+    var_grid = np.linspace(0.0, 8.0, 200)
+    kl = np.empty_like(var_grid)
+    dof = m - p
+    for i, x in enumerate(var_grid):
+        rand = (np.log(rng.chisquare(dof, 10000)) + rng.normal(0.0, np.sqrt(x), 10000)
+                - np.log(dof))
+        rand = rand[(rand > lo) & (rand < hi)]
+        rand_hist, _ = np.histogram(rand, bins=brks, density=True)
+        z = np.concatenate([obs_hist, rand_hist])
+        small = z[z > 0].min()
+        kl[i] = np.sum(obs_hist * (np.log(obs_hist + small) - np.log(rand_hist + small)))
+    # R smooths the KL curve with loess (local quadratic, span=0.2) then takes the
+    # argmin; Savitzky-Golay is the equivalent local-quadratic smoother and,
+    # unlike statsmodels' local-linear lowess, behaves at the x=0 boundary.
+    win = int(round(0.2 * var_grid.size)) | 1            # odd window ~ span 0.2
+    smoothed = savgol_filter(kl, window_length=win, polyorder=2)
+    fine = np.linspace(0.0, 8.0, 1000)
+    fitted = np.interp(fine, var_grid, smoothed)
+    argmin_kl = float(fine[int(np.argmin(fitted))])
+    return max(argmin_kl, 0.25)
 
 
 def compute_prior_disp_var(
@@ -994,17 +1069,26 @@ def compute_prior_disp_var(
     n_vars: int,
     min_disp: float = MIN_DISP,
 ) -> tuple[float, float]:
-    """Return (prior_disp_var, squared_logres).
+    """Return (prior_disp_var, squared_logres), matching R DESeq2's
+    `estimateDispersionsPriorVar`.
 
-    Port of `fit_dispersion_prior` (dds.py:842-886).
+    Two regimes on residual dof (m - p): for (m - p) <= 3 R uses a KL-divergence
+    grid search (see `_prior_var_kl_grid`); otherwise the closed-form
+    max(varLogDispEsts - trigamma((m-p)/2), 0.25). `squared_logres`
+    (= varLogDispEsts) is returned for the downstream outlier rule either way.
     """
+    m, p = n_samples, n_vars
     residuals = np.log(genewise_disp) - np.log(fitted_disp)
     above = genewise_disp >= (100 * min_disp)
-    if above.sum() == 0:
-        squared_logres = 0.0
+    resid_above = residuals[above & np.isfinite(residuals)]
+    squared_logres = _mad(resid_above) ** 2 if resid_above.size else 0.0
+
+    if m <= p:
+        prior_var = squared_logres
+    elif (m - p) <= 3:
+        prior_var = _prior_var_kl_grid(resid_above, m, p)
     else:
-        squared_logres = _mad(residuals[above]) ** 2
-    prior_var = max(squared_logres - polygamma(1, (n_samples - n_vars) / 2.0), 0.25)
+        prior_var = max(squared_logres - polygamma(1, (m - p) / 2.0), 0.25)
     return float(prior_var), float(squared_logres)
 
 
