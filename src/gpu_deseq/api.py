@@ -409,14 +409,16 @@ def lfc_shrink(
         raise ValueError(f"unknown coefficient: {coeff}")
     shrink_index = fit.design_columns.index(coeff)
 
-    # Size factors: reconstruct from counts / normalized_counts (elementwise).
+    # Size factors per sample. counts[g,s]/normalized_counts[g,s] == sf[s] for
+    # EVERY gene with a nonzero count, so take the median over genes. Using a
+    # single gene (e.g. gene 0) is wrong: wherever that gene has a zero count the
+    # ratio is 0/0 and reads back as sf=1, corrupting the offset for that sample
+    # and mis-shrinking every gene (dataset-dependent, e.g. broke pasilla).
     assert fit.normalized_counts is not None
-    sf_col = torch.where(fit.normalized_counts[0] > 0,
-                         fit.counts[0] / fit.normalized_counts[0],
-                         torch.ones_like(fit.counts[0]))
-    # More robust: use any gene (pick the one with max minimum count).
-    # Since counts[g, s] / normed[g, s] == sf[s] by construction, any gene works.
-    size_factors = sf_col
+    ratio = torch.where(fit.normalized_counts > 0,
+                        fit.counts / fit.normalized_counts,
+                        torch.full_like(fit.counts, float("nan")))
+    size_factors = torch.nanmedian(ratio, dim=0).values
 
     # Estimate prior scale (empirical Bayes) using MLE LFCs at the shrink index.
     nz = torch.nonzero(fit.non_zero_mask, as_tuple=False).squeeze(-1)

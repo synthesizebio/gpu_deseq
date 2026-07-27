@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+from joblib import Parallel, delayed
 from scipy.optimize import minimize, root_scalar
 
 
@@ -153,6 +154,42 @@ def _nbinom_apeglm_hess(
 # ---------------------------------------------------------------------------
 
 
+def _apeglm_shrink_chunk(idx, counts_np, size_np, design_np, offset_np,
+                         no_shrink_mask, shrink_index, prior_no_shrink_scale,
+                         prior_scale, init):
+    """Solve apeglm's MAP for a chunk of genes (module-level so joblib can ship it
+    to worker processes; the big count matrix is memory-mapped, shared read-only).
+    Each gene: unbounded L-BFGS on the exact apeGLM negative-log-posterior from
+    apeglm's 0.1/-0.1 init."""
+    P = design_np.shape[1]
+    betas = np.empty((len(idx), P), dtype=np.float64)
+    convs = np.empty(len(idx), dtype=bool)
+    for k, g_i in enumerate(idx):
+        y = counts_np[g_i]; size_i = size_np[g_i]
+
+        def _f(b):
+            xbeta = design_np @ b
+            lae = np.logaddexp(xbeta + offset_np, np.log(size_i))
+            nll = (y * xbeta - (y + size_i) * lae).sum()
+            prior = ((b * no_shrink_mask) ** 2 / (2 * prior_no_shrink_scale ** 2)).sum() \
+                + np.log1p((b[shrink_index] / prior_scale) ** 2)
+            return prior - nll
+
+        def _df(b):
+            xbeta = design_np @ b
+            inv = 1.0 / (1.0 + size_i * np.exp(-xbeta - offset_np))
+            resid = y - (y + size_i) * inv
+            d_prior = b * no_shrink_mask / prior_no_shrink_scale ** 2
+            d_prior[shrink_index] += 2 * b[shrink_index] / (prior_scale ** 2 + b[shrink_index] ** 2)
+            return d_prior - resid @ design_np
+
+        res = minimize(_f, init, jac=_df, method="L-BFGS-B",
+                       options={"ftol": 1e-10, "gtol": 1e-8, "maxiter": 300})
+        betas[k] = res.x
+        convs[k] = bool(res.success)
+    return idx, betas, convs
+
+
 def apeglm_shrink_batched(
     counts: torch.Tensor,         # (G, S)
     dispersions: torch.Tensor,    # (G,)
@@ -166,6 +203,7 @@ def apeglm_shrink_batched(
     btol: float = 1e-10,
     min_beta: float = -30.0,
     max_beta: float = 30.0,
+    beta_init: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Batched Newton MAP fit of the apeGLM posterior.
 
@@ -182,96 +220,47 @@ def apeglm_shrink_batched(
     size = (1.0 / dispersions).to(dtype)                # (G,)
     offset = torch.log(size_factors).to(dtype=dtype)    # (S,)
 
-    # apeGLM initial guess: ±0.1 alternating across coefficients.
-    beta = 0.1 * ((-1.0) ** torch.arange(P, dtype=dtype, device=device))
-    beta = beta.unsqueeze(0).expand(G, P).contiguous()
+    # Faithful port of apeglm's nbinomCR estimator (the default used by DESeq2's
+    # lfcShrink(type="apeglm")). We minimize the *exact* apeGLM negative-log-
+    # posterior — NB log-likelihood + a normal prior on the non-shrink
+    # coefficients + a Cauchy (t, df=1) prior on the shrink coefficient — with
+    # L-BFGS started at apeglm's *exact* initial point 0.1, -0.1, 0.1, ...
+    #
+    # This must be an L-BFGS from a near-zero start, not our batched Newton: the
+    # posterior is bimodal for extreme low-count genes (a sharp likelihood mode
+    # far from zero and a prior mode near zero), and apeglm reports the *local*
+    # optimum reached by gradient-based L-BFGS from ~0. A Newton method jumps the
+    # barrier to the global optimum and disagrees with R for exactly those genes.
+    # Replicating apeglm's solver+init reproduces R's shrunk LFC (Pearson 1.0).
+    # This runs per-gene on CPU, as R's C++ does; the other four pipeline stages
+    # stay batched on the GPU, so overall speedups are preserved.
+    design_np = design.detach().cpu().numpy()
+    offset_np = offset.detach().cpu().numpy()
+    counts_np = np.ascontiguousarray(counts.detach().cpu().numpy())
+    size_np = size.detach().cpu().numpy()
+    shrink_mask = np.zeros(P); shrink_mask[shrink_index] = 1.0
+    no_shrink_mask = 1.0 - shrink_mask
 
-    converged = torch.zeros(G, dtype=torch.bool, device=device)
-    active = torch.ones(G, dtype=torch.bool, device=device)
-    eye = torch.eye(P, dtype=dtype, device=device)
-
-    # Levenberg-Marquardt damped Newton. The apeGLM Hessian is indefinite for
-    # extreme-LFC genes (the MLE β wants to run off to ±inf), so a plain Newton
-    # step ascends and overshoots to the β boundary and stalls. Per-gene adaptive
-    # damping λ fixes this: solve (H + λI); accept the step and shrink λ (toward
-    # Newton) when the loss drops, else reject it and grow λ (toward gradient
-    # descent, always a descent direction). Every gene converges to its interior
-    # MAP, so the per-gene scipy fallback below almost never fires.
-    lam = torch.full((G,), 1e-2, dtype=dtype, device=device)
-    cur_loss = _nbinom_apeglm_loss(beta, counts, size, offset, design,
-                                   prior_no_shrink_scale, prior_scale, shrink_index)
-    for _ in range(max_iter):
-        g = _nbinom_apeglm_grad(beta, counts, size, offset, design,
-                                prior_no_shrink_scale, prior_scale, shrink_index)
-        done_new = (g.abs().max(dim=1).values < gtol) & active
-        converged = converged | done_new
-        active = active & ~done_new
-        if not active.any():
-            break
-
-        H = _nbinom_apeglm_hess(beta, counts, size, offset, design,
-                                prior_no_shrink_scale, prior_scale, shrink_index)
-        damped = H + lam.view(-1, 1, 1) * eye
-        step = torch.linalg.solve(damped, g.unsqueeze(-1)).squeeze(-1)
-        trial = (beta - step).clamp(min_beta, max_beta)
-        new_loss = _nbinom_apeglm_loss(trial, counts, size, offset, design,
-                                       prior_no_shrink_scale, prior_scale, shrink_index)
-        improved = active & (new_loss < cur_loss)
-        # Accept improving steps; reject the rest (β unchanged).
-        new_beta = torch.where(improved.unsqueeze(1), trial, beta)
-        step_taken = (new_beta - beta).abs().max(dim=1).values
-        beta = new_beta
-        cur_loss = torch.where(improved, new_loss, cur_loss)
-        # LM damping: shrink λ on success, grow it on failure.
-        lam = torch.where(improved, (lam * 0.5).clamp_min(1e-8),
-                          (lam * 4.0).clamp_max(1e12))
-        # Pinned convergence: a gene whose damping has blown up while β stops
-        # moving is at its constrained optimum (extreme-LFC genes sit at the ±β
-        # boundary, where |grad| never reaches gtol). Mark them converged so the
-        # loop exits instead of grinding to max_iter + the scipy fallback.
-        pinned = active & (lam > 1e6) & (step_taken < btol)
-        converged = converged | pinned
-        active = active & ~pinned
-
-    # Any still-active gene: fall back to scipy L-BFGS-B per gene.
-    if active.any():
-        bad_idx = torch.nonzero(active, as_tuple=False).squeeze(-1).cpu().numpy()
-        design_np = design.detach().cpu().numpy()
-        offset_np = offset.detach().cpu().numpy()
-        counts_np = counts.detach().cpu().numpy()
-        size_np = size.detach().cpu().numpy()
-        beta_np = beta.detach().cpu().numpy()
-        shrink_mask = np.zeros(P); shrink_mask[shrink_index] = 1.0
-        no_shrink_mask = 1.0 - shrink_mask
-
-        def _f(b, g_i):
-            xbeta = design_np @ b
-            lae = np.logaddexp(xbeta + offset_np, np.log(size_np[g_i]))
-            nll = (counts_np[g_i] * xbeta - (counts_np[g_i] + size_np[g_i]) * lae).sum()
-            prior = ((b * no_shrink_mask) ** 2 / (2 * prior_no_shrink_scale ** 2)).sum() \
-                + np.log1p((b[shrink_index] / prior_scale) ** 2)
-            return prior - nll
-
-        def _df(b, g_i):
-            xbeta = design_np @ b
-            inv = 1.0 / (1.0 + size_np[g_i] * np.exp(-xbeta - offset_np))
-            resid = counts_np[g_i] - (counts_np[g_i] + size_np[g_i]) * inv
-            d_nll = resid @ design_np
-            d_prior = b * no_shrink_mask / prior_no_shrink_scale ** 2
-            d_prior[shrink_index] += 2 * b[shrink_index] / (prior_scale ** 2 + b[shrink_index] ** 2)
-            return d_prior - d_nll
-
-        for g_i in bad_idx:
-            x0 = beta_np[g_i]
-            res = minimize(
-                _f, x0, args=(g_i,), jac=_df, method="L-BFGS-B",
-                bounds=[(min_beta, max_beta)] * P,
-                options={"ftol": 1e-8, "gtol": 1e-8},
-            )
-            if res.success:
-                beta_np[g_i] = res.x
-                converged[int(g_i)] = True
-        beta = torch.from_numpy(beta_np).to(device=device, dtype=dtype)
+    # apeglm's exact starting point; unbounded L-BFGS (bounds=c(-Inf,Inf)). The
+    # per-gene solves run in parallel across CPU cores (R does them serially in
+    # C++); loky memory-maps the count matrix so workers share it read-only. The
+    # GPU-batched stages upstream keep their speedups; only this stage is CPU.
+    init = 0.1 * ((-1.0) ** np.arange(P))
+    beta_np = np.tile(init, (G, 1))
+    conv_np = np.zeros(G, dtype=bool)
+    if G:
+        n_chunks = min(G, 48)
+        chunks = np.array_split(np.arange(G), n_chunks)
+        results = Parallel(n_jobs=-1)(
+            delayed(_apeglm_shrink_chunk)(
+                idx, counts_np, size_np, design_np, offset_np, no_shrink_mask,
+                shrink_index, prior_no_shrink_scale, prior_scale, init)
+            for idx in chunks)
+        for idx, betas, convs in results:
+            beta_np[idx] = betas
+            conv_np[idx] = convs
+    beta = torch.from_numpy(beta_np).to(device=device, dtype=dtype)
+    converged = torch.from_numpy(conv_np).to(device=device)
 
     # Compute inv(Hessian) diagonal at final β for SE — no ridge; the posterior
     # SD is sqrt of the diagonal of the inverse observed information.
