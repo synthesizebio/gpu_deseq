@@ -9,3 +9,6 @@ dist/
 build/
 *.egg-info/
 bench/cache/
+
+# per-user Claude Code overrides; the shared .claude/ config is tracked
+.claude/settings.local.json
