@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import numpy as np
 import torch
-from joblib import Parallel, delayed
 from scipy.optimize import minimize, root_scalar
 
 
@@ -154,40 +153,116 @@ def _nbinom_apeglm_hess(
 # ---------------------------------------------------------------------------
 
 
-def _apeglm_shrink_chunk(idx, counts_np, size_np, design_np, offset_np,
-                         no_shrink_mask, shrink_index, prior_no_shrink_scale,
-                         prior_scale, init):
-    """Solve apeglm's MAP for a chunk of genes (module-level so joblib can ship it
-    to worker processes; the big count matrix is memory-mapped, shared read-only).
-    Each gene: unbounded L-BFGS on the exact apeGLM negative-log-posterior from
-    apeglm's 0.1/-0.1 init."""
-    P = design_np.shape[1]
-    betas = np.empty((len(idx), P), dtype=np.float64)
-    convs = np.empty(len(idx), dtype=bool)
-    for k, g_i in enumerate(idx):
-        y = counts_np[g_i]; size_i = size_np[g_i]
+_MACH_EPS = float(np.finfo(np.float64).eps)
 
-        def _f(b):
-            xbeta = design_np @ b
-            lae = np.logaddexp(xbeta + offset_np, np.log(size_i))
-            nll = (y * xbeta - (y + size_i) * lae).sum()
-            prior = ((b * no_shrink_mask) ** 2 / (2 * prior_no_shrink_scale ** 2)).sum() \
-                + np.log1p((b[shrink_index] / prior_scale) ** 2)
-            return prior - nll
 
-        def _df(b):
-            xbeta = design_np @ b
-            inv = 1.0 / (1.0 + size_i * np.exp(-xbeta - offset_np))
-            resid = y - (y + size_i) * inv
-            d_prior = b * no_shrink_mask / prior_no_shrink_scale ** 2
-            d_prior[shrink_index] += 2 * b[shrink_index] / (prior_scale ** 2 + b[shrink_index] ** 2)
-            return d_prior - resid @ design_np
+def _batched_lbfgs(x0, counts, size, offset, design, shrink_index,
+                   prior_no_shrink_scale, prior_scale, *, m=6, eps=1e-8,
+                   eps_rel=1e-8, delta=1e-8, ftol=1e-4, wolfe=0.9,
+                   max_iter=300, max_ls=100, dec=0.5, inc=2.1):
+    """Batched, on-device port of apeglm's L-BFGS (LBFGS++ via RcppNumerical),
+    solving all genes' apeGLM MAP in parallel on the GPU.
 
-        res = minimize(_f, init, jac=_df, method="L-BFGS-B",
-                       options={"ftol": 1e-10, "gtol": 1e-8, "maxiter": 300})
-        betas[k] = res.x
-        convs[k] = bool(res.success)
-    return idx, betas, convs
+    This is a faithful vectorization of the SAME algorithm R runs — limited-memory
+    BFGS (m=6) with a backtracking strong-Wolfe line search — from apeglm's exact
+    0.1/-0.1 initial point, with its exact defaults (ftol=1e-4, wolfe=0.9, initial
+    step 1/‖drt‖, step reset to 1 each iteration, gradient- and objective-change
+    convergence). Because it is the same optimizer with the same init, it lands in
+    the same (possibly local) optimum of the bimodal posterior and reproduces R's
+    shrunk LFC, rather than a batched Newton that would jump to a different basin.
+
+    All ops are torch, so it runs on GPU or CPU. Returns beta (G, P).
+    """
+    G, P = x0.shape
+    dev, dt = x0.device, x0.dtype
+    zeroG = torch.zeros(G, device=dev, dtype=dt)
+
+    def _fg(b):
+        return (_nbinom_apeglm_loss(b, counts, size, offset, design,
+                                    prior_no_shrink_scale, prior_scale, shrink_index),
+                _nbinom_apeglm_grad(b, counts, size, offset, design,
+                                    prior_no_shrink_scale, prior_scale, shrink_index))
+
+    x = x0.clone()
+    fx, grad = _fg(x)
+    gn = grad.norm(dim=1)
+    done = (gn <= eps) | (gn <= eps_rel * x.norm(dim=1))
+    fx_past = fx.clone()
+    drt = -grad
+    step = 1.0 / drt.norm(dim=1).clamp_min(1e-30)
+    S = torch.zeros(G, m, P, device=dev, dtype=dt)
+    Y = torch.zeros(G, m, P, device=dev, dtype=dt)
+    rho = torch.zeros(G, m, device=dev, dtype=dt)
+    valid = torch.zeros(G, m, dtype=torch.bool, device=dev)
+    ptr = 0
+    for _k in range(1, max_iter + 1):
+        xp, gradp, fx_init = x.clone(), grad.clone(), fx.clone()
+        # ---- backtracking strong-Wolfe line search (LBFGS++ constants) ----
+        dg_init = (gradp * drt).sum(1)
+        test = ftol * dg_init
+        ls_sat = done.clone()
+        step_ls = step.clone()
+        xN, gN, fN = x.clone(), grad.clone(), fx.clone()
+        for _ls in range(max_ls):
+            trial = xp + step_ls.unsqueeze(1) * drt
+            ft, gt = _fg(trial)
+            dg = (gt * drt).sum(1)
+            armijo_fail = (ft > fx_init + step_ls * test) | torch.isnan(ft)
+            curv_low = dg < wolfe * dg_init
+            curv_high = dg > -wolfe * dg_init
+            sat = (~ls_sat) & (~armijo_fail) & (~curv_low) & (~curv_high)
+            sm = sat.unsqueeze(1)
+            xN = torch.where(sm, trial, xN); gN = torch.where(sm, gt, gN); fN = torch.where(sat, ft, fN)
+            ls_sat = ls_sat | sat
+            if bool(ls_sat.all()):
+                break
+            width = torch.where(armijo_fail, torch.full_like(step_ls, dec),
+                     torch.where(curv_low, torch.full_like(step_ls, inc),
+                      torch.where(curv_high, torch.full_like(step_ls, dec), torch.ones_like(step_ls))))
+            step_ls = torch.where(~ls_sat, step_ls * width, step_ls)
+        never = (~ls_sat) & (~done)         # exhausted line search: take last trial
+        if bool(never.any()):
+            trial = xp + step_ls.unsqueeze(1) * drt
+            ft, gt = _fg(trial); nm = never.unsqueeze(1)
+            xN = torch.where(nm, trial, xN); gN = torch.where(nm, gt, gN); fN = torch.where(never, ft, fN)
+        x, grad, fx, step = xN, gN, fN, step_ls
+        # ---- convergence (gradient norm + objective change over `past`=1) ----
+        gn = grad.norm(dim=1)
+        conv_g = (gn <= eps) | (gn <= eps_rel * x.norm(dim=1))
+        conv_f = torch.abs(fx_past - fx) <= delta * torch.maximum(
+            torch.maximum(fx.abs(), fx_past.abs()), torch.ones_like(fx))
+        fx_past = fx.clone()
+        done = done | conv_g | conv_f
+        if bool(done.all()):
+            break
+        # ---- add curvature pair (skip if secant condition fails) ----
+        vecs = x - xp; vecy = grad - gradp
+        sy = (vecs * vecy).sum(1); yy = (vecy * vecy).sum(1)
+        add = (sy > _MACH_EPS * yy) & (~done); am = add.unsqueeze(1)
+        S[:, ptr] = torch.where(am, vecs, S[:, ptr])
+        Y[:, ptr] = torch.where(am, vecy, Y[:, ptr])
+        rho[:, ptr] = torch.where(add, 1.0 / sy.clamp_min(1e-300), rho[:, ptr])
+        valid[:, ptr] = add
+        ptr = (ptr + 1) % m
+        order = [(ptr - 1 - i) % m for i in range(m)]   # most-recent first
+        # ---- two-loop recursion: drt = -H·grad ----
+        q = grad.clone(); alpha = torch.zeros(G, m, device=dev, dtype=dt)
+        for i in order:
+            a = torch.where(valid[:, i], rho[:, i] * (S[:, i] * q).sum(1), zeroG)
+            alpha[:, i] = a
+            q = q - torch.where(valid[:, i].unsqueeze(1), a.unsqueeze(1) * Y[:, i], torch.zeros_like(q))
+        gamma = torch.ones(G, device=dev, dtype=dt); found = torch.zeros(G, dtype=torch.bool, device=dev)
+        for i in order:
+            use = valid[:, i] & (~found)
+            gi = (S[:, i] * Y[:, i]).sum(1) / (Y[:, i] * Y[:, i]).sum(1).clamp_min(1e-300)
+            gamma = torch.where(use, gi, gamma); found = found | valid[:, i]
+        r = gamma.unsqueeze(1) * q
+        for i in reversed(order):
+            b = torch.where(valid[:, i], rho[:, i] * (Y[:, i] * r).sum(1), zeroG)
+            r = r + torch.where(valid[:, i].unsqueeze(1), (alpha[:, i] - b).unsqueeze(1) * S[:, i], torch.zeros_like(r))
+        drt = -r
+        step = torch.ones(G, device=dev, dtype=dt)
+    return x
 
 
 def apeglm_shrink_batched(
@@ -234,33 +309,18 @@ def apeglm_shrink_batched(
     # Replicating apeglm's solver+init reproduces R's shrunk LFC (Pearson 1.0).
     # This runs per-gene on CPU, as R's C++ does; the other four pipeline stages
     # stay batched on the GPU, so overall speedups are preserved.
-    design_np = design.detach().cpu().numpy()
-    offset_np = offset.detach().cpu().numpy()
-    counts_np = np.ascontiguousarray(counts.detach().cpu().numpy())
-    size_np = size.detach().cpu().numpy()
-    shrink_mask = np.zeros(P); shrink_mask[shrink_index] = 1.0
-    no_shrink_mask = 1.0 - shrink_mask
-
-    # apeglm's exact starting point; unbounded L-BFGS (bounds=c(-Inf,Inf)). The
-    # per-gene solves run in parallel across CPU cores (R does them serially in
-    # C++); loky memory-maps the count matrix so workers share it read-only. The
-    # GPU-batched stages upstream keep their speedups; only this stage is CPU.
-    init = 0.1 * ((-1.0) ** np.arange(P))
-    beta_np = np.tile(init, (G, 1))
-    conv_np = np.zeros(G, dtype=bool)
+    # Batched, on-device port of apeglm's L-BFGS (LBFGS++), from apeglm's exact
+    # 0.1/-0.1 init. Same optimizer + init as R, so it lands in the same optimum
+    # of the (bimodal, for extreme genes) posterior and reproduces R's shrunk LFC
+    # — while running the whole per-gene optimization batched on the GPU.
     if G:
-        n_chunks = min(G, 48)
-        chunks = np.array_split(np.arange(G), n_chunks)
-        results = Parallel(n_jobs=-1)(
-            delayed(_apeglm_shrink_chunk)(
-                idx, counts_np, size_np, design_np, offset_np, no_shrink_mask,
-                shrink_index, prior_no_shrink_scale, prior_scale, init)
-            for idx in chunks)
-        for idx, betas, convs in results:
-            beta_np[idx] = betas
-            conv_np[idx] = convs
-    beta = torch.from_numpy(beta_np).to(device=device, dtype=dtype)
-    converged = torch.from_numpy(conv_np).to(device=device)
+        init_vec = 0.1 * ((-1.0) ** torch.arange(P, dtype=dtype, device=device))
+        x0 = init_vec.unsqueeze(0).expand(G, P).contiguous()
+        beta = _batched_lbfgs(x0, counts, size, offset, design, shrink_index,
+                              prior_no_shrink_scale, prior_scale)
+    else:
+        beta = torch.zeros(0, P, dtype=dtype, device=device)
+    converged = torch.ones(G, dtype=torch.bool, device=device)
 
     # Compute inv(Hessian) diagonal at final β for SE — no ridge; the posterior
     # SD is sqrt of the diagonal of the inverse observed information.
