@@ -385,7 +385,9 @@ def _lp_and_dlp(
     log_alpha: torch.Tensor,  # (G,)
     *,
     log_alpha_prior_mean: torch.Tensor | None = None,  # (G,) for usePrior=True
-    log_alpha_prior_sigmasq: float | None = None,
+    # 0-dim tensor, not a float: `t / float` lowers to reciprocal-multiply and
+    # would diverge by 1 ulp from the captured-graph path. See _r_fit_alpha_mle.
+    log_alpha_prior_sigmasq: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Cox-Reid log-posterior and its gradient w.r.t. log α — analytical
     port of DESeq2 src/DESeq2.cpp::log_posterior + dlog_posterior with
@@ -683,18 +685,24 @@ def _r_fit_alpha_mle(
     step_scalars = dict(eps=eps, log_lo=log_lo, log_hi=log_hi, dispTol=dispTol,
                         min_log_alpha=min_log_alpha, kappa_0=kappa_0)
 
+    # prior_sigmasq is a 0-dim tensor in BOTH paths: the captured graph needs it
+    # as a buffer (so one graph serves datasets with different prior variance),
+    # and the eager path must use the same operand type or the two paths stop
+    # being bit-identical. `t / python_float` lowers to a reciprocal-multiply
+    # while `t / 0-dim tensor` is a true divide, and they differ by 1 ulp on ~40%
+    # of elements — amplified over the MAP loop's iterations to ~1e-6 relative.
+    # True division is also what R's C++ does.
+    prior_sig_t = (torch.as_tensor(log_alpha_prior_sigmasq, dtype=dtype, device=device)
+                   if log_alpha_prior_sigmasq is not None else None)
+
     if use_cuda_graph and counts.is_cuda:
-        # Captured fixed-iteration path. prior_sigmasq becomes a 0-dim tensor so
-        # one graph is reusable across datasets with different prior variance.
-        prior_sig_t = (torch.as_tensor(log_alpha_prior_sigmasq, dtype=dtype, device=device)
-                       if log_alpha_prior_sigmasq is not None else None)
         a, lp, iter_count, initial_lp = _run_captured_nr(
             counts, mu, design, alpha_init_clip, log_alpha_prior_mean,
             prior_sig_t, maxit=maxit, **step_scalars)
     else:
         # Eager path with early exit — bit-for-bit the reference loop.
         prior_mean = log_alpha_prior_mean
-        prior_sig = log_alpha_prior_sigmasq
+        prior_sig = prior_sig_t
         a = torch.log(alpha_init_clip).clamp(log_lo, log_hi).clone()
         lp, dlp = _lp_and_dlp(counts, mu, design, a,
                               log_alpha_prior_mean=prior_mean,
