@@ -33,7 +33,7 @@
 \textbf{Require:}\;
 counts $\mathbf{Y}\in\mathbb{N}_0^{G\times S}$;
 fitted means $\boldsymbol{\mu}\in\mathbb{R}_{+}^{G\times S}$;
-design $\mathbf{X}\in\mathbb{R}^{S\times P}$, $P\in\{2,4\}$;
+design $\mathbf{X}\in\mathbb{R}^{S\times P}$, $P\in\{2,\dots,6\}$;
 initial dispersions $\boldsymbol{\alpha}^{(0)}\in\mathbb{R}_{+}^{G}$;
 compile-time $h\equiv\textsc{HasPrior}$; prior means $\mathbf{m}$ and variance
 $\sigma^2$ when $h=1$; initial step bound $\kappa_0$.
@@ -99,7 +99,7 @@ optimized log dispersions $\mathbf{a}$ and iteration counts $\mathbf{c}$.
   -\tfrac12\log\det(\mathbf{B})$.}
 \tritonLine[1.2em]{Compute $q\leftarrow\partial\ell/\partial a$, including
   $\operatorname{tr}\!\left(\mathbf{B}^{-1}\partial\mathbf{B}/\partial\alpha\right)$
-  via an unrolled $2{\times}2$ formula or $4{\times}4$ LU solve.}
+  via an unrolled $2{\times}2$ formula ($P{=}2$) or $P{\times}P$ LU solve.}
 \tritonLine[1.2em]{\textbf{if} $h=1$ \textbf{then}\quad
   $\ell\leftarrow\ell-(a-m)^2/(2\sigma^2)$ and
   $q\leftarrow q-(a-m)/\sigma^2$.\hfill{\normalfont\scriptsize(MAP only)}}

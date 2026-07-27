@@ -47,12 +47,29 @@ Outputs (committed): `bench/results/TABLES.md` (the three tables),
   it. (This is why the total-pipeline speedup is bounded by the non-dispersion
   substeps — see `lfc_shrink`, the largest remaining cost on small-*n* sets.)
 
-- **The three GPU modes are bit-identical to each other**, so Table 3 reports
-  cuDESeq2-vs-R once (eager, representative) plus a `GPU Δ` column = the largest
-  disagreement among eager/graph/triton for that substep. `GPU Δ ≈ 0` confirms
-  the modes agree; the only non-trivial entry is `lfc_shrink`, where a ~1e-14
-  dispersion-kernel difference can be amplified by aggressive shrinkage on a few
-  near-degenerate genes.
+- **The Triton kernel covers P ∈ {2,...,6}, so it runs on all six datasets.** Wider
+  designs fall back to eager, and the harness would then report a Triton
+  dispersion time equal to eager rather than an error. Earlier tables showed
+  exactly that for `airway` (P=5) and `pasilla_2fac` (P=3), which predate the
+  kernel covering odd P — worth knowing when comparing against an older run.
+
+- **Absolute timings shift 10–25% between sessions**, and the first dataset timed
+  in a run pays CUDA/JIT warmup (`airway`, alphabetically first, is the usual
+  victim). All six datasets are timed in one session on an otherwise idle GPU, so
+  mode-vs-mode comparisons within a row are sound; do not read cross-run deltas on
+  substeps that no mode flag touches (`glm_fit`, `lfc_shrink`) as regressions. Run
+  nothing else on the GPU while benchmarking.
+
+- **The graph mode is bit-identical to eager; Triton is deliberately not.** Table 3
+  reports cuDESeq2-vs-R once (eager, representative) plus a `GPU Δ` column = the
+  largest disagreement among eager/graph/triton for that substep. Graph replay
+  contributes exactly 0 to that column on every substep. Triton re-derives the
+  same mathematics in registers with a different reduction order and a
+  hand-written `digamma`, so it agrees with eager to ~1e-7 in dispersion on the
+  five small-*n* sets, with a worst case of 2.6e-1 relative on one `gtex` gene
+  (a gene at the dispersion-grid boundary) and 5.7e-3 absolute in the shrunk LFC,
+  where aggressive shrinkage on a few near-degenerate genes amplifies a last-bit
+  dispersion difference. No PASS verdict or DE call changes.
 
 - **Equivalence vs R is tolerance-based**, not bit-exact: floating-point order and
   R's Mersenne-Twister RNG (used in the small-dof prior-variance estimator) can't

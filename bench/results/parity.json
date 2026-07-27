@@ -19,7 +19,7 @@
       "tol": 0.1,
       "higher_better": false,
       "pass": true,
-      "gpu_modes_maxdiff": 8.881784197001252e-15,
+      "gpu_modes_maxdiff": 9.783545529273852e-08,
       "pj_value": 0.4085804005023479
     },
     {
@@ -30,7 +30,7 @@
       "tol": 0.01,
       "higher_better": false,
       "pass": true,
-      "gpu_modes_maxdiff": 7.815970093361102e-14,
+      "gpu_modes_maxdiff": 1.8435961063323347e-08,
       "pj_value": 0.03594545917547447
     },
     {
@@ -41,18 +41,18 @@
       "tol": 0.95,
       "higher_better": true,
       "pass": true,
-      "gpu_modes_maxdiff": 2.839395385478838e-13,
+      "gpu_modes_maxdiff": 8.717679724767891e-07,
       "pj_value": 0.9145631067961165
     },
     {
       "case": "airway",
       "substep": "lfc_shrink",
       "metric": "Pearson r",
-      "value": 0.999840847337138,
+      "value": 0.9998408473371384,
       "tol": 0.9,
       "higher_better": true,
       "pass": true,
-      "gpu_modes_maxdiff": 8.392803327317289e-10,
+      "gpu_modes_maxdiff": 0.00010024096362788899,
       "pj_value": 0.9883399505965765,
       "aux": "\u03c1=1.000"
     }
@@ -73,22 +73,22 @@
       "case": "airway_cell",
       "substep": "dispersion",
       "metric": "p95 rel",
-      "value": 0.002835590922775574,
+      "value": 0.0028355909228399995,
       "tol": 0.1,
       "higher_better": false,
       "pass": true,
-      "gpu_modes_maxdiff": 8.130767631397973e-08,
+      "gpu_modes_maxdiff": 6.109679898114173e-08,
       "pj_value": 0.21183037316986705
     },
     {
       "case": "airway_cell",
       "substep": "glm_fit",
       "metric": "p95 |\u0394|",
-      "value": 8.088202815216826e-05,
+      "value": 8.088202815126898e-05,
       "tol": 0.01,
       "higher_better": false,
       "pass": true,
-      "gpu_modes_maxdiff": 4.3202710228729124e-09,
+      "gpu_modes_maxdiff": 2.8655296954727127e-09,
       "pj_value": 0.01312444082261609
     },
     {
@@ -99,18 +99,18 @@
       "tol": 0.95,
       "higher_better": true,
       "pass": true,
-      "gpu_modes_maxdiff": 1.2481590538904186e-08,
+      "gpu_modes_maxdiff": 1.248174352763698e-08,
       "pj_value": 0.9013452914798207
     },
     {
       "case": "airway_cell",
       "substep": "lfc_shrink",
       "metric": "Pearson r",
-      "value": 0.9972229120995819,
+      "value": 0.9972229120852818,
       "tol": 0.9,
       "higher_better": true,
       "pass": true,
-      "gpu_modes_maxdiff": 0.00016746466795053666,
+      "gpu_modes_maxdiff": 0.00016739393359129078,
       "pj_value": 0.9598780578585675,
       "aux": "\u03c1=0.996"
     }
@@ -164,11 +164,11 @@
       "case": "airway_dex",
       "substep": "lfc_shrink",
       "metric": "Pearson r",
-      "value": 0.9985921982455639,
+      "value": 0.9985921982455638,
       "tol": 0.9,
       "higher_better": true,
       "pass": true,
-      "gpu_modes_maxdiff": 8.038817403410725e-07,
+      "gpu_modes_maxdiff": 8.038817403549503e-07,
       "pj_value": 0.9987267046068954,
       "aux": "\u03c1=1.000"
     }
@@ -200,7 +200,7 @@
       "case": "gtex_blood_muscle",
       "substep": "glm_fit",
       "metric": "p95 |\u0394|",
-      "value": 1.8107087738367073e-05,
+      "value": 1.810708773835597e-05,
       "tol": 0.01,
       "higher_better": false,
       "pass": true,
@@ -222,7 +222,7 @@
       "case": "gtex_blood_muscle",
       "substep": "lfc_shrink",
       "metric": "Pearson r",
-      "value": 0.999998247129911,
+      "value": 0.9999982471299121,
       "tol": 0.9,
       "higher_better": true,
       "pass": true,
@@ -247,7 +247,7 @@
       "case": "pasilla",
       "substep": "dispersion",
       "metric": "p95 rel",
-      "value": 0.000667198648995966,
+      "value": 0.0006671986490209519,
       "tol": 0.1,
       "higher_better": false,
       "pass": true,
@@ -258,7 +258,7 @@
       "case": "pasilla",
       "substep": "glm_fit",
       "metric": "p95 |\u0394|",
-      "value": 2.342118401322811e-05,
+      "value": 2.342118401312819e-05,
       "tol": 0.01,
       "higher_better": false,
       "pass": true,
@@ -305,11 +305,11 @@
       "case": "pasilla_2fac",
       "substep": "dispersion",
       "metric": "p95 rel",
-      "value": 0.00023539774488991473,
+      "value": 0.0002353977448946235,
       "tol": 0.1,
       "higher_better": false,
       "pass": true,
-      "gpu_modes_maxdiff": 1.7569432419345388e-08,
+      "gpu_modes_maxdiff": 1.0795106852867775e-07,
       "pj_value": 0.23293498315235348
     },
     {
@@ -320,7 +320,7 @@
       "tol": 0.01,
       "higher_better": false,
       "pass": true,
-      "gpu_modes_maxdiff": 3.1228887670264882e-09,
+      "gpu_modes_maxdiff": 1.400971860743283e-08,
       "pj_value": 0.02155938206497041
     },
     {
@@ -331,18 +331,18 @@
       "tol": 0.95,
       "higher_better": true,
       "pass": true,
-      "gpu_modes_maxdiff": 1.4042285600979199e-06,
+      "gpu_modes_maxdiff": 1.3981809601215645e-06,
       "pj_value": 0.9389380530973451
     },
     {
       "case": "pasilla_2fac",
       "substep": "lfc_shrink",
       "metric": "Pearson r",
-      "value": 0.999990669999281,
+      "value": 0.9999906699993064,
       "tol": 0.9,
       "higher_better": true,
       "pass": true,
-      "gpu_modes_maxdiff": 4.4854130257232505e-08,
+      "gpu_modes_maxdiff": 1.5056814440736477e-07,
       "pj_value": 0.9953220315824359,
       "aux": "\u03c1=1.000"
     }

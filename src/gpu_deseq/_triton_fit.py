@@ -11,11 +11,14 @@ positive here), lgamma/log1p come from libdevice, and the Cox-Reid P×P logdet /
 trace(b⁻¹ db) use an unrolled no-pivot LU (b is SPD). NOT bit-identical to the
 eager path (reduction order differs), but R parity — the actual bar — holds.
 
-Only P ∈ {2, 4} are implemented (single-factor / continuous, and additive
-multi-factor with a 3-level batch). Callers must fall back to the eager/graph
-path for other P; `supports_p()` reports what's covered.
+P ∈ {2, ..., 6} are covered, matching the range the eager path validates. P=2
+(closed-form 2×2) and P=4 (unrolled LU) are hand-written; P ∈ {3, 5, 6} are
+emitted by `_cr_source()` (see below). Callers must fall back to the eager/graph
+path for P > 6; `supports_p()` reports what's covered.
 """
 from __future__ import annotations
+
+import linecache
 
 import numpy as np
 import torch
@@ -30,11 +33,89 @@ except Exception:  # pragma: no cover - triton optional
 
 from . import _deseq2_core as core
 
-_SUPPORTED_P = (2, 4)
+_SUPPORTED_P = (2, 3, 4, 5, 6)
+_MAX_P = max(_SUPPORTED_P)          # number of design columns the kernel loads
+_GENERATED_P = (3, 5, 6)            # arms emitted by _cr_source (2 and 4 are hand-written)
 
 
 def supports_p(p: int) -> bool:
     return TRITON_AVAILABLE and p in _SUPPORTED_P
+
+
+def _cr_source(P: int) -> str:
+    """Emit the straight-line Cox-Reid block for a given P as Triton source.
+
+    Triton's frontend has no local arrays and no compile-time list/tuple
+    building (list comprehensions, `append`, and tuple concatenation are all
+    rejected, and a `for` over a constexpr bound becomes a runtime loop whose
+    index cannot subscript a tuple), so the P×P algebra cannot be written
+    generically inside a kernel — it has to be unrolled text. Past P=4 that is
+    too much algebra to hand-write correctly (P=6 is ~170 lines), so we generate
+    it instead, mirroring `_deseq2_core._logdet_and_tr_binv_db` operation for
+    operation: no-pivot LU of the SPD b = XᵀWX, then one triangular solve per
+    column of db, keeping only that column's diagonal entry for the trace.
+    """
+    lines = ["@triton.jit",
+             f"def _cr_P{P}(w, dw, " + ", ".join(f"x{j}" for j in range(_MAX_P)) + "):"]
+    add = lines.append
+    sym = lambda t, i, j: f"{t}{min(i, j)}{max(i, j)}"
+
+    # b = XᵀWX and db = Xᵀ(dW)X, both symmetric — emit the upper triangle only.
+    for name, weight in (("b", "w"), ("e", "dw")):
+        for i in range(P):
+            for j in range(i, P):
+                add(f"    {name}{i}{j} = tl.sum({weight} * x{i} * x{j})")
+
+    counter = [0]
+
+    def fresh(tag: str) -> str:
+        counter[0] += 1
+        return f"_t{counter[0]}_{tag}"
+
+    # No-pivot LU: A becomes U in the upper triangle, unit-lower multipliers below.
+    A = {(i, j): sym("b", i, j) for i in range(P) for j in range(P)}
+    for k in range(P):
+        pivot = A[(k, k)]
+        for i in range(k + 1, P):
+            mult = fresh(f"l{i}{k}")
+            add(f"    {mult} = {A[(i, k)]} / {pivot}")
+            A[(i, k)] = mult
+            for j in range(k + 1, P):
+                updated = fresh(f"a{i}{j}")
+                add(f"    {updated} = {A[(i, j)]} - {mult} * {A[(k, j)]}")
+                A[(i, j)] = updated
+    add("    logdet = " + " + ".join(f"tl.log(tl.abs({A[(k, k)]}))" for k in range(P)))
+
+    # trace(b⁻¹ db): solve b x = db[:, c] for each column c and keep x_c. Forward
+    # substitution needs every row; back substitution only has to reach row c.
+    diagonal = []
+    for c in range(P):
+        y = {}
+        for i in range(P):
+            sub = "".join(f" - {A[(i, j)]} * {y[j]}" for j in range(i))
+            y[i] = fresh(f"y{i}c{c}")
+            add(f"    {y[i]} = {sym('e', i, c)}{sub}")
+        x = {}
+        for i in range(P - 1, c - 1, -1):
+            sub = "".join(f" - {A[(i, j)]} * {x[j]}" for j in range(i + 1, P))
+            x[i] = fresh(f"x{i}c{c}")
+            add(f"    {x[i]} = ({y[i]}{sub}) / {A[(i, i)]}")
+        diagonal.append(x[c])
+    add("    tr = " + " + ".join(diagonal))
+    add("    return logdet, tr")
+    return "\n".join(lines) + "\n"
+
+
+def _exec_generated(source: str, tag: str) -> None:
+    """Define generated Triton source in this module's namespace.
+
+    Triton's JIT re-reads a kernel's own source with `inspect`, so the generated
+    code needs a `linecache` entry to be compilable at all. `mtime=None` marks it
+    as loader-provided so `linecache.checkcache()` won't evict it.
+    """
+    filename = f"<gpu_deseq._triton_fit generated: {tag}>"
+    linecache.cache[filename] = (len(source), None, source.splitlines(True), filename)
+    exec(compile(source, filename, "exec"), globals())
 
 
 if TRITON_AVAILABLE:
@@ -57,22 +138,28 @@ if TRITON_AVAILABLE:
         p = p * z + 8.33333333333333333333e-2
         return result + tl.log(x) - 0.5 / x - z * p
 
+    for _p in _GENERATED_P:
+        _exec_generated(_cr_source(_p), f"cox-reid P={_p}")
+
     @triton.jit
-    def _lpdlp(counts, mu, x0, x1, x2, x3, mask, a, pmean, sigmasq,
+    def _lpdlp(counts, mu, x0, x1, x2, x3, x4, x5, mask, a, pmean, sigmasq,
                HAS_PRIOR: tl.constexpr, P: tl.constexpr):
         alpha = tl.exp(a)
         ainv = 1.0 / alpha
         w = tl.where(mask, 1.0 / (1.0 / mu + alpha), 0.0)
         dw = -w * w
 
-        # Cox-Reid term: logdet(b) and trace(b^-1 db), b = Xᵀ W X (SPD).
+        # Cox-Reid term: logdet(b) and trace(b^-1 db), b = Xᵀ W X (SPD). One arm
+        # per P; the P=3/5/6 callees are generated by _cr_source at import.
         if P == 2:
             b00 = tl.sum(w * x0 * x0); b01 = tl.sum(w * x0 * x1); b11 = tl.sum(w * x1 * x1)
             e00 = tl.sum(dw * x0 * x0); e01 = tl.sum(dw * x0 * x1); e11 = tl.sum(dw * x1 * x1)
             det = b00 * b11 - b01 * b01
             logdet = tl.log(det)
             tr = (b11 * e00 - 2.0 * b01 * e01 + b00 * e11) / det
-        else:  # P == 4
+        elif P == 3:
+            logdet, tr = _cr_P3(w, dw, x0, x1, x2, x3, x4, x5)
+        elif P == 4:
             b00 = tl.sum(w * x0 * x0); b01 = tl.sum(w * x0 * x1); b02 = tl.sum(w * x0 * x2); b03 = tl.sum(w * x0 * x3)
             b11 = tl.sum(w * x1 * x1); b12 = tl.sum(w * x1 * x2); b13 = tl.sum(w * x1 * x3)
             b22 = tl.sum(w * x2 * x2); b23 = tl.sum(w * x2 * x3)
@@ -114,6 +201,10 @@ if TRITON_AVAILABLE:
             y0 = e03; y1 = e13 - l10 * y0; y2 = e23 - l20 * y0 - l21 * y1; y3 = e33 - l30 * y0 - l31 * y1 - l32 * y2
             t3 = y3 / u33
             tr = t0 + t1 + t2 + t3
+        elif P == 5:
+            logdet, tr = _cr_P5(w, dw, x0, x1, x2, x3, x4, x5)
+        else:  # P == 6
+            logdet, tr = _cr_P6(w, dw, x0, x1, x2, x3, x4, x5)
 
         lg_ainv = libdevice.lgamma(ainv)
         dg_ainv = _digamma_pos(ainv)
@@ -146,11 +237,13 @@ if TRITON_AVAILABLE:
         x1 = tl.load(x_ptr + s * P + 1, mask=mask, other=0.0)
         x2 = tl.load(x_ptr + s * P + 2, mask=mask, other=0.0) if P > 2 else s * 0.0
         x3 = tl.load(x_ptr + s * P + 3, mask=mask, other=0.0) if P > 3 else s * 0.0
+        x4 = tl.load(x_ptr + s * P + 4, mask=mask, other=0.0) if P > 4 else s * 0.0
+        x5 = tl.load(x_ptr + s * P + 5, mask=mask, other=0.0) if P > 5 else s * 0.0
         pmean = tl.load(pmean_ptr + g) if HAS_PRIOR else 0.0
 
         a = tl.load(ainit_ptr + g)
         a = tl.minimum(tl.maximum(tl.log(a), log_lo), log_hi)
-        lp, dlp = _lpdlp(counts, mu, x0, x1, x2, x3, mask, a, pmean, sigmasq, HAS_PRIOR, P)
+        lp, dlp = _lpdlp(counts, mu, x0, x1, x2, x3, x4, x5, mask, a, pmean, sigmasq, HAS_PRIOR, P)
 
         zero = a - a
         kap = zero + kappa_0
@@ -166,7 +259,7 @@ if TRITON_AVAILABLE:
             too_high = (a_prop_naive > log_hi) & (dlp != 0.0)
             kap = tl.where(too_high, (log_hi - a) / dlp, kap)
             a_propose = a + kap * dlp
-            lp_prop, _ = _lpdlp(counts, mu, x0, x1, x2, x3, mask, a_propose, pmean, sigmasq, HAS_PRIOR, P)
+            lp_prop, _ = _lpdlp(counts, mu, x0, x1, x2, x3, x4, x5, mask, a_propose, pmean, sigmasq, HAS_PRIOR, P)
             theta_kap = -lp_prop
             theta_hat = -lp - kap * eps * dlp * dlp
             accepted = theta_kap <= theta_hat
@@ -178,7 +271,7 @@ if TRITON_AVAILABLE:
             below_floor = accepted & (a_new < min_log_alpha)
             a = a_new
             lp = lp_new
-            _, dlp_new = _lpdlp(counts, mu, x0, x1, x2, x3, mask, a, pmean, sigmasq, HAS_PRIOR, P)
+            _, dlp_new = _lpdlp(counts, mu, x0, x1, x2, x3, x4, x5, mask, a, pmean, sigmasq, HAS_PRIOR, P)
             dlp = tl.where(accepted, dlp_new, dlp)
             ia = tl.where(accepted, ia + 1.0, ia)
             kap_acc = tl.minimum(kap * 1.1, kappa_0)
@@ -197,6 +290,12 @@ if TRITON_AVAILABLE:
 def _launch(counts, mu, design, a_init_clip, prior_mean, sigmasq, maxit):
     G, S = counts.shape
     P = design.shape[1]
+    # Not just unsupported but silently wrong: the kernel loads exactly _MAX_P
+    # design columns, so a wider design would be fitted with its trailing columns
+    # dropped, and a narrower one would read past the end of a design row.
+    if P not in _SUPPORTED_P:
+        raise ValueError(f"Triton dispersion path covers P in {_SUPPORTED_P}, got P={P}; "
+                         "callers should gate on supports_p() and fall back to eager")
     dev = counts.device
     min_log_alpha = float(np.log(core.MIN_DISP / 10.0))
     out_a = torch.empty(G, dtype=torch.float64, device=dev)

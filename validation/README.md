@@ -24,16 +24,16 @@ sides so the contrast matches exactly (no sign flip).
 
 Six real design-cases from three published datasets, spanning P=2..5, single-
 and multi-factor, two organisms, and **7 → 300 samples**. The Triton fused kernel
-covers P in {2, 4} (larger P defers to the eager path), so P=2 and P=4 cases
-exercise it on real data; P=3/5 run the eager dispersion loop.
+covers P in {2,...,6} (wider designs defer to the eager path), so every case here
+exercises it on real data.
 
 | case | organism | design | P | samples × genes | Triton kernel |
 |---|---|---|---|---|---|
 | pasilla       | *Drosophila* | `~ condition`        | 2 | 7 × 12 359    | yes |
-| pasilla_2fac  | *Drosophila* | `~ type + condition` | 3 | 7 × 12 359    | eager (P=3) |
+| pasilla_2fac  | *Drosophila* | `~ type + condition` | 3 | 7 × 12 359    | yes |
 | airway_dex    | human        | `~ dex`              | 2 | 8 × 33 469    | yes |
 | airway_cell   | human        | `~ cell`             | 4 | 8 × 33 469    | **yes** |
-| airway        | human        | `~ cell + dex`       | 5 | 8 × 33 469    | eager (P=5) |
+| airway        | human        | `~ cell + dex`       | 5 | 8 × 33 469    | **yes** |
 | **gtex_blood_muscle** | human | `~ tissue`         | 2 | **300 × 54 922** | **yes** |
 
 `gtex_blood_muscle` is a large-cohort case: GTEx (GTEx Consortium — the canonical

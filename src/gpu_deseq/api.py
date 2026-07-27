@@ -197,8 +197,8 @@ def fit_dispersions(
       per-iteration launch overhead; bit-identical to eager).
     - ``use_triton``: run each gene's whole loop fused in one Triton kernel with
       per-gene early exit (fastest; matches R to ~1e-14 but not bit-identical to
-      eager). Falls back to eager for designs Triton doesn't cover (P not in
-      {2, 4}) or on CPU.
+      eager). Falls back to eager for designs Triton doesn't cover (P > 6)
+      or on CPU.
 
     Either can also be selected via the ``GPU_DESEQ_ACCEL`` env var
     (``graph`` / ``triton``), which is convenient for benchmarking and running

@@ -12,7 +12,7 @@ Same numerics as R; ~10–45× faster end-to-end on the workloads tested.
 > total-pipeline timing, per-substep timing, and output parity — for R DESeq2,
 > cuDESeq2 (eager / CUDA-graph / Triton), and a PyDESeq2 competitor, across six
 > real RNA-seq datasets (7–300 samples) on an A100. On the 300-sample GTEx
-> cohort cuDESeq2 is ~75× faster than R end-to-end (dispersion 231 s → 0.2 s).
+> cohort cuDESeq2 is ~76× faster than R end-to-end (dispersion 231 s → 0.2 s).
 > The illustrative synthetic-fixture table below is an older, separate L4 run.
 
 End-to-end timings (size factors → dispersions → Wald → results), median of multiple runs, single L4 GPU vs single-thread R DESeq2 1.30.1 on the same data:
