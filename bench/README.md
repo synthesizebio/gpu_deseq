@@ -9,8 +9,15 @@ renders them as **three tables**:
    and overall (Table 3, which also confirms the three GPU modes agree with each
    other)?
 
-The **four versions** are R DESeq2 1.30.1 (reference) and cuDESeq2 in three
-execution modes: **eager**, **CUDA-graph**, **Triton**.
+The versions are R DESeq2 1.30.1 (the **reference/ground truth**), cuDESeq2 in
+three execution modes (**eager**, **CUDA-graph**, **Triton**), and **PyDESeq2**
+as a **competitor baseline** — a third-party CPU/Python DESeq2 reimplementation
+that is timed and scored against R exactly as cuDESeq2 is, but is *never* a
+parity target for us. PyDESeq2 is a benchmark-only dependency (`pip install
+pydeseq2`); it is imported lazily and only in `run_pydeseq2.py` (never by the
+`gpu_deseq` package), and if it is not installed the competitor column is simply
+skipped. Table 3 shows cuDESeq2-vs-R matches R far more tightly than
+PyDESeq2-vs-R on every substep.
 
 The **five substeps** are `normalization` (size factors), `dispersion`
 (Cox–Reid gene-est → trend → MAP), `glm_fit` (IRLS NB-GLM + Wald),
