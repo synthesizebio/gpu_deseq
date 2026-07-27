@@ -1,7 +1,7 @@
 % Starter bibliography. VERIFY every entry (authors, venue, pages, DOI) before
 % submission -- e.g. via a literature search -- and add related-work references
-% (prior GPU/accelerated DE tools, pyDESeq2, CUDA graphs). Entries are not cited
-% in the outline yet, so they will not appear in the PDF until \cite'd.
+% (prior GPU/accelerated DE tools, CUDA graphs). Entries are not cited in the
+% outline yet, so they will not appear in the PDF until \cite'd.
 
 @article{love2014deseq2,
   title   = {Moderated estimation of fold change and dispersion for RNA-seq data with {DESeq2}},
@@ -34,5 +34,37 @@
   year      = {2019}
 }
 
-% @article{TODO_pydeseq2, ...}   % pyDESeq2 CPU reimplementation -- add + verify
-% @misc{TODO_cudagraphs, ...}    % CUDA Graphs (NVIDIA docs / paper) -- add + verify
+@article{ahlmanneltze2020glmgampoi,
+  title   = {{glmGamPoi}: fitting Gamma--Poisson generalized linear models on single cell count data},
+  author  = {Ahlmann-Eltze, Constantin and Huber, Wolfgang},
+  journal = {Bioinformatics},
+  volume  = {36}, number = {24}, pages = {5701--5702}, year = {2020},
+  doi     = {10.1093/bioinformatics/btaa1009}
+}
+
+@article{hu2025scalesc,
+  title   = {{ScaleSC}: a superfast and scalable single-cell {RNA-seq} data analysis pipeline powered by {GPU}},
+  author  = {Hu, Wenxing and Zhang, Haotian and Sun, Yu H. and Cao, Shaolong and Gagnon, Jake and Moroishi, Yuka and Chen, Yirui and Ouyang, Zhengyu and Zhang, Baohong},
+  journal = {Bioinformatics Advances},
+  volume  = {5}, number = {1}, pages = {vbaf167}, year = {2025},
+  doi     = {10.1093/bioadv/vbaf167}
+}
+
+@article{muzellec2023pydeseq2,
+  title   = {{PyDESeq2}: a python package for bulk {RNA-seq} differential expression analysis},
+  author  = {Muzellec, Boris and Tele{\'n}czuk, Maria and Cabeli, Vincent and Andreux, Mathieu},
+  journal = {Bioinformatics},
+  volume  = {39}, number = {9}, pages = {btad547}, year = {2023},
+  doi     = {10.1093/bioinformatics/btad547}
+}
+
+@misc{nvidia2024cudagraphs,
+  title        = {{CUDA} {C++} Programming Guide: {CUDA} Graphs},
+  author       = {{NVIDIA Corporation}},
+  howpublished = {\url{https://docs.nvidia.com/cuda/cuda-c-programming-guide/}},
+  year         = {2024}, note = {Accessed July 2026}
+}
+
+% NOTE: BibTeX has no comment syntax and stops at any at-sign, so never write an
+% at-sign here (not even inside prose) or leave real entries "commented" with a
+% percent sign -- BibTeX will try to parse them and error.

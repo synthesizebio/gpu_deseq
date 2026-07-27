@@ -1,0 +1,112 @@
+% Publication-style pseudocode for the fused Triton dispersion kernel.
+% Uses only packages already loaded by paper/main.tex.
+% Insert with: \input{triton_dispersion_algorithm}
+
+\begingroup
+\newcounter{tritonline}
+\setcounter{tritonline}{0}
+\newcommand{\tritonLine}[2][0em]{%
+  \stepcounter{tritonline}%
+  \noindent
+  \makebox[2.1em][r]{\arabic{tritonline}:}%
+  \hspace{0.7em}\hspace*{#1}%
+  \begin{minipage}[t]{\dimexpr\linewidth-3.2em-#1\relax}%
+    #2
+  \end{minipage}\par
+}
+
+\begin{figure}[htbp]
+\small
+\setlength{\fboxsep}{0pt}
+\noindent\rule{\linewidth}{0.8pt}\par
+\vspace{2pt}
+\noindent
+\refstepcounter{supalg}\label{alg:triton-detail}%
+\textbf{Supplementary Algorithm~\thesupalg}\quad
+\textsc{Detailed fused Triton dispersion kernel} (CR--MLE or MAP)
+\par
+\vspace{2pt}
+\noindent\rule{\linewidth}{0.4pt}\par
+\vspace{4pt}
+
+\noindent
+\textbf{Require:}\;
+counts $\mathbf{Y}\in\mathbb{N}_0^{G\times S}$;
+fitted means $\boldsymbol{\mu}\in\mathbb{R}_{+}^{G\times S}$;
+design $\mathbf{X}\in\mathbb{R}^{S\times P}$, $P\in\{2,4\}$;
+initial dispersions $\boldsymbol{\alpha}^{(0)}\in\mathbb{R}_{+}^{G}$;
+compile-time $h\equiv\textsc{HasPrior}$; prior means $\mathbf{m}$ and variance
+$\sigma^2$ when $h=1$; initial step bound $\kappa_0$.
+\par
+\noindent
+\textbf{Ensure:}\;
+optimized log dispersions $\mathbf{a}$ and iteration counts $\mathbf{c}$.
+\par
+\vspace{4pt}
+
+\tritonLine{\textbf{parallel for} Triton program
+  $g\in\{0,\ldots,G-1\}$ \textbf{do}\hfill{\normalfont\scriptsize(one program per gene)}}
+\tritonLine[1.2em]{Load $\mathbf{y}_g$, $\boldsymbol{\mu}_g$, and $\mathbf{X}$ once into program-local state.}
+\tritonLine[1.2em]{Set $a\leftarrow
+  \operatorname{clip}\!\left(\log\alpha_g^{(0)},-30,10\right)$,
+  $\kappa\leftarrow\kappa_0$, $n_{\mathrm{acc}}\leftarrow0$, and $c\leftarrow0$.}
+\tritonLine[1.2em]{Set $(\ell,q)\leftarrow
+  \operatorname{ObjectiveGradient}(a,\mathbf{y}_g,\boldsymbol{\mu}_g,
+  \mathbf{X},h,m_g,\sigma^2)$.}
+\tritonLine[1.2em]{\textbf{while} $c<\textit{maxit}$ and not converged \textbf{do}}
+\tritonLine[2.4em]{$c\leftarrow c+1$ and propose $\widetilde a\leftarrow a+\kappa q$.}
+\tritonLine[2.4em]{If $q\neq0$ and $\widetilde a\notin[-30,10]$, shorten
+  $\kappa$ so that $\widetilde a$ lies on the violated boundary.}
+\tritonLine[2.4em]{Set
+  $(\widetilde\ell,\_)\leftarrow
+  \operatorname{ObjectiveGradient}(\widetilde a,\mathbf{y}_g,
+  \boldsymbol{\mu}_g,\mathbf{X},h,m_g,\sigma^2)$.}
+\tritonLine[2.4em]{Set $r\leftarrow
+  [\,\widetilde\ell\geq\ell+\varepsilon\kappa q^2\,]$.
+  \hfill{\normalfont\scriptsize(Armijo acceptance flag)}}
+\tritonLine[2.4em]{Select
+  $a'\leftarrow r\,?\,\widetilde a:a$,
+  $\ell'\leftarrow r\,?\,\widetilde\ell:\ell$, and
+  $\Delta\leftarrow\ell'-\ell$.}
+\tritonLine[2.4em]{Set
+  $(\_,q')\leftarrow
+  \operatorname{ObjectiveGradient}(a',\mathbf{y}_g,\boldsymbol{\mu}_g,
+  \mathbf{X},h,m_g,\sigma^2)$ and
+  $q\leftarrow r\,?\,q':q$.}
+\tritonLine[2.4em]{Set $n'_{\mathrm{acc}}\leftarrow n_{\mathrm{acc}}+r$ and
+  $\kappa_{\mathrm{acc}}\leftarrow\min(1.1\kappa,\kappa_0)$.}
+\tritonLine[2.4em]{If $r$ and $n'_{\mathrm{acc}}\bmod5=0$, set
+  $\kappa_{\mathrm{acc}}\leftarrow\kappa_{\mathrm{acc}}/2$.}
+\tritonLine[2.4em]{Set
+  $\kappa\leftarrow r\,?\,\kappa_{\mathrm{acc}}:\kappa/2$,
+  $n_{\mathrm{acc}}\leftarrow n'_{\mathrm{acc}}$,
+  $a\leftarrow a'$, and $\ell\leftarrow\ell'$.}
+\tritonLine[2.4em]{Converge if
+  $r\land(\Delta<10^{-6}\ \lor\
+  a<\log(\textit{minDisp}/10))$.}
+\tritonLine[1.2em]{\textbf{end while}}
+\tritonLine[1.2em]{Store $a_g\leftarrow a$ and $c_g\leftarrow c$ in global memory.}
+\tritonLine{\textbf{end parallel for}}
+\tritonLine{\textbf{function}
+  $\operatorname{ObjectiveGradient}(a,\mathbf{y},\boldsymbol{\mu},
+  \mathbf{X},h,m,\sigma^2)$}
+\tritonLine[1.2em]{Set $\alpha\leftarrow e^a$,
+  $\mathbf{W}\leftarrow
+  \operatorname{diag}\!\left(\boldsymbol{\mu}/(1+\alpha\boldsymbol{\mu})\right)$,
+  and $\mathbf{B}\leftarrow\mathbf{X}^{\mathsf T}\mathbf{W}\mathbf{X}$.}
+\tritonLine[1.2em]{Compute
+  $\ell\leftarrow\ell_{\mathrm{NB}}(\mathbf{y};\boldsymbol{\mu},\alpha)
+  -\tfrac12\log\det(\mathbf{B})$.}
+\tritonLine[1.2em]{Compute $q\leftarrow\partial\ell/\partial a$, including
+  $\operatorname{tr}\!\left(\mathbf{B}^{-1}\partial\mathbf{B}/\partial\alpha\right)$
+  via an unrolled $2{\times}2$ formula or $4{\times}4$ LU solve.}
+\tritonLine[1.2em]{\textbf{if} $h=1$ \textbf{then}\quad
+  $\ell\leftarrow\ell-(a-m)^2/(2\sigma^2)$ and
+  $q\leftarrow q-(a-m)/\sigma^2$.\hfill{\normalfont\scriptsize(MAP only)}}
+\tritonLine[1.2em]{\textbf{return} $(\ell,q)$.}
+\tritonLine{\textbf{end function}}
+
+\vspace{3pt}
+\noindent\rule{\linewidth}{0.8pt}
+\end{figure}
+\endgroup
