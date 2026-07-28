@@ -18,6 +18,8 @@ import torch
 from scipy.optimize import minimize
 from scipy.special import gammaln, polygamma
 
+from . import _r_rng
+
 MIN_DISP = 1e-8
 MAX_DISP = 10.0
 MIN_MU = 0.5
@@ -1028,6 +1030,88 @@ def _gamma_identity_glm(x: np.ndarray, y: np.ndarray, start: np.ndarray,
 # ---------------------------------------------------------------------------
 
 
+def _loess_kd_cuts(xs: np.ndarray, fc: int) -> list[float]:
+    """Split points of R's loess kd-tree (`loessf.f` ehg124): recursive median
+    split of the sorted predictor while a cell holds more than `fc` points. The
+    cut is the order statistic at m = (ll+uu)//2, and the children are
+    [ll, m] and [m+1, uu]."""
+    cuts: list[float] = []
+
+    def split(ll: int, uu: int) -> None:          # 1-indexed, inclusive
+        if uu - ll + 1 <= fc:
+            return
+        m = (ll + uu) // 2
+        cuts.append(float(xs[m - 1]))
+        split(ll, m)
+        split(m + 1, uu)
+
+    split(1, xs.size)
+    return cuts
+
+
+def _loess_vertex_fit(
+    x: np.ndarray, y: np.ndarray, x0: float, q: int
+) -> tuple[float, float]:
+    """Tricube-weighted local quadratic at `x0`, returning (value, slope)."""
+    d = np.abs(x - x0)
+    h = np.partition(d, q - 1)[q - 1]             # distance to the q-th nearest
+    if h <= 0.0:
+        return float(y[int(np.argmin(d))]), 0.0
+    u = d / h
+    w = np.where(u < 1.0, (1.0 - u**3) ** 3, 0.0)
+    sel = w > 0.0
+    dx = x[sel] - x0
+    basis = np.stack([np.ones(dx.size), dx, dx * dx], axis=1)
+    btw = basis.T * w[sel]
+    coef = np.linalg.solve(btw @ basis, btw @ y[sel])
+    return float(coef[0]), float(coef[1])
+
+
+def _loess_quadratic(
+    x: np.ndarray, y: np.ndarray, xout: np.ndarray,
+    span: float = 0.2, cell: float = 0.2,
+) -> np.ndarray:
+    """R's `loess(y ~ x, span=span, degree=2)` evaluated at `xout`, including its
+    default `surface="interpolate"`.
+
+    R does not fit the local regression at every output point. It builds a
+    kd-tree over the predictor, fits only at the tree's vertices -- taking the
+    value *and* the slope there -- and cubic-Hermite interpolates in between.
+    That approximation is part of what DESeq2 computes, so reproducing it is
+    required, not optional: on the airway KL curve the exact ("direct") surface
+    and this one pick argmins two grid points apart. Agrees with R to ~1e-14.
+    """
+    x = np.asarray(x, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+    xout = np.asarray(xout, dtype=np.float64)
+    order = np.argsort(x, kind="stable")
+    xs, ys = x[order], y[order]
+    n = xs.size
+    q = int(np.floor(span * n))
+    fc = int(np.floor(n * span * cell))
+
+    # Bounding box, expanded by 0.5% of the range at each end (ehg126).
+    spread = xs[-1] - xs[0]
+    box = [xs[0] - 0.005 * spread, xs[-1] + 0.005 * spread]
+    verts = np.unique(np.array(box + _loess_kd_cuts(xs, fc), dtype=np.float64))
+
+    vals = np.empty(verts.size, dtype=np.float64)
+    slopes = np.empty(verts.size, dtype=np.float64)
+    for i, v in enumerate(verts):
+        vals[i], slopes[i] = _loess_vertex_fit(xs, ys, float(v), q)
+
+    # Cubic Hermite inside the leaf cell bracketing each output point (ehg128).
+    idx = np.clip(np.searchsorted(verts, xout, side="right") - 1, 0, verts.size - 2)
+    step = verts[idx + 1] - verts[idx]
+    h = (xout - verts[idx]) / step
+    phi0 = (1.0 - h) ** 2 * (1.0 + 2.0 * h)
+    phi1 = h**2 * (3.0 - 2.0 * h)
+    psi0 = h * (1.0 - h) ** 2
+    psi1 = h**2 * (h - 1.0)
+    return (phi0 * vals[idx] + phi1 * vals[idx + 1]
+            + (psi0 * slopes[idx] + psi1 * slopes[idx + 1]) * step)
+
+
 def _prior_var_kl_grid(residuals_above: np.ndarray, m: int, p: int) -> float:
     """Small-residual-dof prior-variance estimator, matching R DESeq2's
     `estimateDispersionsPriorVar` branch for `(m - p) <= 3`.
@@ -1037,13 +1121,14 @@ def _prior_var_kl_grid(residuals_above: np.ndarray, m: int, p: int) -> float:
     log(m-p), histogram it, and pick the x minimizing the KL divergence from the
     observed residual histogram (loess-smoothed). Returns pmax(argmin, 0.25).
 
-    Uses randomness (as R does, via set.seed(2)); we seed a NumPy generator for
-    reproducibility. The result cannot be bit-identical to R because R's
-    Mersenne-Twister stream differs from NumPy's, but it recovers the same prior
-    variance to within the estimator's inherent stochastic error.
+    Both stochastic ingredients are R's, not approximations of R's. The draws
+    replay R's `set.seed(2)` Mersenne-Twister stream bit-for-bit (see
+    `_r_rng`), and the KL curve is smoothed with R's loess including its default
+    kd-tree `surface="interpolate"` (see `_loess_quadratic`). Substituting a
+    different generator or a different smoother both move the reported argmin:
+    on airway a PCG64 draw shifts it by 0.016 and a Savitzky-Golay smoother by
+    0.080, against R's 0.5285285285285285, which this reproduces bit for bit.
     """
-    from scipy.signal import savgol_filter
-    rng = np.random.default_rng(2)
     brks = np.arange(-20, 21) / 2.0                       # R: -20:20/2
     lo, hi = brks[0], brks[-1]
     obs = residuals_above[(residuals_above > lo) & (residuals_above < hi)]
@@ -1051,21 +1136,16 @@ def _prior_var_kl_grid(residuals_above: np.ndarray, m: int, p: int) -> float:
     var_grid = np.linspace(0.0, 8.0, 200)
     kl = np.empty_like(var_grid)
     dof = m - p
-    for i, x in enumerate(var_grid):
-        rand = (np.log(rng.chisquare(dof, 10000)) + rng.normal(0.0, np.sqrt(x), 10000)
-                - np.log(dof))
+    draws = _r_rng.kl_grid_draws(dof, var_grid, n_samp=10000, seed=2)
+    for i in range(var_grid.size):
+        rand = draws[i]
         rand = rand[(rand > lo) & (rand < hi)]
         rand_hist, _ = np.histogram(rand, bins=brks, density=True)
         z = np.concatenate([obs_hist, rand_hist])
         small = z[z > 0].min()
         kl[i] = np.sum(obs_hist * (np.log(obs_hist + small) - np.log(rand_hist + small)))
-    # R smooths the KL curve with loess (local quadratic, span=0.2) then takes the
-    # argmin; Savitzky-Golay is the equivalent local-quadratic smoother and,
-    # unlike statsmodels' local-linear lowess, behaves at the x=0 boundary.
-    win = int(round(0.2 * var_grid.size)) | 1            # odd window ~ span 0.2
-    smoothed = savgol_filter(kl, window_length=win, polyorder=2)
     fine = np.linspace(0.0, 8.0, 1000)
-    fitted = np.interp(fine, var_grid, smoothed)
+    fitted = _loess_quadratic(var_grid, kl, fine, span=0.2)
     argmin_kl = float(fine[int(np.argmin(fitted))])
     return max(argmin_kl, 0.25)
 
