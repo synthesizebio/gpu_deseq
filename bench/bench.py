@@ -55,9 +55,10 @@ def _spearman(o, r):
 SPEC = {  # substep -> (gpu_key, r_file, r_col, metric_fn, label, tol, higher_better)
     "normalization": ("sizeFactor",     "r_sizefactors.csv", "sizeFactor",     _maxrel,   "max rel",     1e-6, False),
     # dispersion is an intermediate that feeds the GLM; within 10% is DE-equivalent.
-    # The small-dof cases (e.g. airway n=8,P=5 -> dof=3) are RNG-limited: R's
-    # set.seed(2) Mersenne-Twister in the prior-variance estimator is not
-    # reproducible in NumPy. 5/6 cases land <0.4% regardless.
+    # The small-dof cases (e.g. airway n=8,P=5 -> dof=3) used to be RNG-limited,
+    # because R's prior-variance estimator is a Monte-Carlo grid search that
+    # set.seed(2) fixes only within R. We now replay that stream bit-for-bit
+    # (see gpu_deseq._r_rng), so all 6 cases land <0.4%.
     "dispersion":    ("dispersion",     "r_dispersions.csv", "dispersion",     _p95rel,   "p95 rel",     1e-1, False),
     "glm_fit":       ("log2FoldChange", "r_results.csv",     "log2FoldChange", _p95abs,   "p95 |Δ|",     1e-2, False),
     "significance":  ("padj",           "r_results.csv",     "padj",           _jaccard,  "Jaccard@.05", 0.95, True),
@@ -84,18 +85,22 @@ def parity_for_case(case, caps, pj_cap=None):
         e = caps["eager"][gkey]
         j = pd.concat({"o": e, "r": r}, axis=1).dropna(how="all")
         val = fn(j["o"].to_numpy(), j["r"].to_numpy())          # eager (representative) vs R
-        # GPU-mode agreement: worst |mode - eager| over graph/triton on this array
-        gpu_diff = 0.0
+        # GPU-mode agreement, recorded PER MODE. Taking only the max over
+        # graph/triton would collapse the two into one number and make the claim
+        # "graph replay is bit-identical to eager" underivable from this file.
         ev = e.to_numpy()
+        mode_diff = {}
         for m in ("graph", "triton"):
             mv = caps[m][gkey].reindex(e.index).to_numpy()
             fin = np.isfinite(ev) & np.isfinite(mv)
-            if fin.any():
-                gpu_diff = max(gpu_diff, float(np.max(np.abs(ev[fin] - mv[fin]))))
+            mode_diff[m] = (float(np.max(np.abs(ev[fin] - mv[fin])))
+                            if fin.any() else 0.0)
+        gpu_diff = max(mode_diff.values())
         ok = (val >= tol) if higher else (val <= tol)
         row = {"case": case, "substep": step, "metric": label, "value": val,
                "tol": tol, "higher_better": higher, "pass": bool(ok),
-               "gpu_modes_maxdiff": gpu_diff}
+               "gpu_modes_maxdiff": gpu_diff,
+               "maxdiff_vs_eager": mode_diff}
         # PyDESeq2 (competitor) scored vs the same R reference with the same metric.
         if pj_cap is not None:
             jp = pd.concat({"o": pj_cap[gkey], "r": r}, axis=1).dropna(how="all")

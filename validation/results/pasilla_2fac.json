@@ -12,23 +12,27 @@
     "r_full_ms": 10088.5
   },
   "n_genes_compared": 12359,
-  "lfc_pearson": 0.9998576976819912,
+  "lfc_pearson": 0.9998576976819907,
   "lfc_spearman": 0.999706818807526,
   "lfc_p95_abs": 1.4553944597373025e-05,
-  "stat_pearson": 0.9999509525868774,
-  "pvalue_pearson": 0.9996732760313526,
-  "padj_p95_abs": 0.0001375309539842106,
-  "dispersion_p95_rel": 0.00023539774488991473,
-  "shrunk_lfc_pearson": 0.999990669999281,
-  "shrunk_lfc_p95_abs": 0.0022344780351794048,
+  "stat_pearson": 0.9999978944491099,
+  "pvalue_pearson": 0.9999920741403739,
+  "padj_p95_abs": 7.687153045199402e-05,
+  "dispersion_p95_rel": 0.0002353977448946235,
+  "shrunk_lfc_pearson": 0.9999906702689575,
+  "shrunk_lfc_p95_abs": 0.002232966050162805,
+  "shrunk_lfc_divergent_threshold": 0.1,
+  "shrunk_lfc_n_divergent": 0,
+  "shrunk_lfc_n_compared": 12359,
+  "shrunk_lfc_max_abs": 0.021208869186898887,
   "sig_jaccard_0.05": 1.0,
   "sig_jaccard_0.10": 1.0,
   "n_sig_ours_0.05": 1069,
   "n_sig_r_0.05": 1069,
   "timing_ms": {
-    "eager": 1507.290371999261,
-    "graph": 937.9860629996983,
-    "triton": 1493.896940999548
+    "eager": 1534.6724470146,
+    "graph": 957.0069499895908,
+    "triton": 883.0669170129113
   },
   "r_full_ms": 10088.5
 }

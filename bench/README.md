@@ -71,23 +71,26 @@ Outputs (committed): `bench/results/TABLES.md` (the three tables),
   where aggressive shrinkage on a few near-degenerate genes amplifies a last-bit
   dispersion difference. No PASS verdict or DE call changes.
 
-- **Equivalence vs R is tolerance-based**, not bit-exact: floating-point order and
-  R's Mersenne-Twister RNG (used in the small-dof prior-variance estimator) can't
-  be reproduced exactly. Each substep has an explicit PASS tolerance:
+- **Equivalence vs R is tolerance-based**, not bit-exact: reduction order in
+  batched GPU kernels differs from R's sequential per-gene loops. (The small-dof
+  prior-variance estimator used to be a second source here; it now replays R's
+  RNG stream and smoother exactly — see `_r_rng` — and reproduces R's scalar bit
+  for bit.) Each substep has an explicit PASS tolerance:
 
   | substep | metric | PASS tolerance | why |
   |---|---|---|---|
   | normalization | max relative Δ (size factors) | ≤ 1e-6 | deterministic |
-  | dispersion    | p95 relative Δ                | ≤ 0.10 | intermediate; within 10% is DE-equivalent; RNG-limited at small dof (below) |
+  | dispersion    | p95 relative Δ                | ≤ 0.10 | intermediate; within 10% is DE-equivalent (observed worst: 3.7e-3) |
   | glm_fit       | p95 \|Δ\| (raw LFC)           | ≤ 1e-2 | drives significance; near-exact |
   | significance  | Jaccard of {padj<0.05}        | ≥ 0.95 | borderline-gene flicker at the threshold |
   | lfc_shrink    | Pearson r (Spearman in-cell)  | ≥ 0.90 | soft ranking quantity, see below |
 
-  Typical results: 29/30 substep checks pass tightly (5/6 dispersions land
-  <0.4%). The known exceptions: `airway` dispersion 6.7% (RNG-limited, n=8/P=5 ⇒
-  dof=3 — R's `set.seed(2)` Mersenne-Twister in the prior-variance estimator is
-  not reproducible in NumPy, and 6.7% is DE-equivalent), and `airway_cell`
-  `lfc_shrink` (Pearson 0.866) — a single near-degenerate gene whose apeGLM
+  Typical results: all 30 substep checks pass, and all six dispersions land
+  <0.4% (worst: `gtex_blood_muscle` at 3.7e-3). `airway` — the only case with
+  residual dof ≤ 3, hence the only one entering R's Monte-Carlo prior-variance
+  branch — reproduces R's prior variance bit for bit, lands at 4.5e-4, and calls
+  an identical significant-gene set (3993/3993). The one remaining soft spot is
+  `airway_cell` `lfc_shrink` (Pearson 0.866) — a single near-degenerate gene whose apeGLM
   posterior is so flat that a 1e-14 dispersion difference moves the shrunk LFC by
   ~5 (visible in that row's `GPU Δ`). Neither changes any DE call.
 

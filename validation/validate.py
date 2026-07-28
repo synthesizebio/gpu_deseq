@@ -60,6 +60,24 @@ def _p95abs(a, b):
     return float(np.percentile(np.abs(a[m] - b[m]), 95)) if m.any() else float("nan")
 
 
+#: |shrunk LFC - R| above which a gene counts as landing in a different
+#: posterior basin rather than merely differing numerically. Agreeing genes sit
+#: at ~1e-4; basin flips are O(1), so anything in between separates them.
+SHRUNK_DIVERGENCE_THRESHOLD = 0.1
+
+
+def _shrunk_divergence(a, b, thresh=SHRUNK_DIVERGENCE_THRESHOLD):
+    """Count genes whose apeGLM-shrunk LFC lands in a different basin than R's."""
+    m = np.isfinite(a) & np.isfinite(b)
+    d = np.abs(a[m] - b[m])
+    return {
+        "shrunk_lfc_divergent_threshold": float(thresh),
+        "shrunk_lfc_n_divergent": int((d > thresh).sum()),
+        "shrunk_lfc_n_compared": int(m.sum()),
+        "shrunk_lfc_max_abs": float(d.max()) if d.size else float("nan"),
+    }
+
+
 def _jaccard(sa, sb):
     inter = (sa & sb).sum()
     union = (sa | sb).sum()
@@ -116,6 +134,12 @@ def run_case(name, device):
         "dispersion_p95_rel": float(np.percentile(disp_rel[np.isfinite(disp_rel)], 95)),
         "shrunk_lfc_pearson": _pearson(o_slfc, r_slfc),
         "shrunk_lfc_p95_abs": _p95abs(o_slfc, r_slfc),
+        # apeGLM's posterior is bimodal for extreme-effect genes, so two L-BFGS
+        # implementations can settle in different basins on a near-degenerate
+        # gene and disagree by O(1) while every other gene agrees to ~1e-4.
+        # Count them explicitly: correlation and p95 both hide a handful of
+        # O(1) outliers, and the paper quotes this count.
+        **_shrunk_divergence(o_slfc, r_slfc),
         "sig_jaccard_0.05": _jaccard(sig(o_padj, 0.05), sig(r_padj, 0.05)),
         "sig_jaccard_0.10": _jaccard(sig(o_padj, 0.10), sig(r_padj, 0.10)),
         "n_sig_ours_0.05": int(sig(o_padj, 0.05).sum()),

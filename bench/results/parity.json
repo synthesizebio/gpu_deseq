@@ -9,52 +9,72 @@
       "higher_better": false,
       "pass": true,
       "gpu_modes_maxdiff": 0.0,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.0
+      },
       "pj_value": 4.1416183048968446e-15
     },
     {
       "case": "airway",
       "substep": "dispersion",
       "metric": "p95 rel",
-      "value": 0.06686196658397814,
+      "value": 0.0004488752584482299,
       "tol": 0.1,
       "higher_better": false,
       "pass": true,
-      "gpu_modes_maxdiff": 9.783545529273852e-08,
+      "gpu_modes_maxdiff": 3.114687423533269e-07,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 3.114687423533269e-07
+      },
       "pj_value": 0.4085804005023479
     },
     {
       "case": "airway",
       "substep": "glm_fit",
       "metric": "p95 |\u0394|",
-      "value": 0.004827032393438689,
+      "value": 3.0378423092081138e-05,
       "tol": 0.01,
       "higher_better": false,
       "pass": true,
-      "gpu_modes_maxdiff": 1.8435961063323347e-08,
+      "gpu_modes_maxdiff": 9.6712367003704e-09,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 9.6712367003704e-09
+      },
       "pj_value": 0.03594545917547447
     },
     {
       "case": "airway",
       "substep": "significance",
       "metric": "Jaccard@.05",
-      "value": 0.9774177712322042,
+      "value": 1.0,
       "tol": 0.95,
       "higher_better": true,
       "pass": true,
-      "gpu_modes_maxdiff": 8.717679724767891e-07,
+      "gpu_modes_maxdiff": 1.5324969321328652e-06,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.5324969321328652e-06
+      },
       "pj_value": 0.9145631067961165
     },
     {
       "case": "airway",
       "substep": "lfc_shrink",
       "metric": "Pearson r",
-      "value": 0.9998408473371384,
+      "value": 0.9999981357518747,
       "tol": 0.9,
       "higher_better": true,
       "pass": true,
-      "gpu_modes_maxdiff": 0.00010024096362788899,
-      "pj_value": 0.9883399505965765,
-      "aux": "\u03c1=1.000"
+      "gpu_modes_maxdiff": 7.850840363681985e-05,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 7.850840363681985e-05
+      },
+      "aux": "\u03c1=1.000",
+      "pj_value": 0.9883399505965765
     }
   ],
   "airway_cell": [
@@ -67,6 +87,10 @@
       "higher_better": false,
       "pass": true,
       "gpu_modes_maxdiff": 0.0,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.0
+      },
       "pj_value": 4.1416183048968446e-15
     },
     {
@@ -78,6 +102,10 @@
       "higher_better": false,
       "pass": true,
       "gpu_modes_maxdiff": 6.109679898114173e-08,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 6.109679898114173e-08
+      },
       "pj_value": 0.21183037316986705
     },
     {
@@ -89,30 +117,42 @@
       "higher_better": false,
       "pass": true,
       "gpu_modes_maxdiff": 2.8655296954727127e-09,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 2.8655296954727127e-09
+      },
       "pj_value": 0.01312444082261609
     },
     {
       "case": "airway_cell",
       "substep": "significance",
       "metric": "Jaccard@.05",
-      "value": 0.9710144927536232,
+      "value": 1.0,
       "tol": 0.95,
       "higher_better": true,
       "pass": true,
-      "gpu_modes_maxdiff": 1.248174352763698e-08,
+      "gpu_modes_maxdiff": 1.3035062577286885e-08,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.3035062577286885e-08
+      },
       "pj_value": 0.9013452914798207
     },
     {
       "case": "airway_cell",
       "substep": "lfc_shrink",
       "metric": "Pearson r",
-      "value": 0.9972229120852818,
+      "value": 0.9972238129067502,
       "tol": 0.9,
       "higher_better": true,
       "pass": true,
-      "gpu_modes_maxdiff": 0.00016739393359129078,
-      "pj_value": 0.9598780578585675,
-      "aux": "\u03c1=0.996"
+      "gpu_modes_maxdiff": 6.417939811334222e-05,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 6.417939811334222e-05
+      },
+      "aux": "\u03c1=0.996",
+      "pj_value": 0.9598780578585675
     }
   ],
   "airway_dex": [
@@ -125,6 +165,10 @@
       "higher_better": false,
       "pass": true,
       "gpu_modes_maxdiff": 0.0,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.0
+      },
       "pj_value": 4.1416183048968446e-15
     },
     {
@@ -136,6 +180,10 @@
       "higher_better": false,
       "pass": true,
       "gpu_modes_maxdiff": 2.2860267456792371e-07,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 2.2860267456792371e-07
+      },
       "pj_value": 0.1373217388599617
     },
     {
@@ -147,30 +195,42 @@
       "higher_better": false,
       "pass": true,
       "gpu_modes_maxdiff": 1.753824863115483e-09,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.753824863115483e-09
+      },
       "pj_value": 0.006107301740619686
     },
     {
       "case": "airway_dex",
       "substep": "significance",
       "metric": "Jaccard@.05",
-      "value": 0.9996296296296296,
+      "value": 0.9996297667530544,
       "tol": 0.95,
       "higher_better": true,
       "pass": true,
       "gpu_modes_maxdiff": 1.520427176382455e-07,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.520427176382455e-07
+      },
       "pj_value": 0.9774545454545455
     },
     {
       "case": "airway_dex",
       "substep": "lfc_shrink",
       "metric": "Pearson r",
-      "value": 0.9985921982455638,
+      "value": 0.9985925562327209,
       "tol": 0.9,
       "higher_better": true,
       "pass": true,
-      "gpu_modes_maxdiff": 8.038817403549503e-07,
-      "pj_value": 0.9987267046068954,
-      "aux": "\u03c1=1.000"
+      "gpu_modes_maxdiff": 9.143231526564932e-06,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 9.143231526564932e-06
+      },
+      "aux": "\u03c1=1.000",
+      "pj_value": 0.9987267046068954
     }
   ],
   "gtex_blood_muscle": [
@@ -183,6 +243,10 @@
       "higher_better": false,
       "pass": true,
       "gpu_modes_maxdiff": 0.0,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.0
+      },
       "pj_value": 5.471337373222495e-15
     },
     {
@@ -194,6 +258,10 @@
       "higher_better": false,
       "pass": true,
       "gpu_modes_maxdiff": 0.2603959758848937,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.2603959758848937
+      },
       "pj_value": 0.006043975984072504
     },
     {
@@ -205,17 +273,25 @@
       "higher_better": false,
       "pass": true,
       "gpu_modes_maxdiff": 0.00012239744421860266,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.00012239744421860266
+      },
       "pj_value": 4.52293365855494e-05
     },
     {
       "case": "gtex_blood_muscle",
       "substep": "significance",
       "metric": "Jaccard@.05",
-      "value": 0.9905674547147706,
+      "value": 0.9999399110683812,
       "tol": 0.95,
       "higher_better": true,
       "pass": true,
-      "gpu_modes_maxdiff": 0.001798470370123928,
+      "gpu_modes_maxdiff": 0.00199416786316281,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.00199416786316281
+      },
       "pj_value": 0.9714824416686307
     },
     {
@@ -227,8 +303,12 @@
       "higher_better": true,
       "pass": true,
       "gpu_modes_maxdiff": 0.005701924792822943,
-      "pj_value": 0.9999950626100806,
-      "aux": "\u03c1=1.000"
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.005701924792822943
+      },
+      "aux": "\u03c1=1.000",
+      "pj_value": 0.9999950626100806
     }
   ],
   "pasilla": [
@@ -241,6 +321,10 @@
       "higher_better": false,
       "pass": true,
       "gpu_modes_maxdiff": 0.0,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.0
+      },
       "pj_value": 2.926098047964346e-15
     },
     {
@@ -252,6 +336,10 @@
       "higher_better": false,
       "pass": true,
       "gpu_modes_maxdiff": 1.8968723691087375e-07,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.8968723691087375e-07
+      },
       "pj_value": 0.1208681396533606
     },
     {
@@ -263,6 +351,10 @@
       "higher_better": false,
       "pass": true,
       "gpu_modes_maxdiff": 1.3443008650693145e-09,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.3443008650693145e-09
+      },
       "pj_value": 0.008214648178100118
     },
     {
@@ -274,19 +366,27 @@
       "higher_better": true,
       "pass": true,
       "gpu_modes_maxdiff": 1.8289657843229001e-06,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.8289657843229001e-06
+      },
       "pj_value": 0.9741176470588235
     },
     {
       "case": "pasilla",
       "substep": "lfc_shrink",
       "metric": "Pearson r",
-      "value": 0.9999966667537662,
+      "value": 0.9999966667782288,
       "tol": 0.9,
       "higher_better": true,
       "pass": true,
-      "gpu_modes_maxdiff": 5.432671815741585e-07,
-      "pj_value": 0.9952169812985178,
-      "aux": "\u03c1=1.000"
+      "gpu_modes_maxdiff": 5.432778247826953e-07,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 5.432778247826953e-07
+      },
+      "aux": "\u03c1=1.000",
+      "pj_value": 0.9952169812985178
     }
   ],
   "pasilla_2fac": [
@@ -299,6 +399,10 @@
       "higher_better": false,
       "pass": true,
       "gpu_modes_maxdiff": 0.0,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.0
+      },
       "pj_value": 2.926098047964346e-15
     },
     {
@@ -310,6 +414,10 @@
       "higher_better": false,
       "pass": true,
       "gpu_modes_maxdiff": 1.0795106852867775e-07,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.0795106852867775e-07
+      },
       "pj_value": 0.23293498315235348
     },
     {
@@ -321,6 +429,10 @@
       "higher_better": false,
       "pass": true,
       "gpu_modes_maxdiff": 1.400971860743283e-08,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.400971860743283e-08
+      },
       "pj_value": 0.02155938206497041
     },
     {
@@ -331,20 +443,28 @@
       "tol": 0.95,
       "higher_better": true,
       "pass": true,
-      "gpu_modes_maxdiff": 1.3981809601215645e-06,
+      "gpu_modes_maxdiff": 1.3978304509443262e-06,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.3978304509443262e-06
+      },
       "pj_value": 0.9389380530973451
     },
     {
       "case": "pasilla_2fac",
       "substep": "lfc_shrink",
       "metric": "Pearson r",
-      "value": 0.9999906699993064,
+      "value": 0.9999906702689575,
       "tol": 0.9,
       "higher_better": true,
       "pass": true,
-      "gpu_modes_maxdiff": 1.5056814440736477e-07,
-      "pj_value": 0.9953220315824359,
-      "aux": "\u03c1=1.000"
+      "gpu_modes_maxdiff": 1.5066337518895856e-07,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.5066337518895856e-07
+      },
+      "aux": "\u03c1=1.000",
+      "pj_value": 0.9953220315824359
     }
   ]
 }

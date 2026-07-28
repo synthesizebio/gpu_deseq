@@ -9,6 +9,8 @@ dist/
 build/
 *.egg-info/
 bench/cache/
+# R library installed by bench/run_r_scaling.sh in --r-mode docker
+bench/.rlib-bioc312/
 
 # per-user Claude Code overrides; the shared .claude/ config is tracked
 .claude/settings.local.json
