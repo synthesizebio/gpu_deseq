@@ -558,12 +558,17 @@ Table~\ref{tab:perstep}, which uses \texttt{DESeq(parallel=TRUE)} with a
 parity and timing in bench/ (\texttt{bench/bench.py}), synthetic scaling in
 benchmarks/.}
 \todo{\textbf{GAP:} add a second GPU (L4) and a larger-core R box (32--64).}
-We validate on three real RNA-seq datasets sliced into six designs spanning
-$P=2$--$5$ model terms: pasilla (\emph{Drosophila}, $n{=}7$, one- and two-factor),
-airway (human, $n{=}8$, three design slices), and a 300-sample GTEx whole-blood
-vs.\ muscle contrast ($54{,}922$ genes). Scaling studies use fixed-seed
-negative-binomial simulations where the gene and sample axes can be swept
-independently.
+We validate on three real, published RNA-seq datasets sliced into six designs
+spanning $P=2$--$5$ model terms: pasilla \citep{brooks2011pasilla}
+(\emph{Drosophila}, $n{=}7$, one- and two-factor), airway
+\citep{himes2014airway} (human, $n{=}8$, three design slices), and a 300-sample
+GTEx \citep{gtex2020atlas} whole-blood vs.\ skeletal-muscle contrast
+($54{,}922$ genes). The first two are distributed as Bioconductor experiment
+packages; the GTEx counts are recount2's uniform reprocessing of SRA study
+SRP012682 \citep{colladotorres2017recount2}, from which we draw 150 samples per
+tissue at a fixed seed and convert base coverage to read counts by dividing by
+the average read length. Scaling studies use fixed-seed negative-binomial
+simulations where the gene and sample axes can be swept independently.
 
 \subsection{Numerical parity with R}
 \label{sec:parity}
@@ -896,21 +901,34 @@ types, GPU-side independent filtering / trend fit, multi-GPU cohorts.}
 none declared.
 
 \section*{Data and software availability}
+Every dataset used here is public and previously published; this work generated
+no new sequencing data. pasilla \citep{brooks2011pasilla} and airway
+\citep{himes2014airway} are the Bioconductor experiment packages of the same
+names (\texttt{BiocManager::install(c("pasilla","airway"))}). The GTEx cohort
+\citep{gtex2020atlas} is taken from recount2
+\citep{colladotorres2017recount2} as the gene-level
+\texttt{RangedSummarizedExperiment} for SRA study SRP012682, downloaded from the
+\texttt{recount-opendata} S3 bucket. \texttt{validation/fetch\_and\_reference.R}
+and \texttt{validation/prepare\_gtex.R} fetch each dataset, fix the contrast
+levels, and write the exact count matrices and R DESeq2 reference outputs the
+comparisons use, so all six designs are reconstructible from the two scripts.
+
 Source code, tests, and benchmark harnesses are available at
 \url{https://github.com/synthesizebio/gpu_deseq}, released under the MIT
 license. Reproduce with:
 \begin{lstlisting}
 # parity (all three modes)
 GPU_DESEQ_ACCEL={eager|graph|triton} pytest tests/
+# real-data parity + timing (Tables 1-3)
+python bench/bench.py
+# real-data validation vs R, incl. apeGLM shrink
+python validation/validate.py
 # per-step vs R (1-thread + k-core)
 python benchmarks/bench_per_step.py --ncores 12
 # roofline
 python benchmarks/roofline_empirical.py
 \end{lstlisting}
 
-% Scaffold has no \cite yet; \nocite{*} renders the starter refs so the
-% bibliography is non-empty. Remove once real \citep/\citet commands are added.
-\nocite{*}
 \bibliographystyle{plainnat}
 \bibliography{references}
 

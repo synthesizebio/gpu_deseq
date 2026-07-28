@@ -1,7 +1,7 @@
-% Starter bibliography. VERIFY every entry (authors, venue, pages, DOI) before
-% submission -- e.g. via a literature search -- and add related-work references
-% (prior GPU/accelerated DE tools, CUDA graphs). Entries are not cited in the
-% outline yet, so they will not appear in the PDF until \cite'd.
+% Bibliography. Every entry is cited in main.tex, and \nocite{*} has been
+% removed, so an uncited entry will silently vanish from the PDF -- check the
+% reference list after adding one. Re-verify authors, venue, pages and DOI
+% against the publisher record before submission.
 
 @article{love2014deseq2,
   title   = {Moderated estimation of fold change and dispersion for RNA-seq data with {DESeq2}},
@@ -103,6 +103,45 @@
   author       = {{NVIDIA Corporation}},
   howpublished = {\url{https://docs.nvidia.com/cuda/cuda-c-programming-guide/}},
   year         = {2024}, note = {Accessed July 2026}
+}
+
+% --- Validation datasets -----------------------------------------------------
+% Verified against PubMed / publisher records, July 2026.
+
+@article{brooks2011pasilla,
+  title   = {Conservation of an {RNA} regulatory map between {Drosophila} and mammals},
+  author  = {Brooks, Angela N. and Yang, Li and Duff, Michael O. and Hansen, Kasper D.
+             and Park, Jung W. and Dudoit, Sandrine and Brenner, Steven E.
+             and Graveley, Brenton R.},
+  journal = {Genome Research},
+  volume  = {21}, number = {2}, pages = {193--202}, year = {2011},
+  doi     = {10.1101/gr.108662.110}
+}
+
+@article{himes2014airway,
+  title   = {{RNA-Seq} transcriptome profiling identifies {CRISPLD2} as a glucocorticoid
+             responsive gene that modulates cytokine function in airway smooth muscle cells},
+  author  = {Himes, Blanca E. and Jiang, Xiaofeng and Wagner, Peter and Hu, Ruoxi
+             and Wang, Qiyu and others},
+  journal = {PLoS ONE},
+  volume  = {9}, number = {6}, pages = {e99625}, year = {2014},
+  doi     = {10.1371/journal.pone.0099625}
+}
+
+@article{colladotorres2017recount2,
+  title   = {Reproducible {RNA-seq} analysis using {recount2}},
+  author  = {Collado-Torres, Leonardo and Nellore, Abhinav and Kammers, Kai and others},
+  journal = {Nature Biotechnology},
+  volume  = {35}, number = {4}, pages = {319--321}, year = {2017},
+  doi     = {10.1038/nbt.3838}
+}
+
+@article{gtex2020atlas,
+  title   = {The {GTEx} Consortium atlas of genetic regulatory effects across human tissues},
+  author  = {{GTEx Consortium}},
+  journal = {Science},
+  volume  = {369}, number = {6509}, pages = {1318--1330}, year = {2020},
+  doi     = {10.1126/science.aaz1776}
 }
 
 % NOTE: BibTeX has no comment syntax and stops at any at-sign, so never write an
