@@ -550,9 +550,18 @@ def _wald_se_and_stat(
     """DESeq2's Wald sandwich SE + Wald statistic.
 
     SE = sqrt( cᵀ (M + ridge)⁻¹ M (M + ridge)⁻¹ c ) where M = Xᵀ W X,
-    W = μ / (1 + α μ).
+    W = μ̃ / (1 + α μ̃)  and  μ̃ = max(μ, MIN_MU).
     Stat = cᵀ β / SE.
     Returns (stat, se) each of shape (G,).
+
+    The μ floor matters and is not cosmetic: R forms the weights for `sigma` from
+    a μ already thresholded at `minmu` (fitBeta.cpp), and `irls_batched` hands
+    back the *un*-thresholded μ because Cook's distance needs it raw. Without the
+    floor here, any sample with μ < MIN_MU contributes ~0 weight instead of
+    ~MIN_MU, XᵀWX loses that sample and the SE comes out too large -- by ~22% on
+    genes where one contrasted group is entirely zero, and ~7% on near-zero-count
+    genes whose dispersion is pinned at the ceiling. Genes with μ >= MIN_MU
+    throughout, i.e. almost all of them, are unaffected either way.
     """
     G = coefficients.shape[0]
     P = design.shape[1]
@@ -560,8 +569,9 @@ def _wald_se_and_stat(
     dtype = coefficients.dtype
     eye = ridge * torch.eye(P, dtype=dtype, device=device)
 
-    alpha = dispersions.unsqueeze(1)  # (G, 1)
-    W = mu / (1.0 + mu * alpha)       # (G, S)
+    alpha = dispersions.unsqueeze(1)          # (G, 1)
+    mu = mu.clamp_min(_core.MIN_MU)           # R: fitBeta.cpp thresholds at minmu
+    W = mu / (1.0 + mu * alpha)               # (G, S)
     M = torch.einsum("sp,gs,sq->gpq", design, W, design)  # (G, P, P)
     H = torch.linalg.inv(M + eye)     # (G, P, P)
     Hc = torch.einsum("gpq,q->gp", H, contrast)           # (G, P)
