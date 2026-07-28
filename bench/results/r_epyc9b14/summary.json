@@ -1,0 +1,318 @@
+{
+  "generated_by": "bench/render_r_hosts.py",
+  "gpu_timings_are_not_from_these_hosts": "GPU numbers are the committed A100 measurements in bench/results/timings.json. No host below has a GPU attached; speedups involving them are arithmetic on existing numbers.",
+  "hosts": {
+    "A100 host": {
+      "role": "reference (published R column)",
+      "deseq2": "1.30.1",
+      "source": "bench/results/timings.json"
+    },
+    "EPYC 9B14": {
+      "role": "additional R baseline",
+      "host": "AMD EPYC 9B14 | 15p/30l cores | 117GB",
+      "r": "4.5.0",
+      "deseq2": "1.46.0",
+      "apeglm": "1.32.0",
+      "blas": "/usr/lib/x86_64-linux-gnu/blas/libblas.so.3.12.1",
+      "measured_utc": "2026-07-28T23:03:32Z",
+      "source": "bench/results/r_epyc9b14/r_scaling.jsonl",
+      "comparable_to_reference": false
+    }
+  },
+  "datasets": {
+    "airway": {
+      "r_serial_ms": {
+        "A100 host": 33456.286,
+        "EPYC 9B14": 17101.081
+      },
+      "r_substeps_ms": {
+        "A100 host": {
+          "normalization": 213.302,
+          "dispersion": 10422.724,
+          "glm_fit": 4738.41,
+          "significance": 364.738,
+          "lfc_shrink": 17717.111,
+          "total": 33456.286
+        },
+        "EPYC 9B14": {
+          "normalization": 92.802,
+          "dispersion": 4313.772,
+          "glm_fit": 2840.389,
+          "significance": 665.17,
+          "lfc_shrink": 9188.947,
+          "total": 17101.081
+        }
+      },
+      "n": 8,
+      "genes": 33469,
+      "P": 5,
+      "r_multicore_ms": {
+        "EPYC 9B14": {
+          "by_workers": {
+            "1": 16605.928,
+            "2": 10139.011,
+            "4": 6627.931,
+            "8": 5045.645,
+            "15": 4963.311
+          },
+          "best_ms": 4963.311,
+          "best_workers": 15
+        }
+      },
+      "gpu_best_a100": {
+        "mode": "triton",
+        "total_ms": 1500.5708200333174
+      },
+      "speedup_recomputed": {
+        "vs_A100 host_serial": 22.3,
+        "vs_EPYC 9B14_serial": 11.4,
+        "vs_EPYC 9B14_best_multicore": 3.31
+      }
+    },
+    "airway_cell": {
+      "r_serial_ms": {
+        "A100 host": 27898.929,
+        "EPYC 9B14": 14754.421
+      },
+      "r_substeps_ms": {
+        "A100 host": {
+          "normalization": 200.581,
+          "dispersion": 5723.723,
+          "glm_fit": 4189.761,
+          "significance": 361.951,
+          "lfc_shrink": 17422.913,
+          "total": 27898.929
+        },
+        "EPYC 9B14": {
+          "normalization": 92.305,
+          "dispersion": 2784.14,
+          "glm_fit": 2066.69,
+          "significance": 173.925,
+          "lfc_shrink": 9637.361,
+          "total": 14754.421
+        }
+      },
+      "n": 8,
+      "genes": 33469,
+      "P": 4,
+      "r_multicore_ms": {
+        "EPYC 9B14": {
+          "by_workers": {
+            "1": 14711.053,
+            "2": 9285.724,
+            "4": 5993.338,
+            "8": 4580.491,
+            "15": 4571.9
+          },
+          "best_ms": 4571.9,
+          "best_workers": 15
+        }
+      },
+      "gpu_best_a100": {
+        "mode": "triton",
+        "total_ms": 3468.7916330294684
+      },
+      "speedup_recomputed": {
+        "vs_A100 host_serial": 8.04,
+        "vs_EPYC 9B14_serial": 4.25,
+        "vs_EPYC 9B14_best_multicore": 1.32
+      }
+    },
+    "airway_dex": {
+      "r_serial_ms": {
+        "A100 host": 25664.413,
+        "EPYC 9B14": 12688.628
+      },
+      "r_substeps_ms": {
+        "A100 host": {
+          "normalization": 197.74,
+          "dispersion": 6211.643,
+          "glm_fit": 5665.509,
+          "significance": 1299.152,
+          "lfc_shrink": 12290.369,
+          "total": 25664.413
+        },
+        "EPYC 9B14": {
+          "normalization": 96.922,
+          "dispersion": 1990.186,
+          "glm_fit": 2858.984,
+          "significance": 730.981,
+          "lfc_shrink": 7011.554,
+          "total": 12688.628
+        }
+      },
+      "n": 8,
+      "genes": 33469,
+      "P": 2,
+      "r_multicore_ms": {
+        "EPYC 9B14": {
+          "by_workers": {
+            "1": 12852.366,
+            "2": 9062.455,
+            "4": 6495.687,
+            "8": 5533.246,
+            "15": 5685.494
+          },
+          "best_ms": 5533.246,
+          "best_workers": 8
+        }
+      },
+      "gpu_best_a100": {
+        "mode": "triton",
+        "total_ms": 1361.3375849672593
+      },
+      "speedup_recomputed": {
+        "vs_A100 host_serial": 18.85,
+        "vs_EPYC 9B14_serial": 9.32,
+        "vs_EPYC 9B14_best_multicore": 4.06
+      }
+    },
+    "gtex_blood_muscle": {
+      "r_serial_ms": {
+        "A100 host": 350435.127,
+        "EPYC 9B14": 147211.291
+      },
+      "r_substeps_ms": {
+        "A100 host": {
+          "normalization": 2953.721,
+          "dispersion": 231275.913,
+          "glm_fit": 42321.063,
+          "significance": 17864.851,
+          "lfc_shrink": 56019.58,
+          "total": 350435.127
+        },
+        "EPYC 9B14": {
+          "normalization": 1047.18,
+          "dispersion": 81453.549,
+          "glm_fit": 23507.899,
+          "significance": 11157.856,
+          "lfc_shrink": 30044.808,
+          "total": 147211.291
+        }
+      },
+      "n": 300,
+      "genes": 54922,
+      "P": 2,
+      "r_multicore_ms": {
+        "EPYC 9B14": {
+          "by_workers": {
+            "1": 141572.973,
+            "2": 89576.226,
+            "4": 59936.771,
+            "8": 44630.576,
+            "15": 39449.31
+          },
+          "best_ms": 39449.31,
+          "best_workers": 15
+        }
+      },
+      "gpu_best_a100": {
+        "mode": "triton",
+        "total_ms": 4482.953632017598
+      },
+      "speedup_recomputed": {
+        "vs_A100 host_serial": 78.17,
+        "vs_EPYC 9B14_serial": 32.84,
+        "vs_EPYC 9B14_best_multicore": 8.8
+      }
+    },
+    "pasilla": {
+      "r_serial_ms": {
+        "A100 host": 9307.445,
+        "EPYC 9B14": 4527.046
+      },
+      "r_substeps_ms": {
+        "A100 host": {
+          "normalization": 175.401,
+          "dispersion": 2335.063,
+          "glm_fit": 2137.589,
+          "significance": 277.431,
+          "lfc_shrink": 4381.961,
+          "total": 9307.445
+        },
+        "EPYC 9B14": {
+          "normalization": 81.923,
+          "dispersion": 801.794,
+          "glm_fit": 1178.81,
+          "significance": 108.68,
+          "lfc_shrink": 2355.839,
+          "total": 4527.046
+        }
+      },
+      "n": 7,
+      "genes": 12359,
+      "P": 2,
+      "r_multicore_ms": {
+        "EPYC 9B14": {
+          "by_workers": {
+            "1": 4681.589,
+            "2": 4127.165,
+            "4": 3569.293,
+            "8": 3665.337,
+            "15": 4458.626
+          },
+          "best_ms": 3569.293,
+          "best_workers": 4
+        }
+      },
+      "gpu_best_a100": {
+        "mode": "triton",
+        "total_ms": 701.9866899354383
+      },
+      "speedup_recomputed": {
+        "vs_A100 host_serial": 13.26,
+        "vs_EPYC 9B14_serial": 6.45,
+        "vs_EPYC 9B14_best_multicore": 5.08
+      }
+    },
+    "pasilla_2fac": {
+      "r_serial_ms": {
+        "A100 host": 10345.612,
+        "EPYC 9B14": 4664.726
+      },
+      "r_substeps_ms": {
+        "A100 host": {
+          "normalization": 175.936,
+          "dispersion": 2791.035,
+          "glm_fit": 1501.656,
+          "significance": 240.3,
+          "lfc_shrink": 5636.685,
+          "total": 10345.612
+        },
+        "EPYC 9B14": {
+          "normalization": 83.648,
+          "dispersion": 985.788,
+          "glm_fit": 797.136,
+          "significance": 94.99,
+          "lfc_shrink": 2703.163,
+          "total": 4664.726
+        }
+      },
+      "n": 7,
+      "genes": 12359,
+      "P": 3,
+      "r_multicore_ms": {
+        "EPYC 9B14": {
+          "by_workers": {
+            "1": 4702.876,
+            "2": 4245.955,
+            "4": 3648.383,
+            "8": 3722.474,
+            "15": 4580.166
+          },
+          "best_ms": 3648.383,
+          "best_workers": 4
+        }
+      },
+      "gpu_best_a100": {
+        "mode": "triton",
+        "total_ms": 866.1567730014212
+      },
+      "speedup_recomputed": {
+        "vs_A100 host_serial": 11.94,
+        "vs_EPYC 9B14_serial": 5.39,
+        "vs_EPYC 9B14_best_multicore": 4.21
+      }
+    }
+  }
+}

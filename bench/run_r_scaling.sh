@@ -74,6 +74,7 @@ ONLY=""
 DATA_FROM=""
 FETCH_DATA=0
 R_MODE="auto"         # auto | native | docker
+ANY_DESEQ2=0          # accept a native DESeq2 whose version is not 1.30.1
 DRY_RUN=0
 
 usage() {
@@ -92,6 +93,14 @@ Usage: bash bench/run_r_scaling.sh [options]
                                RSE and needs the pasilla + airway data packages.
   --r-mode auto|native|docker  How to get R 4.0 / DESeq2 1.30.1 (default auto:
                                native if already present, else docker).
+  --allow-any-deseq2           Accept whatever DESeq2 the native R provides
+                               instead of requiring exactly 1.30.1. Use when a
+                               host cannot run the pinned Bioc 3.12 image (no
+                               docker, no disk). The measured version is
+                               recorded in the output header -- timings taken
+                               this way are NOT directly comparable to the
+                               1.30.1 R column in TABLES.md, since the DESeq2
+                               version varies alongside the hardware.
   --out DIR                    Output directory (default bench/results).
   --dry-run                    Print the plan and exit.
   -h, --help                   This message.
@@ -107,6 +116,7 @@ while [[ $# -gt 0 ]]; do
     --data-from)   DATA_FROM="$2"; shift 2 ;;
     --fetch-data)  FETCH_DATA=1; shift ;;
     --r-mode)      R_MODE="$2"; shift 2 ;;
+    --allow-any-deseq2) ANY_DESEQ2=1; shift ;;
     --out)         OUT_DIR="$2"; shift 2 ;;
     --dry-run)     DRY_RUN=1; shift ;;
     -h|--help)     usage; exit 0 ;;
@@ -140,13 +150,20 @@ log "cores: $PHYS_CORES physical / $LOGICAL_CPUS logical, ${MEM_GB} GB RAM"
 log "worker sweep: $WORKERS"
 
 # --------------------------------------------------------------- R backend ---
+# The default gate insists on DESeq2 1.30.1 so that "native" always means the
+# same software as the docker fallback -- otherwise a host with a newer DESeq2
+# would silently produce numbers that are not comparable to the reference R
+# column. --allow-any-deseq2 waives the version pin (but not the requirement
+# that DESeq2 and apeglm exist) for hosts that cannot run the pinned image.
 have_native_r() {
   command -v Rscript >/dev/null 2>&1 || return 1
-  Rscript -e '.libPaths(c(Sys.getenv("R_DESEQ2_LIB", unset="~/R/library"), .libPaths()))
-              q(status = if (requireNamespace("DESeq2", quietly=TRUE) &&
-                             as.character(packageVersion("DESeq2")) == "1.30.1" &&
-                             requireNamespace("apeglm", quietly=TRUE)) 0 else 1)' \
-    >/dev/null 2>&1
+  ANY_DESEQ2="$ANY_DESEQ2" Rscript -e '
+    .libPaths(c(Sys.getenv("R_DESEQ2_LIB", unset="~/R/library"), .libPaths()))
+    any_ver <- Sys.getenv("ANY_DESEQ2") == "1"
+    ok <- requireNamespace("DESeq2", quietly=TRUE) &&
+          requireNamespace("apeglm", quietly=TRUE) &&
+          (any_ver || as.character(packageVersion("DESeq2")) == "1.30.1")
+    q(status = if (ok) 0 else 1)' >/dev/null 2>&1
 }
 
 if [[ "$R_MODE" == "auto" ]]; then
@@ -156,7 +173,13 @@ log "R backend: $R_MODE"
 
 # RUN_R <script.R> [args...]  -- executes an R script against the pinned stack.
 if [[ "$R_MODE" == "native" ]]; then
-  have_native_r || die "--r-mode native but DESeq2 1.30.1 + apeglm not found (set R_DESEQ2_LIB)"
+  have_native_r || die "--r-mode native but $([[ $ANY_DESEQ2 -eq 1 ]] && echo 'DESeq2 + apeglm' || echo 'DESeq2 1.30.1 + apeglm') not found (set R_DESEQ2_LIB, or pass --allow-any-deseq2)"
+  if [[ $ANY_DESEQ2 -eq 1 ]]; then
+    NATIVE_DESEQ2="$(R_DESEQ2_LIB="${R_DESEQ2_LIB:-$HOME/R/library}" Rscript -e \
+      '.libPaths(c(Sys.getenv("R_DESEQ2_LIB"), .libPaths())); cat(as.character(packageVersion("DESeq2")))' 2>/dev/null)"
+    [[ "$NATIVE_DESEQ2" == "1.30.1" ]] || \
+      log "WARNING: using DESeq2 $NATIVE_DESEQ2, not the reference 1.30.1 -- timings are not directly comparable to the R column in bench/results/TABLES.md"
+  fi
   RUN_R() {
     R_DESEQ2_LIB="${R_DESEQ2_LIB:-$HOME/R/library}" \
     OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
@@ -201,7 +224,9 @@ fi
 
 # ------------------------------------------------------------------- data ----
 mkdir -p "$OUT_DIR"
-present_cases() { find "$DATA_DIR" -mindepth 2 -maxdepth 2 -name meta.json -printf '%h\n' 2>/dev/null | xargs -r -n1 basename | sort; }
+# -L so a validation/data symlinked onto a bigger disk is still discovered (the
+# datasets are ~2 GB with GTEx, which often does not fit beside the repo).
+present_cases() { find -L "$DATA_DIR" -mindepth 2 -maxdepth 2 -name meta.json -printf '%h\n' 2>/dev/null | xargs -r -n1 basename | sort; }
 
 if [[ -n "$DATA_FROM" ]]; then
   command -v rsync >/dev/null 2>&1 || die "rsync not found (apt-get install -y rsync)"

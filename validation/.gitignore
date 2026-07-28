@@ -1,1 +1,3 @@
-data/
+# Bare "data" (not "data/") so a symlink pointing the datasets at a bigger disk
+# is ignored too -- git does not treat a symlink as a directory.
+data
