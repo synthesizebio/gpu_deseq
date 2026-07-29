@@ -85,8 +85,11 @@ the GPU. Agreement is validated end-to-end on six real RNA-seq designs
 (7--300 samples, $P=2$--$5$) and step-by-step on synthetic fixtures
 (\fact{76/76 step-parity tests; 30/30 real-data substep checks}). On a single
 A100, \cudeseq{} is \fact{8--78$\times$} faster end-to-end than single-threaded
-R~DESeq2; the dominant dispersion-estimation step falls from
-\fact{231\,s to 0.2\,s} on a 300-sample cohort.\\[3pt]
+R~DESeq2 on our reference host; the dominant dispersion-estimation step falls
+from \fact{231\,s to 0.2\,s} on a 300-sample cohort. Against a newer 15-core
+baseline the same measurements give \fact{4.3--32.8$\times$} serial and
+\fact{1.3--8.8$\times$} with R using every core, so we report the range against
+each baseline rather than a single headline.\\[3pt]
 \textbf{Availability and implementation:} \cudeseq{} is open source and available
 at \url{https://github.com/synthesizebio/gpu_deseq}; reproduction scripts are in
 \texttt{bench/} and \texttt{benchmarks/}. The software is released under the MIT
@@ -553,11 +556,18 @@ Sec.~\ref{sec:parity}.
 \note{Provenance: A100-SXM4-40GB, torch 2.6/CUDA 12.4, R~DESeq2~1.30.1 on a
 12-core host, median-of-N, warm timings, CUDA-synced. R runs single-threaded
 everywhere except the explicit ``R 12-core'' column of
-Table~\ref{tab:perstep}, which uses \texttt{DESeq(parallel=TRUE)} with a
-\texttt{MulticoreParam(12)}. Reproducible harnesses: real-data
-parity and timing in bench/ (\texttt{bench/bench.py}), synthetic scaling in
-benchmarks/.}
-\todo{\textbf{GAP:} add a second GPU (L4) and a larger-core R box (32--64).}
+Table~\ref{tab:perstep} and host~B's multi-core column in
+Table~\ref{tab:realtiming}, both of which use \texttt{DESeq(parallel=TRUE)} with
+a \texttt{MulticoreParam}. A second R baseline (host~B: AMD EPYC~9B14, 15
+physical cores, DESeq2~1.46.0, no GPU) is reported alongside the reference host
+in Table~\ref{tab:realtiming}; raw output and provenance in
+\texttt{bench/results/r\_epyc9b14/}. Reproducible harnesses: real-data parity and
+timing in bench/ (\texttt{bench/bench.py}), the cross-host R sweep in
+\texttt{bench/run\_r\_scaling.sh}, synthetic scaling in benchmarks/.}
+\todo{\textbf{GAP:} a second GPU (L4) is still missing. The CPU-baseline gap is
+now partly closed by host~B (15 physical cores), but it runs DESeq2~1.46.0 rather
+than the reference 1.30.1, so hardware and library version are confounded; a
+32--64-core box on the pinned 1.30.1 would make it a controlled comparison.}
 We validate on three real, published RNA-seq datasets sliced into six designs
 spanning $P=2$--$5$ model terms: pasilla \citep{brooks2011pasilla}
 (\emph{Drosophila}, $n{=}7$, one- and two-factor), airway
@@ -728,24 +738,47 @@ displaced systematically, by the outlier replacement discussed in the text.}
 \subsection{Real-data timing versus R}
 \label{sec:realtiming}
 \begin{table}[htbp]\centering
-\caption{End-to-end wall time on the six real datasets: single-threaded
-R~DESeq2~1.30.1 vs.\ cuDESeq2's three modes on a single A100. Speedup is the best cuDESeq2
-mode vs.\ R. \fact{Reproduce: \texttt{bench/bench.py} $\to$
-\texttt{bench/results/timings.json}.}}
+\caption{End-to-end wall time on the six real datasets: R~DESeq2 on two CPU
+hosts vs.\ \cudeseq{}'s three modes on a single A100. Host~A is the reference
+machine (DESeq2~1.30.1, 12-core box, the column published in earlier drafts);
+host~B is an AMD EPYC~9B14, 15 physical cores, running DESeq2~1.46.0.
+\textbf{The two R columns are not a controlled comparison}: CPU, R version and
+DESeq2 version all differ, so their ratio mixes a hardware effect with several
+software ones. Read each as what R costs on that machine as configured---which
+is what a speedup claim against that machine needs---and not as a hardware
+ratio. Host~B has no GPU, so the \cudeseq{} columns are the same A100
+measurement in both halves of the table and the host-B speedups are arithmetic
+on committed numbers rather than new GPU runs. \fact{Reproduce:
+\texttt{bench/bench.py} $\to$ \texttt{bench/results/timings.json}; host~B via
+\texttt{bench/run\_r\_scaling.sh} $\to$ \texttt{bench/results/r\_epyc9b14/}.}}
 \label{tab:realtiming}
-\begin{tabular}{lrrrrrr}
+\small
+\begin{tabular}{lrrrrrrrr}
 \toprule
-Dataset & $P$ & $n$ & R (s) & eager & graph & Triton \\
-        &     &     &       & (ms)  & (ms)  & (ms)   \\\midrule
-pasilla       & 2 &   7 &   9.3 & 1149 &  801 &  702 \\
-pasilla\_2fac & 3 &   7 &  10.3 & 1511 &  946 &  866 \\
-airway\_dex   & 2 &   8 &  25.7 & 1733 & 1414 & 1361 \\
-airway\_cell  & 4 &   8 &  27.9 & 4178 & 3621 & 3469 \\
-airway        & 5 &   8 &  33.5 & 2521 & 1650 & 1501 \\
-gtex          & 2 & 300 & 350.4 & 8429 & 8386 & 4483 \\\bottomrule
+ & & & \multicolumn{3}{c}{R DESeq2 (s)} & \multicolumn{3}{c}{\cudeseq{}, one A100 (ms)} \\
+\cmidrule(lr){4-6}\cmidrule(lr){7-9}
+ & & & host A & host B & host B & & & \\
+ & & & 1.30.1 & 1.46.0 & 1.46.0 & & & \\
+Dataset & $P$ & $n$ & 1 thr & 1 thr & best MC & eager & graph & Triton \\
+\midrule
+pasilla       & 2 &   7 &   9.3 &   4.5 &  3.6 & 1149 &  801 &  702 \\
+pasilla\_2fac & 3 &   7 &  10.3 &   4.7 &  3.6 & 1511 &  946 &  866 \\
+airway\_dex   & 2 &   8 &  25.7 &  12.7 &  5.5 & 1733 & 1414 & 1361 \\
+airway\_cell  & 4 &   8 &  27.9 &  14.8 &  4.6 & 4178 & 3621 & 3469 \\
+airway        & 5 &   8 &  33.5 &  17.1 &  5.0 & 2521 & 1650 & 1501 \\
+gtex          & 2 & 300 & 350.4 & 147.2 & 39.4 & 8429 & 8386 & 4483 \\\bottomrule
 \end{tabular}
 \\[3pt]
-{\footnotesize Best-mode speedup vs.\ R: pasilla 13.3$\times$, pasilla\_2fac 11.9$\times$, airway\_dex 18.9$\times$, airway\_cell 8.0$\times$, airway 22.3$\times$, gtex 78.2$\times$. Triton is the best mode on all six.}
+{\footnotesize Best-mode \cudeseq{} speedup depends on which R baseline it is
+measured against: vs.\ host~A single-threaded \fact{8.0--78.2$\times$}; vs.\
+host~B single-threaded \fact{4.3--32.8$\times$}; vs.\ host~B's best multi-core
+configuration \fact{1.3--8.8$\times$}. Triton is the best mode on all six
+designs. Host~B's best worker count is $w{=}4$ (both pasilla designs), $w{=}8$
+(airway\_dex) and $w{=}15$ (airway\_cell, airway, gtex); past it, added workers
+make the small-$n$ designs slower. The multi-core column times the
+\texttt{DESeq()}\,+\,\texttt{results()}\,+\,\texttt{lfcShrink()} wrapper path,
+whose own $w{=}1$ point---not the 1-thread column, which times the five substeps
+directly---is the correct serial reference for a parallel speedup.}
 \end{table}
 
 The graph and Triton flags accelerate \emph{only} the dispersion substep; the
@@ -777,10 +810,45 @@ lost on these designs; it simply had not been written for them.
 All three modes are shipped because the best choice still depends on the design
 and the sample count.
 
+\paragraph{How much of the speedup is the baseline machine?}
+A speedup against a single CPU is only as meaningful as that CPU, so we measured
+R again on a second, newer host (Table~\ref{tab:realtiming}, host~B: EPYC~9B14,
+15 physical cores). Per core it is \fact{1.9--2.4$\times$} faster than the
+reference box on the same six datasets, with the dominant \texttt{gtex}
+dispersion step falling from 231\,s to \fact{81\,s}. Serial speedups therefore
+roughly halve, to \fact{4.3--32.8$\times$}, and allowing R up to 15 parallel
+workers brings them to \fact{1.3--8.8$\times$}. The ordering across designs is
+unchanged, and \cudeseq{} remains ahead on all six. We report the range against
+each baseline rather than the most favourable one, because ``versus R'' is
+ambiguous once more than one machine is in play. One caveat bounds what this
+comparison can show: host~B runs DESeq2~1.46.0 rather than the reference
+1.30.1---the pinned Bioconductor image was unavailable there---so hardware and
+library version moved together and their contributions cannot be separated. BLAS
+also differed, but that one is testable and was tested: re-timing the three
+expensive substeps under each BLAS on the same host moves them by less than the
+spread of repeated runs of the same configuration, and DESeq2's per-gene IRLS is
+scalar C++ work that never dispatches through BLAS.
+
+Two features of the multi-core curve are worth stating, because they set what a
+parallel R baseline can reach. First, \texttt{results()} does not parallelise at
+all: on \texttt{gtex} it is flat at \fact{$\approx$11\,s} from $w{=}1$ to
+$w{=}15$ while the fit itself scales \fact{7.9$\times$}, so that serial
+remainder, not the fit, caps the curve. Second, the thin row of the table is
+\texttt{airway\_cell} at $1.3\times$, and it is thin for a reason that has
+nothing to do with dispersion: \fact{94\%} of its GPU time is apeGLM shrinkage
+and only 60\,ms is dispersion, the step the graph and Triton work accelerates.
+That row measures the shrink stage, and R's \texttt{lfcShrink} parallelises well
+enough to nearly catch it; it is also the row most likely to invert on a box with
+more cores than this one. The durable advantage is at the dispersion-bound
+large-cohort end, where \texttt{gtex} stays \fact{8.8$\times$} ahead of R even
+with every core of host~B in use.
+
 \begin{table}[htbp]\centering
-\caption{Per-substep wall time (ms) on the real datasets, single-threaded R vs.\
-the three cuDESeq2 modes. Graph/Triton differ from eager only in \texttt{dispersion}; all
-other rows are eager code and equal across modes up to measurement noise.
+\caption{Per-substep wall time (ms) on the real datasets, single-threaded R on
+host~A vs.\ the three cuDESeq2 modes. Graph/Triton differ from eager only in
+\texttt{dispersion}; all
+other rows are eager code and equal across modes up to measurement noise. The
+same substeps measured on host~B are in \texttt{bench/results/R\_HOSTS.md}.
 \fact{Reproduce: \texttt{bench/bench.py} $\to$ \texttt{bench/results/TABLES.md}.}}
 \label{tab:realsubstep}
 {\footnotesize
@@ -901,17 +969,18 @@ types, GPU-side independent filtering / trend fit, multi-GPU cohorts.}
 none declared.
 
 \section*{Data and software availability}
+\sloppypar
 Every dataset used here is public and previously published; this work generated
 no new sequencing data. pasilla \citep{brooks2011pasilla} and airway
 \citep{himes2014airway} are the Bioconductor experiment packages of the same
-names (\texttt{BiocManager::install(c("pasilla","airway"))}). The GTEx cohort
+names, installable with \texttt{BiocManager::install}. The GTEx cohort
 \citep{gtex2020atlas} is taken from recount2
-\citep{colladotorres2017recount2} as the gene-level
-\texttt{RangedSummarizedExperiment} for SRA study SRP012682, downloaded from the
-\texttt{recount-opendata} S3 bucket. \texttt{validation/fetch\_and\_reference.R}
-and \texttt{validation/prepare\_gtex.R} fetch each dataset, fix the contrast
-levels, and write the exact count matrices and R DESeq2 reference outputs the
-comparisons use, so all six designs are reconstructible from the two scripts.
+\citep{colladotorres2017recount2} as the gene-level summarized experiment for
+SRA study SRP012682, downloaded from the \texttt{recount-opendata} S3 bucket.
+The scripts \texttt{fetch\_and\_reference.R} and \texttt{prepare\_gtex.R}, both
+under \texttt{validation/}, fetch each dataset, fix the contrast levels, and
+write the exact count matrices and R~DESeq2 reference outputs the comparisons
+use, so all six designs are reconstructible from the two scripts.
 
 Source code, tests, and benchmark harnesses are available at
 \url{https://github.com/synthesizebio/gpu_deseq}, released under the MIT

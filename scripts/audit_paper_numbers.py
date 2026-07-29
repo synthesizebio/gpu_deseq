@@ -11,7 +11,7 @@ Two jobs:
 Registered-but-unchecked entries carry the artifact that would substantiate
 them; UNBACKED entries have no committed source and must not ship.
 """
-import json, re, pathlib, statistics
+import json, math, re, pathlib, statistics
 
 tex = pathlib.Path("paper/main.tex").read_text()
 P = json.load(open("bench/results/parity.json"))
@@ -20,6 +20,18 @@ S = json.load(open("benchmarks/results_per_step.json"))
 V = {n: json.load(open(f"validation/results/{n}.json")) for n in
      ["pasilla", "pasilla_2fac", "airway_dex", "airway_cell", "airway",
       "gtex_blood_muscle"]}
+# Second CPU baseline. summary.json is the derived view; r_scaling.jsonl is the
+# authoritative harness output, so sweep-level claims are checked against that.
+E = json.load(open("bench/results/r_epyc9b14/summary.json"))
+EH = "EPYC 9B14"
+_erecs = [json.loads(l) for l in
+          open("bench/results/r_epyc9b14/r_scaling.jsonl")]
+ESUB = {r["case"]: r for r in _erecs if r["kind"] == "serial_fine"}
+ESWEEP = [r for r in _erecs if r["kind"] == "sweep"]
+# The host-B column is not a controlled A/B against the reference (different
+# DESeq2), and the paper must keep saying so. Assert the flag the harness set.
+assert E["hosts"][EH]["comparable_to_reference"] is False, \
+    "host B became comparable to the reference: update the paper's caveat"
 
 fails, checks = [], 0
 
@@ -108,21 +120,31 @@ LBL = [("pasilla", "pasilla"), ("pasilla_2fac", r"pasilla\_2fac"),
        ("airway_dex", r"airway\_dex"), ("airway_cell", r"airway\_cell"),
        ("airway", "airway"), ("gtex_blood_muscle", "gtex")]
 best = {}
+# Columns are indexed from the FRONT (P, n, hostA, hostB serial, hostB best MC,
+# eager, graph, triton), not the back: the table gained R columns once a second
+# CPU host was measured, and back-indexing silently reads the wrong one.
 for c, lbl in LBL:
     row = [l for l in t3.splitlines() if l.strip().startswith(lbl + " ")][0]
     nums = re.findall(r"(?<![\w.])(\d+\.?\d*)(?![\w.])", row)
-    rs, e, gph, tri = float(nums[-4]), *[float(x) for x in nums[-3:]]
-    chk(f"T3 {c} R(s)", close(rs, T["r"][c]["total"] / 1000, 0.01),
-        T["r"][c]["total"] / 1000, rs)
+    chk(f"T3 {c} column count", len(nums) == 8, len(nums), 8)
+    rsA, rsB, rsBmc = (float(nums[2]), float(nums[3]), float(nums[4]))
+    e, gph, tri = (float(x) for x in nums[5:8])
+    # The R columns print one decimal, so compare the correctly-rounded value
+    # rather than a relative tolerance: at 3.6 s a 1% band is tighter than the
+    # displayed precision and rejects a correctly-rounded cell.
+    for nm, shown, want_ms in (
+            ("host A", rsA, T["r"][c]["total"]),
+            ("host B serial", rsB, E["datasets"][c]["r_serial_ms"][EH]),
+            ("host B best multicore", rsBmc,
+             E["datasets"][c]["r_multicore_ms"][EH]["best_ms"])):
+        chk(f"T3 {c} R(s) {nm}", round(shown, 1) == round(want_ms / 1000, 1),
+            round(want_ms / 1000, 1), shown)
     for nm, shown, key in (("eager", e, "eager"), ("graph", gph, "graph"),
                            ("triton", tri, "triton")):
         chk(f"T3 {c} {nm}", round(shown) == round(T["cu"][c][key]["total"]),
             T["cu"][c][key]["total"], shown)
     best[c] = T["r"][c]["total"] / min(T["cu"][c][m2]["total"] for m2 in
                                        ("eager", "graph", "triton"))
-    m = re.search(re.escape(lbl) + r" (\d+\.\d)\$\\times\$", t3)
-    chk(f"T3 speedup {c}", close(float(m.group(1)), best[c], 0.01),
-        round(best[c], 1), float(m.group(1)))
 
 lo, hi = min(best.values()), max(best.values())
 m = re.search(r"\\fact\{(\d+)--(\d+)\$\\times\$\} faster end-to-end", tex)
@@ -131,6 +153,78 @@ chk("abstract speedup range", int(m.group(1)) <= lo and round(hi) == int(m.group
 m = re.search(r"driving the highest end-to-end speedup, (\d+\.\d)\$\\times\$", tex)
 chk("prose: highest speedup", close(float(m.group(1)), hi, 0.01), round(hi, 1),
     float(m.group(1)))
+
+# ---- second CPU baseline (host B) ------------------------------------------
+# Every speedup range in the paper must name its denominator, so each is checked
+# against the host it is claimed for. summary.json is derived from r_scaling.jsonl,
+# so its recomputed speedups are re-derived here rather than trusted: a stale
+# summary would otherwise agree with a stale paper.
+def rng(vals):
+    # Round half away from zero, not Python's half-to-even: summary.json stores
+    # speedups at 2 dp, and formatting its exact-binary 4.25 with %.1f yields
+    # "4.2" while the underlying ratio is 4.2535, i.e. "4.3".
+    def r1(v):
+        return f"{math.floor(v * 10 + 0.5) / 10:.1f}"
+    return f"{r1(min(vals))}--{r1(max(vals))}"
+
+
+# Re-derived from the raw millisecond fields rather than read from
+# speedup_recomputed, so the range cannot inherit that field's rounding.
+spd = {
+    f"vs_{EH}_serial": [d["r_serial_ms"][EH] / d["gpu_best_a100"]["total_ms"]
+                        for d in E["datasets"].values()],
+    f"vs_{EH}_best_multicore": [d["r_multicore_ms"][EH]["best_ms"] /
+                                d["gpu_best_a100"]["total_ms"]
+                                for d in E["datasets"].values()],
+}
+for c, d in E["datasets"].items():
+    gpu = d["gpu_best_a100"]["total_ms"]
+    chk(f"hostB {c} GPU best matches timings.json",
+        close(gpu, min(T["cu"][c][m2]["total"] for m2 in ("eager", "graph", "triton")), 1e-6),
+        gpu, min(T["cu"][c][m2]["total"] for m2 in ("eager", "graph", "triton")))
+    chk(f"hostB {c} serial speedup re-derived",
+        close(d["speedup_recomputed"][f"vs_{EH}_serial"], d["r_serial_ms"][EH] / gpu, 0.01),
+        d["r_serial_ms"][EH] / gpu, d["speedup_recomputed"][f"vs_{EH}_serial"])
+    chk(f"hostB {c} multicore speedup re-derived",
+        close(d["speedup_recomputed"][f"vs_{EH}_best_multicore"],
+              d["r_multicore_ms"][EH]["best_ms"] / gpu, 0.01),
+        d["r_multicore_ms"][EH]["best_ms"] / gpu,
+        d["speedup_recomputed"][f"vs_{EH}_best_multicore"])
+
+chk("T3 footnote range vs host A", rng(best.values()) == "8.0--78.2",
+    rng(best.values()), "8.0--78.2")
+chk("T3 footnote range vs host B serial",
+    rng(spd[f"vs_{EH}_serial"]) == "4.3--32.8", rng(spd[f"vs_{EH}_serial"]), "4.3--32.8")
+chk("T3 footnote range vs host B multicore",
+    rng(spd[f"vs_{EH}_best_multicore"]) == "1.3--8.8",
+    rng(spd[f"vs_{EH}_best_multicore"]), "1.3--8.8")
+
+# per-core ratio between the two hosts, and the gtex dispersion it comes from
+ratios = [E["datasets"][c]["r_serial_ms"]["A100 host"] /
+          E["datasets"][c]["r_serial_ms"][EH] for c in E["datasets"]]
+chk("prose: host A/B per-core ratio 1.9--2.4", rng(ratios) == "1.9--2.4",
+    rng(ratios), "1.9--2.4")
+gdisp_b = ESUB["gtex_blood_muscle"]["dispersion"] / 1000
+chk("prose: hostB gtex dispersion 81 s", round(gdisp_b) == 81, gdisp_b, 81)
+
+# Amdahl remainder: results() is flat across the sweep while the fit scales.
+gsw = {r["workers"]: r for r in ESWEEP if r["case"] == "gtex_blood_muscle"}
+res = [gsw[w]["results"] / 1000 for w in sorted(gsw)]
+chk("prose: gtex results() flat ~11 s", all(10.5 <= v <= 12.5 for v in res),
+    [round(v, 1) for v in res], "all in 10.5-12.5")
+fit_scale = gsw[min(gsw)]["deseq_fit"] / gsw[max(gsw)]["deseq_fit"]
+chk("prose: gtex deseq_fit scales 7.9x", close(7.9, fit_scale, 0.01),
+    round(fit_scale, 1), 7.9)
+chk("prose: gtex multicore speedup 8.8x",
+    close(8.8, E["datasets"]["gtex_blood_muscle"]["speedup_recomputed"][
+        f"vs_{EH}_best_multicore"], 0.01),
+    E["datasets"]["gtex_blood_muscle"]["speedup_recomputed"][f"vs_{EH}_best_multicore"], 8.8)
+
+# airway_cell is shrink-bound, not dispersion-bound -- the reason its row is thin.
+ac = T["cu"]["airway_cell"]["triton"]
+chk("prose: airway_cell 94% lfc_shrink",
+    round(100 * ac["lfc_shrink"] / ac["total"]) == 94,
+    100 * ac["lfc_shrink"] / ac["total"], 94)
 
 # ---- Table 4 (every cell) --------------------------------------------------
 t4 = re.search(r"label\{tab:realsubstep\}.*?end\{tabular\}\}", tex, re.S).group()
@@ -226,6 +320,27 @@ REGISTRY = {
         "CHECKED (pytest --collect-only; parity.json row count)",
     "8--78$\\times$": "CHECKED (timings.json)",
     "231\\,s to 0.2\\,s": "CHECKED (timings.json)",
+
+    # --- second CPU baseline, host B (EPYC 9B14). Every range names its
+    # --- denominator: "vs R" is ambiguous once two hosts are reported.
+    "8.0--78.2$\\times$": "CHECKED (timings.json; vs host A, 1 thread)",
+    "4.3--32.8$\\times$":
+        "CHECKED (r_epyc9b14/summary.json; vs host B, 1 thread, re-derived "
+        "from r_serial_ms / gpu_best_a100)",
+    "1.3--8.8$\\times$":
+        "CHECKED (r_epyc9b14/summary.json; vs host B best multi-core, "
+        "re-derived from r_multicore_ms.best_ms / gpu_best_a100)",
+    "1.9--2.4$\\times$":
+        "CHECKED (per-dataset host A / host B serial total, summary.json). "
+        "NOT a clean hardware ratio -- DESeq2 1.30.1 vs 1.46.0 is confounded "
+        "with the CPU; stated as such in the paper",
+    "81\\,s": "CHECKED (r_epyc9b14/r_scaling.jsonl serial_fine gtex dispersion)",
+    "$\\approx$11\\,s":
+        "CHECKED (r_scaling.jsonl sweep: gtex results() spans 11.1-12.1 s "
+        "over w=1..15, i.e. does not parallelise)",
+    "7.9$\\times$": "CHECKED (r_scaling.jsonl sweep: gtex deseq_fit w=1 / w=15)",
+    "8.8$\\times$": "CHECKED (summary.json gtex vs host B best multi-core)",
+    "94\\%": "CHECKED (timings.json airway_cell triton lfc_shrink / total)",
     "95{,": "EXTERNAL (Google Scholar citation count for DESeq2)",
     "31": "loess kd-tree cuts; R loess(kd$xi) -- tests/test_loess.py",
     "5e-15": "loess kd cuts / KL curve vs R -- tests/test_loess.py, test_r_rng.py",
