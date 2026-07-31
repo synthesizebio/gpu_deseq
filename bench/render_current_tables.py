@@ -1,9 +1,4 @@
-"""Render benchmark tables after an R-reference-only refresh.
-
-GPU values are retained only where the standard outlier-refit branch cannot run,
-or for stages that precede that branch. This prevents an older no-refit GTEx
-measurement from being presented as a current standard-pipeline timing.
-"""
+"""Render the current standard-pipeline benchmark and parity tables."""
 from __future__ import annotations
 
 import json
@@ -16,8 +11,8 @@ MODES = ("eager", "graph", "triton")
 STEPS = ("normalization", "dispersion", "glm_fit", "significance", "lfc_shrink")
 
 
-def number(value: float | None) -> str:
-    return "pending" if value is None else f"{value:.0f}"
+def number(value: float) -> str:
+    return f"{value:.0f}"
 
 
 def main() -> None:
@@ -28,8 +23,7 @@ def main() -> None:
         "# Current standard-pipeline results",
         "",
         "R reference: R 4.6.0, DESeq2 1.52.0, apeglm 1.34.0. "
-        "The GTEx GPU stages affected by count replacement/refitting are "
-        "pending a new A100 run.",
+        "GPU timings are from one A100-SXM4-40GB standard-pipeline run.",
         "",
         "## End-to-end wall time (ms)",
         "",
@@ -39,14 +33,8 @@ def main() -> None:
     for case in cases:
         meta = json.loads((DATA / case / "meta.json").read_text())
         r_total = timings["r"][case]["total"]
-        gpu = {
-            mode: None
-            if case == "gtex_blood_muscle"
-            else timings["cu"][case][mode]["total"]
-            for mode in MODES
-        }
-        measured = [value for value in gpu.values() if value is not None]
-        speedup = "pending" if not measured else f"{r_total / min(measured):.1f}×"
+        gpu = {mode: timings["cu"][case][mode]["total"] for mode in MODES}
+        speedup = f"{r_total / min(gpu.values()):.1f}×"
         lines.append(
             f"| {case} | {meta.get('P', '—')} | {meta['n_samples']} | "
             f"{r_total:.0f} | "
@@ -63,13 +51,7 @@ def main() -> None:
     ]
     for case in cases:
         for step in STEPS:
-            affected = case == "gtex_blood_muscle" and step in {
-                "glm_fit", "significance", "lfc_shrink"
-            }
-            values = [
-                None if affected else timings["cu"][case][mode][step]
-                for mode in MODES
-            ]
+            values = [timings["cu"][case][mode][step] for mode in MODES]
             lines.append(
                 f"| {case} | {step} | {timings['r'][case][step]:.0f} | "
                 + " | ".join(number(value) for value in values)

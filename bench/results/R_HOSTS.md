@@ -97,11 +97,12 @@ is exactly what a reviewer would ask about.
 
 | dataset | best cuDESeq2 (A100, ms) | vs A100-host R (published) | vs EPYC 9B14 R serial | vs EPYC 9B14 R best multi-core |
 |---|--:|--:|--:|--:|
-| airway | 1,501 | 27.7x | 11.4x | 3.3x |
-| airway_cell | 3,469 | 10.4x | 4.3x | 1.3x |
-| airway_dex | 1,361 | 22.7x | 9.3x | 4.1x |
-| pasilla | 702 | 15.8x | 6.4x | 5.1x |
-| pasilla_2fac | 866 | 14.0x | 5.4x | 4.2x |
+| airway | 1,504 | 27.6x | 11.4x | 3.3x |
+| airway_cell | 3,495 | 10.3x | 4.2x | 1.3x |
+| airway_dex | 898 | 34.4x | 14.1x | 6.2x |
+| gtex_blood_muscle | 4,754 | 99.2x | 31.0x | 8.3x |
+| pasilla | 650 | 17.1x | 7.0x | 5.5x |
+| pasilla_2fac | 841 | 14.4x | 5.5x | 4.3x |
 
 The spread between the last columns and the published one is the
 share of the headline that came from the baseline machine and its

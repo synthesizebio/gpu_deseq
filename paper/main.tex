@@ -87,10 +87,9 @@ floating-point precision and dispersion to \fact{8.5e-4} median relative error,
 over six real designs (7--300 samples, $P=2$--$5$) and \fact{76/76 step-parity
 tests} on synthetic fixtures. The standard Wald pipeline includes
 \texttt{DESeq()}'s count-outlier replacement and per-gene refit. On one A100
-\cudeseq{} is \fact{10.4--27.7$\times$} faster end-to-end than
-single-threaded R across the five designs for which the current standard
-pipeline has complete CPU and A100 timings. The updated 300-sample GPU timing is
-reported as pending rather than inferred from a run that omitted refitting.\\[3pt]
+\cudeseq{} is \fact{10.3--99.2$\times$} faster end-to-end than
+single-threaded R across the six designs on one A100. The 300-sample comparison
+includes count replacement and refitting in both implementations.\\[3pt]
 \textbf{Availability and implementation:} \texttt{gpu-deseq} requires PyTorch and
 a CUDA GPU, and is open source under the MIT license at
 \url{https://github.com/synthesizebio/gpu_deseq}, with reproduction scripts in
@@ -148,7 +147,7 @@ that inference path.
 
 We implemented \cudeseq{} in PyTorch \citep{paszke2019pytorch}. It batches genes
 on the GPU and follows R~DESeq2~1.52.0 at each intermediate step. Across six
-real designs, the p95 relative dispersion error is at most $4.3\times10^{-3}$
+real designs, the p95 relative dispersion error is at most $4.4\times10^{-3}$
 (Sec.~\ref{sec:parity}). The
 dispersion loop has three execution modes: eager PyTorch, CUDA-graph chunked
 replay \citep{nvidia2024cudagraphs}, and a fused Triton kernel
@@ -520,7 +519,8 @@ the real datasets (Table~\ref{tab:parity}).
 
 \subsection{Experimental setup}
 All GPU measurements are taken on one NVIDIA A100-SXM4-40GB under PyTorch~2.6
-with CUDA~12.4. The reference CPU baseline (host~A) is R~DESeq2~1.52.0 on a
+with CUDA~12.4 and NVIDIA driver~550.90.07. The reference CPU baseline
+(host~A) is R~DESeq2~1.52.0 on a
 12-core box, with R~4.6.0 and apeglm~1.34.0. Every timing is a warm median of $N$
 repetitions with \texttt{torch.cuda.synchronize()} on both sides of the timed
 region, so no GPU work is left in flight when the clock stops. R runs
@@ -567,8 +567,8 @@ count-outlier replacement and refitting.
 \begin{tabular}{llrr}
 \toprule
 Substep & Metric & Median & Worst \\\midrule
-normalization & max rel.\ $\Delta$ & 4.1e-15 & 5.0e-15 \\
-dispersion & p95 rel.\ $\Delta$ & 8.5e-4 & 4.3e-3 \\
+normalization & max rel.\ $\Delta$ & 4.1e-15 & 5.7e-15 \\
+dispersion & p95 rel.\ $\Delta$ & 8.5e-4 & 4.4e-3 \\
 glm\_fit & p95 $|\Delta|$ (LFC) & 2.4e-5 & 8.1e-5 \\
 significance & Jaccard@0.05 & 1.00000 & 0.99963 \\
 lfc\_shrink & Pearson $r$ & 0.99999 & 0.99722 \\\bottomrule
@@ -576,8 +576,8 @@ lfc\_shrink & Pearson $r$ & 0.99999 & 0.99722 \\\bottomrule
 \end{table}
 
 All 30 substep checks pass, and every one of the six dispersion comparisons is
-within \fact{0.43\%} of R, the worst being \texttt{gtex\_blood\_muscle} at
-\fact{4.3e-3}. The small-degrees-of-freedom case is not the outlier one might
+within \fact{0.44\%} of R, the worst being \texttt{gtex\_blood\_muscle} at
+\fact{4.4e-3}. The small-degrees-of-freedom case is not the outlier one might
 expect. R enters the simulation-based prior-variance estimator only when the
 residual degrees of freedom satisfy $0<m-p\le3$, so \texttt{airway} ($n{=}8$,
 $P{=}5$, dof~3) is the only one of the six datasets to take that branch at all;
@@ -687,10 +687,9 @@ count replacement and refitting in both pipelines.}
 \label{sec:realtiming}
 \begin{table}[htbp]\centering
 \caption{End-to-end wall time on the real datasets: single-threaded
-R~4.6.0/DESeq2~1.52.0 and \cudeseq{} on one A100. The five small designs cannot
-enter the count-replacement branch, so their existing GPU measurements remain
-valid. The \texttt{gtex} GPU total is withheld pending a new A100 run of the
-standard pipeline. \fact{Reproduce: \texttt{bench/run\_r.R} and
+R~4.6.0/DESeq2~1.52.0 and \cudeseq{} on one A100. All six GPU rows are from the
+same standard-pipeline benchmark session; the \texttt{gtex} row includes
+count replacement and affected-gene refitting. \fact{Reproduce: \texttt{bench/run\_r.R} and
 \texttt{bench/bench.py} $\to$ \texttt{bench/results/timings.json}.}}
 \label{tab:realtiming}
 \small
@@ -700,17 +699,16 @@ standard pipeline. \fact{Reproduce: \texttt{bench/run\_r.R} and
 \cmidrule(lr){4-4}\cmidrule(lr){5-7}
 Dataset & $P$ & $n$ & 1 thread & eager & graph & Triton \\
 \midrule
-pasilla       & 2 &   7 &  11.1 & 1149 &  801 &  702 \\
-pasilla\_2fac & 3 &   7 &  12.1 & 1511 &  946 &  866 \\
-airway\_dex   & 2 &   8 &  30.9 & 1733 & 1414 & 1361 \\
-airway\_cell  & 4 &   8 &  36.1 & 4178 & 3621 & 3469 \\
-airway        & 5 &   8 &  41.6 & 2521 & 1650 & 1501 \\
-gtex          & 2 & 300 & 471.6 & --- & --- & --- \\\bottomrule
+pasilla       & 2 &   7 &  11.1 &  982 &  650 &  717 \\
+pasilla\_2fac & 3 &   7 &  12.1 & 1481 &  922 &  841 \\
+airway\_dex   & 2 &   8 &  30.9 & 1307 &  968 &  898 \\
+airway\_cell  & 4 &   8 &  36.1 & 4169 & 3579 & 3495 \\
+airway        & 5 &   8 &  41.6 & 2559 & 1681 & 1504 \\
+gtex          & 2 & 300 & 471.6 & 8510 & 8293 & 4754 \\\bottomrule
 \end{tabular}
 \\[3pt]
-{\footnotesize On the five fully timed designs, the best-mode speedup over
-single-threaded R is \fact{10.4--27.7$\times$}. The missing \texttt{gtex} cells
-are not estimated from the earlier no-refit run.}
+{\footnotesize The best-mode speedup over single-threaded R is
+\fact{10.3--99.2$\times$}; \texttt{gtex} is the upper endpoint.}
 \end{table}
 
 The graph and Triton modes change the dispersion optimizer. The remaining
@@ -720,11 +718,12 @@ that branch. Their downstream timing differences are measurement noise or,
 for Triton, changes in the number of tolerance-based shrinkage iterations caused
 by last-bit dispersion differences.
 
-Triton is the fastest mode on all six designs, the multi-factor cases included:
+Triton is the fastest total mode on five designs; graph is fastest on
+\texttt{pasilla}. Triton has the fastest dispersion substep on all six:
 fusing the wider Cox--Reid solve (Sec.~\ref{sec:triton}) cuts the dispersion
-substep by $8.8\times$ on \texttt{pasilla\_2fac} ($P{=}3$) and $2.7\times$ on
-\texttt{airway} ($P{=}5$) against the eager loop (730$\to$83\,ms and
-1590$\to$583\,ms, same run). \texttt{airway}'s dispersion substep also carries the
+substep by $8.9\times$ on \texttt{pasilla\_2fac} ($P{=}3$) and $2.7\times$ on
+\texttt{airway} ($P{=}5$) against the eager loop (708$\to$80\,ms and
+1586$\to$581\,ms, same run). \texttt{airway}'s dispersion substep also carries the
 \fact{$\approx$0.3\,s} CPU cost of the R-stream replay of Sec.~\ref{sec:disp}, in
 every mode. All three modes are nonetheless shipped, because what separates them
 is coverage and fidelity rather than speed: graph is bit-identical to eager at any
@@ -734,51 +733,48 @@ only to the last few bits (Sec.~\ref{sec:parity}).
 \begin{table}[htbp]\centering
 \caption{Per-substep wall time (ms) on the real datasets, single-threaded R on
 the reference host vs.\ the three cuDESeq2 modes. The \texttt{glm\_fit} timing
-includes Cook's-distance replacement and refitting. GPU entries affected by
-that newly implemented branch are withheld until the A100 rerun.
+includes Cook's-distance replacement and refitting.
 \fact{Reproduce: \texttt{bench/bench.py} $\to$ \texttt{bench/results/TABLES.md}.}}
 \label{tab:realsubstep}
 {\footnotesize
 \begin{tabular}{llrrrr}
 \toprule
 Dataset & Substep & R & eager & graph & Triton \\\midrule
-pasilla & dispersion & 1722 & 422 & 78 & 21 \\
-        & glm\_fit & 3878 & 36 & 36 & 37 \\
-        & significance & 206 & 62 & 61 & 62 \\
-        & lfc\_shrink & 5143 & 628 & 625 & 581 \\
-        & \textbf{total} & \textbf{11091} & \textbf{1149} & \textbf{801} & \textbf{702} \\\midrule
-pasilla\_2fac & dispersion & 2140 & 730 & 162 & 83 \\
-        & glm\_fit & 3755 & 327 & 329 & 329 \\
-        & significance & 185 & 60 & 62 & 59 \\
-        & lfc\_shrink & 5912 & 393 & 392 & 395 \\
-        & \textbf{total} & \textbf{12137} & \textbf{1511} & \textbf{946} & \textbf{866} \\\midrule
-airway\_dex & dispersion & 4707 & 429 & 109 & 52 \\
-        & glm\_fit & 9924 & 53 & 53 & 53 \\
-        & significance & 1397 & 146 & 144 & 145 \\
-        & lfc\_shrink & 14715 & 1104 & 1107 & 1111 \\
-        & \textbf{total} & \textbf{30932} & \textbf{1733} & \textbf{1414} & \textbf{1361} \\\midrule
-airway\_cell & dispersion & 5794 & 750 & 182 & 60 \\
-        & glm\_fit & 9584 & 33 & 33 & 33 \\
-        & significance & 362 & 117 & 116 & 116 \\
-        & lfc\_shrink & 20157 & 3277 & 3290 & 3259 \\
-        & \textbf{total} & \textbf{36080} & \textbf{4178} & \textbf{3621} & \textbf{3469} \\\midrule
-airway & dispersion & 8077 & 1590 & 715 & 583 \\
-        & glm\_fit & 12686 & 57 & 57 & 57 \\
-        & significance & 872 & 119 & 119 & 119 \\
-        & lfc\_shrink & 19712 & 754 & 758 & 741 \\
-        & \textbf{total} & \textbf{41570} & \textbf{2521} & \textbf{1650} & \textbf{1501} \\\midrule
-gtex & dispersion & 188957 & 3501 & 3620 & 200 \\
-        & glm\_fit & 239691 & --- & --- & --- \\
-        & significance & 496 & --- & --- & --- \\
-        & lfc\_shrink & 39330 & --- & --- & --- \\
-        & \textbf{total} & \textbf{471588} & \textbf{---} & \textbf{---} & \textbf{---} \\\bottomrule
+pasilla & dispersion & 1722 & 402 & 71 & 20 \\
+        & glm\_fit & 3878 & 38 & 37 & 37 \\
+        & significance & 206 & 63 & 63 & 63 \\
+        & lfc\_shrink & 5143 & 478 & 478 & 596 \\
+        & \textbf{total} & \textbf{11091} & \textbf{982} & \textbf{650} & \textbf{717} \\\midrule
+pasilla\_2fac & dispersion & 2140 & 708 & 161 & 80 \\
+        & glm\_fit & 3755 & 320 & 321 & 322 \\
+        & significance & 185 & 74 & 60 & 60 \\
+        & lfc\_shrink & 5912 & 378 & 379 & 378 \\
+        & \textbf{total} & \textbf{12137} & \textbf{1481} & \textbf{922} & \textbf{841} \\\midrule
+airway\_dex & dispersion & 4707 & 429 & 109 & 51 \\
+        & glm\_fit & 9924 & 55 & 53 & 53 \\
+        & significance & 1397 & 145 & 124 & 123 \\
+        & lfc\_shrink & 14715 & 676 & 681 & 670 \\
+        & \textbf{total} & \textbf{30932} & \textbf{1307} & \textbf{968} & \textbf{898} \\\midrule
+airway\_cell & dispersion & 5794 & 748 & 186 & 60 \\
+        & glm\_fit & 9584 & 37 & 36 & 36 \\
+        & significance & 362 & 114 & 115 & 115 \\
+        & lfc\_shrink & 20157 & 3268 & 3240 & 3283 \\
+        & \textbf{total} & \textbf{36080} & \textbf{4169} & \textbf{3579} & \textbf{3495} \\\midrule
+airway & dispersion & 8077 & 1586 & 713 & 581 \\
+        & glm\_fit & 12686 & 62 & 60 & 60 \\
+        & significance & 872 & 117 & 117 & 117 \\
+        & lfc\_shrink & 19712 & 793 & 790 & 746 \\
+        & \textbf{total} & \textbf{41570} & \textbf{2559} & \textbf{1681} & \textbf{1504} \\\midrule
+gtex & dispersion & 188957 & 3500 & 3623 & 200 \\
+        & glm\_fit & 239691 & 3147 & 2810 & 2709 \\
+        & significance & 496 & 623 & 623 & 621 \\
+        & lfc\_shrink & 39330 & 1235 & 1233 & 1220 \\
+        & \textbf{total} & \textbf{471588} & \textbf{8510} & \textbf{8293} & \textbf{4754} \\\bottomrule
 \end{tabular}}
 \\[3pt]
 {\footnotesize \texttt{normalization} omitted ($\le$4\,ms cuDESeq2 on every set);
-full versioned R records are in \texttt{bench/results/timings.json}. GPU values
-for the five small designs come from one A100 session; the \texttt{gtex}
-dispersion row is retained because that stage precedes replacement, while its
-downstream GPU cells are pending.}
+full versioned R records are in \texttt{bench/results/timings.json}. All GPU
+values come from the same A100 session.}
 \end{table}
 
 \subsection{Scaling on synthetic data}
@@ -953,7 +949,7 @@ the reference convergence tolerances, and the same optimizer sequences, clamps,
 and line searches. Table~\ref{tab:parity} reports agreement for size factors,
 gene-wise and MAP dispersions, coefficients, Wald statistics, adjusted
 p-values, and apeGLM-shrunk effects. The measured end-to-end gain on the
-five complete A100 comparisons is \fact{10.4--27.7$\times$}.
+six A100 comparisons is \fact{10.3--99.2$\times$}.
 
 The dispersion loop is limited mainly by launch and dispatch latency at the
 tested sizes (Sec.~\ref{sec:roofline}). Its working set is small, it uses only a
@@ -994,9 +990,8 @@ dominated by dispersion and outlier refitting.
         five small-$n$ sets, with a worst case of 2.6e-1 relative on one
         \texttt{gtex} gene.
   \item Benchmarks: a single GPU (one A100), so we cannot report how the three
-        modes reorder on a smaller or newer device. The standard-pipeline
-        \texttt{gtex} A100 timing is pending and is excluded from the speedup
-        range; parity is measured against DESeq2~1.52.0.
+        modes reorder on a smaller or newer device. Parity is measured against
+        DESeq2~1.52.0.
 \end{itemize}
 
 \noindent\textbf{Future work.} The remaining compatibility work includes the

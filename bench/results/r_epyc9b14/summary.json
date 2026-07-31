@@ -63,12 +63,12 @@
       },
       "gpu_best_a100": {
         "mode": "triton",
-        "total_ms": 1500.5708200333174
+        "total_ms": 1504.14161500521
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 27.7,
-        "vs_EPYC 9B14_serial": 11.4,
-        "vs_EPYC 9B14_best_multicore": 3.31
+        "vs_A100 host_serial": 27.64,
+        "vs_EPYC 9B14_serial": 11.37,
+        "vs_EPYC 9B14_best_multicore": 3.3
       }
     },
     "airway_cell": {
@@ -112,12 +112,12 @@
       },
       "gpu_best_a100": {
         "mode": "triton",
-        "total_ms": 3468.7916330294684
+        "total_ms": 3494.765835988801
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 10.4,
-        "vs_EPYC 9B14_serial": 4.25,
-        "vs_EPYC 9B14_best_multicore": 1.32
+        "vs_A100 host_serial": 10.32,
+        "vs_EPYC 9B14_serial": 4.22,
+        "vs_EPYC 9B14_best_multicore": 1.31
       }
     },
     "airway_dex": {
@@ -161,12 +161,12 @@
       },
       "gpu_best_a100": {
         "mode": "triton",
-        "total_ms": 1361.3375849672593
+        "total_ms": 898.1667050393298
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 22.72,
-        "vs_EPYC 9B14_serial": 9.32,
-        "vs_EPYC 9B14_best_multicore": 4.06
+        "vs_A100 host_serial": 34.44,
+        "vs_EPYC 9B14_serial": 14.13,
+        "vs_EPYC 9B14_best_multicore": 6.16
       }
     },
     "gtex_blood_muscle": {
@@ -210,12 +210,12 @@
       },
       "gpu_best_a100": {
         "mode": "triton",
-        "total_ms": 4482.953632017598
+        "total_ms": 4753.89826198807
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 105.2,
-        "vs_EPYC 9B14_serial": 32.84,
-        "vs_EPYC 9B14_best_multicore": 8.8
+        "vs_A100 host_serial": 99.2,
+        "vs_EPYC 9B14_serial": 30.97,
+        "vs_EPYC 9B14_best_multicore": 8.3
       }
     },
     "pasilla": {
@@ -258,13 +258,13 @@
         }
       },
       "gpu_best_a100": {
-        "mode": "triton",
-        "total_ms": 701.9866899354383
+        "mode": "graph",
+        "total_ms": 649.6589459711686
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 15.8,
-        "vs_EPYC 9B14_serial": 6.45,
-        "vs_EPYC 9B14_best_multicore": 5.08
+        "vs_A100 host_serial": 17.07,
+        "vs_EPYC 9B14_serial": 6.97,
+        "vs_EPYC 9B14_best_multicore": 5.49
       }
     },
     "pasilla_2fac": {
@@ -308,12 +308,12 @@
       },
       "gpu_best_a100": {
         "mode": "triton",
-        "total_ms": 866.1567730014212
+        "total_ms": 841.1821180488914
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 14.01,
-        "vs_EPYC 9B14_serial": 5.39,
-        "vs_EPYC 9B14_best_multicore": 4.21
+        "vs_A100 host_serial": 14.43,
+        "vs_EPYC 9B14_serial": 5.55,
+        "vs_EPYC 9B14_best_multicore": 4.34
       }
     }
   }

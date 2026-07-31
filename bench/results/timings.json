@@ -1,4 +1,17 @@
 {
+  "provenance": {
+    "pipeline": "standard_wald_with_outlier_refit",
+    "measured_utc": "2026-07-31T02:08:02Z",
+    "device_argument": "cuda",
+    "python_version": "3.10.17",
+    "torch_version": "2.6.0+cu124",
+    "torch_cuda_version": "12.4",
+    "cuda_available": true,
+    "gpu_name": "NVIDIA A100-SXM4-40GB",
+    "gpu_memory_bytes": 42949672960,
+    "gpu_compute_capability": "8.0",
+    "nvidia_driver_version": "550.90.07"
+  },
   "r": {
     "airway": {
       "case": "airway",
@@ -84,221 +97,170 @@
       "_P": 5,
       "_n": 8,
       "eager": {
-        "normalization": 1.0158740042243153,
-        "dispersion": 1590.1103020005394,
-        "glm_fit": 57.01527599012479,
-        "significance": 119.01268901419826,
-        "lfc_shrink": 754.2886129813269,
-        "total": 2521.4427539904136
+        "normalization": 0.9795799851417542,
+        "dispersion": 1586.3031710032374,
+        "glm_fit": 61.88183603808284,
+        "significance": 116.95493396837264,
+        "lfc_shrink": 793.3802760089748,
+        "total": 2559.4997970038094
       },
       "graph": {
-        "normalization": 1.032023981679231,
-        "dispersion": 715.3513949888293,
-        "glm_fit": 56.62727801245637,
-        "significance": 119.30088998633437,
-        "lfc_shrink": 757.6697499898728,
-        "total": 1649.981336959172
+        "normalization": 1.006214995868504,
+        "dispersion": 712.7108440035954,
+        "glm_fit": 60.10285299271345,
+        "significance": 116.75999796716496,
+        "lfc_shrink": 790.2232750202529,
+        "total": 1680.8031849795952
       },
       "triton": {
-        "normalization": 1.0106429981533438,
-        "dispersion": 582.7557000156958,
-        "glm_fit": 56.63413301226683,
-        "significance": 119.42534599802457,
-        "lfc_shrink": 740.7449980091769,
-        "total": 1500.5708200333174
+        "normalization": 0.9760459652170539,
+        "dispersion": 580.6002200115472,
+        "glm_fit": 59.571832010988146,
+        "significance": 116.75881204428151,
+        "lfc_shrink": 746.2347049731761,
+        "total": 1504.14161500521
       }
     },
     "airway_cell": {
       "_P": 4,
       "_n": 8,
       "eager": {
-        "normalization": 1.0194700153078884,
-        "dispersion": 750.4064830136485,
-        "glm_fit": 32.98577800160274,
-        "significance": 116.65926198475063,
-        "lfc_shrink": 3277.2309279826004,
-        "total": 4178.30192099791
+        "normalization": 0.9761489927768707,
+        "dispersion": 748.196973989252,
+        "glm_fit": 37.00719901826233,
+        "significance": 114.22294197836891,
+        "lfc_shrink": 3268.4764019795693,
+        "total": 4168.879665958229
       },
       "graph": {
-        "normalization": 0.9998480090871453,
-        "dispersion": 181.64709000848234,
-        "glm_fit": 32.871197996428236,
-        "significance": 115.92383100651205,
-        "lfc_shrink": 3289.649451005971,
-        "total": 3621.091418026481
+        "normalization": 0.9635919705033302,
+        "dispersion": 186.29848398268223,
+        "glm_fit": 35.773177980445325,
+        "significance": 115.38928799564019,
+        "lfc_shrink": 3240.113308012951,
+        "total": 3578.5378499422222
       },
       "triton": {
-        "normalization": 1.0318329732399434,
-        "dispersion": 59.901683998759836,
-        "glm_fit": 33.23436400387436,
-        "significance": 115.62918702838942,
-        "lfc_shrink": 3258.994565025205,
-        "total": 3468.7916330294684
+        "normalization": 0.9515950223430991,
+        "dispersion": 59.69085200922564,
+        "glm_fit": 35.97550297854468,
+        "significance": 115.33582297852263,
+        "lfc_shrink": 3282.812063000165,
+        "total": 3494.765835988801
       }
     },
     "airway_dex": {
       "_P": 2,
       "_n": 8,
       "eager": {
-        "normalization": 0.9699499933049083,
-        "dispersion": 429.28060301346704,
-        "glm_fit": 53.11536797671579,
-        "significance": 145.59587099938653,
-        "lfc_shrink": 1103.7713729892857,
-        "total": 1732.73316497216
+        "normalization": 0.9764920105226338,
+        "dispersion": 428.9706790004857,
+        "glm_fit": 55.33820897107944,
+        "significance": 145.05967701552436,
+        "lfc_shrink": 676.3367209932767,
+        "total": 1306.6817779908888
       },
       "graph": {
-        "normalization": 1.0026599920820445,
-        "dispersion": 108.71258901897818,
-        "glm_fit": 52.87442900589667,
-        "significance": 144.26802698289976,
-        "lfc_shrink": 1107.272847002605,
-        "total": 1414.1305520024616
+        "normalization": 0.9485379559919238,
+        "dispersion": 108.76083403127268,
+        "glm_fit": 53.43003501184285,
+        "significance": 124.19641204178333,
+        "lfc_shrink": 680.8875189744867,
+        "total": 968.2233380153775
       },
       "triton": {
-        "normalization": 0.9869849891401827,
-        "dispersion": 51.66169899166562,
-        "glm_fit": 53.15044298185967,
-        "significance": 144.51722300145775,
-        "lfc_shrink": 1111.021235003136,
-        "total": 1361.3375849672593
+        "normalization": 0.9972919942811131,
+        "dispersion": 51.20222800178453,
+        "glm_fit": 53.11399803031236,
+        "significance": 123.06675600120798,
+        "lfc_shrink": 669.7864310117438,
+        "total": 898.1667050393298
       }
     },
     "gtex_blood_muscle": {
-      "_status": "superseded_for_standard_pipeline",
-      "_pipeline": "wald_without_count_replacement_refit",
       "_P": 2,
       "_n": 300,
       "eager": {
-        "normalization": 3.7026310164947063,
-        "dispersion": 3501.3619469827972,
-        "glm_fit": 397.32374099548906,
-        "significance": 2784.6372940111905,
-        "lfc_shrink": 1742.4178149958607,
-        "total": 8429.443428001832
+        "normalization": 3.6898910184390843,
+        "dispersion": 3500.4819959867746,
+        "glm_fit": 3146.537497988902,
+        "significance": 623.3591029886156,
+        "lfc_shrink": 1235.4621089762077,
+        "total": 8509.530596958939
       },
       "graph": {
-        "normalization": 3.686912008561194,
-        "dispersion": 3620.0021850236226,
-        "glm_fit": 417.2215329890605,
-        "significance": 2609.4723069982138,
-        "lfc_shrink": 1735.6811709760223,
-        "total": 8386.06410799548
+        "normalization": 3.689457953441888,
+        "dispersion": 3623.1369560118765,
+        "glm_fit": 2810.2362109930255,
+        "significance": 622.7594810188748,
+        "lfc_shrink": 1233.435334987007,
+        "total": 8293.257440964226
       },
       "triton": {
-        "normalization": 3.699736000271514,
-        "dispersion": 200.28434999403544,
-        "glm_fit": 416.96656701969914,
-        "significance": 2625.4796200082637,
-        "lfc_shrink": 1236.5233589953277,
-        "total": 4482.953632017598
+        "normalization": 3.686648968141526,
+        "dispersion": 200.28685999568552,
+        "glm_fit": 2709.362902038265,
+        "significance": 620.8938260097057,
+        "lfc_shrink": 1219.6680249762721,
+        "total": 4753.89826198807
       }
     },
     "pasilla": {
       "_P": 2,
       "_n": 7,
       "eager": {
-        "normalization": 0.9947619982995093,
-        "dispersion": 421.5846660081297,
-        "glm_fit": 36.40624199761078,
-        "significance": 62.499010004103184,
-        "lfc_shrink": 627.7071200020146,
-        "total": 1149.1918000101577
+        "normalization": 0.913131982088089,
+        "dispersion": 401.80105599574745,
+        "glm_fit": 37.82597096869722,
+        "significance": 63.13426897395402,
+        "lfc_shrink": 478.181756043341,
+        "total": 981.8561839638278
       },
       "graph": {
-        "normalization": 0.9668100101407617,
-        "dispersion": 77.52821399481036,
-        "glm_fit": 36.26817697659135,
-        "significance": 61.323166999500245,
-        "lfc_shrink": 624.8965309932828,
-        "total": 800.9828989743255
+        "normalization": 0.917022000066936,
+        "dispersion": 70.68700098898262,
+        "glm_fit": 37.351666018366814,
+        "significance": 62.662510958034545,
+        "lfc_shrink": 478.04074600571766,
+        "total": 649.6589459711686
       },
       "triton": {
-        "normalization": 0.9669929859228432,
-        "dispersion": 20.641588984290138,
-        "glm_fit": 36.62997597712092,
-        "significance": 62.32233499758877,
-        "lfc_shrink": 581.4257969905157,
-        "total": 701.9866899354383
+        "normalization": 0.9319490054622293,
+        "dispersion": 20.068592042662203,
+        "glm_fit": 37.26301895221695,
+        "significance": 62.678290996700525,
+        "lfc_shrink": 596.0249239578843,
+        "total": 716.9667749549262
       }
     },
     "pasilla_2fac": {
       "_P": 3,
       "_n": 7,
       "eager": {
-        "normalization": 0.9828099864535034,
-        "dispersion": 730.2827129897196,
-        "glm_fit": 327.12709400220774,
-        "significance": 59.95707801776007,
-        "lfc_shrink": 393.0253839935176,
-        "total": 1511.3750789896585
+        "normalization": 0.9051290107890964,
+        "dispersion": 707.9222070169635,
+        "glm_fit": 320.37573802517727,
+        "significance": 73.65514698904008,
+        "lfc_shrink": 378.2445560209453,
+        "total": 1481.1027770629153
       },
       "graph": {
-        "normalization": 0.9763780108187348,
-        "dispersion": 161.95048202644102,
-        "glm_fit": 329.12017800845206,
-        "significance": 62.20458299503662,
-        "lfc_shrink": 391.71409999835305,
-        "total": 945.9657210391015
+        "normalization": 0.9212680160999298,
+        "dispersion": 160.52828094689175,
+        "glm_fit": 321.49800698971376,
+        "significance": 59.76686399662867,
+        "lfc_shrink": 379.4155009672977,
+        "total": 922.1299209166318
       },
       "triton": {
-        "normalization": 1.0009370162151754,
-        "dispersion": 82.84306898713112,
-        "glm_fit": 328.53483501821756,
-        "significance": 58.5531760007143,
-        "lfc_shrink": 395.2247559791431,
-        "total": 866.1567730014212
+        "normalization": 0.9022850426845253,
+        "dispersion": 80.25350497337058,
+        "glm_fit": 321.612082014326,
+        "significance": 60.39323500590399,
+        "lfc_shrink": 378.0210110126063,
+        "total": 841.1821180488914
       }
     }
   },
-  "pydeseq2": {
-    "airway": {
-      "normalization": 12.334143000771292,
-      "dispersion": 15256.00187300006,
-      "glm_fit": 6347.909739008173,
-      "significance": 2684.8343609890435,
-      "lfc_shrink": 10383.671234012581,
-      "total": 34684.75135001063
-    },
-    "airway_cell": {
-      "normalization": 12.511761000496335,
-      "dispersion": 16429.69387100311,
-      "glm_fit": 5757.282741004019,
-      "significance": 2738.0654930020683,
-      "lfc_shrink": 12940.93910799711,
-      "total": 37878.492974006804
-    },
-    "airway_dex": {
-      "normalization": 12.511071996414103,
-      "dispersion": 16149.159366003005,
-      "glm_fit": 4181.599506002385,
-      "significance": 2586.3841740065254,
-      "lfc_shrink": 6670.950550003909,
-      "total": 29600.604668012238
-    },
-    "gtex_blood_muscle": {
-      "normalization": 775.2453039865941,
-      "dispersion": 44959.42583300348,
-      "glm_fit": 15130.738024992752,
-      "significance": 5141.826924009365,
-      "lfc_shrink": 14104.10349999438,
-      "total": 80111.33958598657
-    },
-    "pasilla": {
-      "normalization": 4.902683009277098,
-      "dispersion": 6177.3687090026215,
-      "glm_fit": 1683.2095620047767,
-      "significance": 991.445963998558,
-      "lfc_shrink": 2578.6669270019047,
-      "total": 11435.593845017138
-    },
-    "pasilla_2fac": {
-      "normalization": 5.195678997552022,
-      "dispersion": 6309.647653994034,
-      "glm_fit": 1803.3041290036635,
-      "significance": 1087.0219780044863,
-      "lfc_shrink": 2927.441109000938,
-      "total": 12132.610549000674
-    }
-  }
+  "pydeseq2": {}
 }

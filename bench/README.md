@@ -66,8 +66,8 @@ not available; it validates outputs without overwriting GPU timings.
   contributes exactly 0 to that column on every substep. Triton re-derives the
   same mathematics in registers with a different reduction order and a
   hand-written `digamma`, so it agrees with eager to ~1e-7 in dispersion on the
-  five small-*n* sets. The standard-pipeline GTEx mode comparison is pending a
-  new A100 run.
+  five small-*n* sets. On GTEx, the largest per-gene relative difference is
+  2.6e-1 at one boundary gene; the called-set Jaccard remains 0.99997.
 
 - **Equivalence vs R is tolerance-based**, not bit-exact: reduction order in
   batched GPU kernels differs from R's sequential per-gene loops. (The small-dof
@@ -78,13 +78,13 @@ not available; it validates outputs without overwriting GPU timings.
   | substep | metric | PASS tolerance | why |
   |---|---|---|---|
   | normalization | max relative Δ (size factors) | ≤ 1e-6 | deterministic |
-  | dispersion    | p95 relative Δ                | ≤ 0.10 | intermediate; observed worst: 4.3e-3 |
+  | dispersion    | p95 relative Δ                | ≤ 0.10 | intermediate; observed worst: 4.4e-3 |
   | glm_fit       | p95 \|Δ\| (raw LFC)           | ≤ 1e-2 | drives significance; near-exact |
   | significance  | Jaccard of {padj<0.05}        | ≥ 0.95 | borderline-gene flicker at the threshold |
   | lfc_shrink    | Pearson r (Spearman in-cell)  | ≥ 0.90 | soft ranking quantity, see below |
 
   Current results: all 30 substep checks pass; the worst dispersion p95 relative
-  error is 4.3e-3 (`gtex_blood_muscle`). `airway` — the only case with
+  error is 4.4e-3 (`gtex_blood_muscle`). `airway` — the only case with
   residual dof ≤ 3, hence the only one entering R's Monte-Carlo prior-variance
   branch — reproduces R's prior variance bit for bit, lands at 4.5e-4, and calls
   an identical significant-gene set (3993/3993). The least favorable shrunk-LFC

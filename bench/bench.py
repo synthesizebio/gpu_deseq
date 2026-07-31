@@ -19,8 +19,10 @@ Flags: --skip-r (reuse bench/cache R side), --only a,b (subset of cases),
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
+import platform
 import subprocess
 from pathlib import Path
 
@@ -37,6 +39,45 @@ DATA = Path("validation/data")
 CACHE = Path("bench/cache")
 RES = Path("bench/results"); RES.mkdir(parents=True, exist_ok=True)
 MODES = ["eager", "graph", "triton"]
+
+
+def benchmark_provenance(device: str) -> dict[str, object]:
+    """Record enough runtime context to interpret or reproduce a timing file."""
+    provenance: dict[str, object] = {
+        "pipeline": "standard_wald_with_outlier_refit",
+        "measured_utc": datetime.datetime.now(datetime.timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z"),
+        "device_argument": device,
+        "python_version": platform.python_version(),
+        "torch_version": torch.__version__,
+        "torch_cuda_version": torch.version.cuda,
+        "cuda_available": torch.cuda.is_available(),
+    }
+    if device == "cuda" and torch.cuda.is_available():
+        props = torch.cuda.get_device_properties(0)
+        provenance.update(
+            {
+                "gpu_name": props.name,
+                "gpu_memory_bytes": props.total_memory,
+                "gpu_compute_capability": f"{props.major}.{props.minor}",
+            }
+        )
+        try:
+            provenance["nvidia_driver_version"] = subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=driver_version",
+                    "--format=csv,noheader",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip().splitlines()[0]
+        except (OSError, subprocess.SubprocessError, IndexError):
+            provenance["nvidia_driver_version"] = None
+    return provenance
 
 # Per-substep parity spec: which captured array, how to score cuDESeq2 vs R, the
 # PASS tolerance, and whether higher is better.
@@ -210,7 +251,13 @@ def main():
             pj_cap = pj.capture_pydeseq2(c, n_cpus=os.cpu_count())
         parity[c] = parity_for_case(c, caps, pj_cap)
 
-    (RES / "timings.json").write_text(json.dumps({"r": r_time, "cu": cu_time, "pydeseq2": pj_time}, indent=2))
+    timing_output = {
+        "provenance": benchmark_provenance(args.device),
+        "r": r_time,
+        "cu": cu_time,
+        "pydeseq2": pj_time,
+    }
+    (RES / "timings.json").write_text(json.dumps(timing_output, indent=2))
     (RES / "parity.json").write_text(json.dumps(parity, indent=2))
     tables = render_tables(cases, r_time, cu_time, parity, pj_time)
     (RES / "TABLES.md").write_text(tables)

@@ -89,7 +89,7 @@ for substep, values in metrics.items():
           (shown_worst, actual_worst))
 
 
-# Tables 3 and 4: current R cells and the five valid retained A100 comparisons.
+# Tables 3 and 4: current R and A100 cells for all six designs.
 labels = [
     ("pasilla", "pasilla"),
     ("pasilla_2fac", r"pasilla\_2fac"),
@@ -108,9 +108,6 @@ for case, label in labels:
     check(f"Table 3 {case}: R seconds",
           round(values[2], 1) == round(TIMING["r"][case]["total"] / 1000, 1),
           values)
-    if case == "gtex_blood_muscle":
-        check("Table 3 GTEx GPU withheld", row.count("---") == 3, row)
-        continue
     shown_gpu = values[3:6]
     actual_gpu = [TIMING["cu"][case][mode]["total"]
                   for mode in ("eager", "graph", "triton")]
@@ -132,10 +129,10 @@ for case, label in labels:
         ]
         check(f"Table 4 {case}/{stage}", shown == actual, (shown, actual))
 
-headline = re.findall(r"\\fact\{10\.4--27\.7\$\\times\$\}", TEX)
+headline = re.findall(r"\\fact\{10\.3--99\.2\$\\times\$\}", TEX)
 check("headline range appears three times", len(headline) == 3, len(headline))
-check("headline minimum", round(min(speedups), 1) == 10.4, min(speedups))
-check("headline maximum", round(max(speedups), 1) == 27.7, max(speedups))
+check("headline minimum", round(min(speedups), 1) == 10.3, min(speedups))
+check("headline maximum", round(max(speedups), 1) == 99.2, max(speedups))
 
 
 # Called-set claims are derived from the current standard-pipeline CSVs.
@@ -210,13 +207,13 @@ fact_text = {
 allowed = {
     "$0.016$", "$0.080$", "$0.5285285285285285$", "$\\approx$0.3\\,s",
     "$\\ge$0.961", "$\\ge$99.6\\%", "0", "0.03\\%", "0.045\\%", "0.07",
-    "0.43\\%", "0.97$\\times$", "0.971", "0.997", "0.99963", "0.99997",
+    "0.44\\%", "0.97$\\times$", "0.971", "0.997", "0.99963", "0.99997",
     "1.000", "1.01$\\times$", "1.2$\\times$", "1.4\\%", "1.7$\\times$",
-    "1.8$\\times$", "1.84$\\times$", "10.4--27.7$\\times$", "100", "128",
+    "1.8$\\times$", "1.84$\\times$", "10.3--99.2$\\times$", "100", "128",
     "1287\\,\\textmu s", "1292\\,\\textmu s", "13--25", "1369\\,GB/s",
     "141", "196", "1e-14", "2.2$\\times$", "2.45$\\times$", "206", "215",
     "21\\%", "228", "22\\%", "25", "3--8\\%", "3.0e-5", "3.0e-8",
-    "3.7$\\times$", "31", "36\\%", "3e-14", "3e-15", "3{,", "4.3e-3",
+    "3.7$\\times$", "31", "36\\%", "3e-14", "3e-15", "3{,", "4.4e-3",
     "4.5$\\times$", "4.5e-4", "43\\%", "470\\,ms", "5.57$\\times$",
     "508--819\\,ms", "5e-15", "6.4$\\times$", "6.7\\%", "67.8$\\times$",
     "7.6$\\times$", "76/76 step-parity tests", "8.5e-4", "88\\%",

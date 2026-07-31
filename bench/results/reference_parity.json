@@ -1,5 +1,5 @@
 {
-  "device": "cpu",
+  "device": "cuda",
   "pipeline": "standard_wald_with_outlier_refit",
   "cases": {
     "airway": {
@@ -18,7 +18,7 @@
         {
           "substep": "dispersion",
           "metric": "p95 rel",
-          "value": 0.0004488752653985187,
+          "value": 0.0004488752584457424,
           "tol": 0.1,
           "higher_better": false,
           "pass": true
@@ -26,7 +26,7 @@
         {
           "substep": "glm_fit",
           "metric": "p95 |\u0394|",
-          "value": 3.0378430732058676e-05,
+          "value": 3.0378423092081138e-05,
           "tol": 0.01,
           "higher_better": false,
           "pass": true
@@ -42,7 +42,7 @@
         {
           "substep": "lfc_shrink",
           "metric": "Pearson r",
-          "value": 0.9999981357193238,
+          "value": 0.9999981357435558,
           "tol": 0.9,
           "higher_better": true,
           "pass": true,
@@ -66,7 +66,7 @@
         {
           "substep": "dispersion",
           "metric": "p95 rel",
-          "value": 0.002835590893634361,
+          "value": 0.002835590907321941,
           "tol": 0.1,
           "higher_better": false,
           "pass": true
@@ -74,7 +74,7 @@
         {
           "substep": "glm_fit",
           "metric": "p95 |\u0394|",
-          "value": 8.088202809742871e-05,
+          "value": 8.088202775407004e-05,
           "tol": 0.01,
           "higher_better": false,
           "pass": true
@@ -90,7 +90,7 @@
         {
           "substep": "lfc_shrink",
           "metric": "Pearson r",
-          "value": 0.9972238131284098,
+          "value": 0.9972238129366802,
           "tol": 0.9,
           "higher_better": true,
           "pass": true,
@@ -114,7 +114,7 @@
         {
           "substep": "dispersion",
           "metric": "p95 rel",
-          "value": 0.0010405662169926419,
+          "value": 0.0010405662545795254,
           "tol": 0.1,
           "higher_better": false,
           "pass": true
@@ -122,7 +122,7 @@
         {
           "substep": "glm_fit",
           "metric": "p95 |\u0394|",
-          "value": 2.5037062289497146e-05,
+          "value": 2.5037063102703592e-05,
           "tol": 0.01,
           "higher_better": false,
           "pass": true
@@ -138,7 +138,7 @@
         {
           "substep": "lfc_shrink",
           "metric": "Pearson r",
-          "value": 0.9985925562309887,
+          "value": 0.9985925562323493,
           "tol": 0.9,
           "higher_better": true,
           "pass": true,
@@ -154,7 +154,7 @@
         {
           "substep": "normalization",
           "metric": "max rel",
-          "value": 4.9784838816982516e-15,
+          "value": 5.690190868151395e-15,
           "tol": 1e-06,
           "higher_better": false,
           "pass": true
@@ -162,7 +162,7 @@
         {
           "substep": "dispersion",
           "metric": "p95 rel",
-          "value": 0.004266158745712758,
+          "value": 0.004395942472197017,
           "tol": 0.1,
           "higher_better": false,
           "pass": true
@@ -170,7 +170,7 @@
         {
           "substep": "glm_fit",
           "metric": "p95 |\u0394|",
-          "value": 1.7837141543730613e-05,
+          "value": 1.7970189517652056e-05,
           "tol": 0.01,
           "higher_better": false,
           "pass": true
@@ -186,7 +186,7 @@
         {
           "substep": "lfc_shrink",
           "metric": "Pearson r",
-          "value": 0.9999982346136819,
+          "value": 0.9999982314064358,
           "tol": 0.9,
           "higher_better": true,
           "pass": true,
@@ -202,7 +202,7 @@
         {
           "substep": "normalization",
           "metric": "max rel",
-          "value": 2.5359516415690998e-15,
+          "value": 2.926098047964346e-15,
           "tol": 1e-06,
           "higher_better": false,
           "pass": true
@@ -210,7 +210,7 @@
         {
           "substep": "dispersion",
           "metric": "p95 rel",
-          "value": 0.0006671977700919489,
+          "value": 0.0006671983827313886,
           "tol": 0.1,
           "higher_better": false,
           "pass": true
@@ -218,7 +218,7 @@
         {
           "substep": "glm_fit",
           "metric": "p95 |\u0394|",
-          "value": 2.3421139025525658e-05,
+          "value": 2.3421167925174998e-05,
           "tol": 0.01,
           "higher_better": false,
           "pass": true
@@ -234,7 +234,7 @@
         {
           "substep": "lfc_shrink",
           "metric": "Pearson r",
-          "value": 0.999996666772231,
+          "value": 0.9999966667737589,
           "tol": 0.9,
           "higher_better": true,
           "pass": true,
@@ -250,7 +250,7 @@
         {
           "substep": "normalization",
           "metric": "max rel",
-          "value": 2.5359516415690998e-15,
+          "value": 2.926098047964346e-15,
           "tol": 1e-06,
           "higher_better": false,
           "pass": true
@@ -258,7 +258,7 @@
         {
           "substep": "dispersion",
           "metric": "p95 rel",
-          "value": 0.00023554046468983944,
+          "value": 0.0002353977466255918,
           "tol": 0.1,
           "higher_better": false,
           "pass": true
@@ -266,7 +266,7 @@
         {
           "substep": "glm_fit",
           "metric": "p95 |\u0394|",
-          "value": 1.455394459759507e-05,
+          "value": 1.4553944597373025e-05,
           "tol": 0.01,
           "higher_better": false,
           "pass": true
@@ -282,7 +282,7 @@
         {
           "substep": "lfc_shrink",
           "metric": "Pearson r",
-          "value": 0.9999906699044782,
+          "value": 0.9999906699409427,
           "tol": 0.9,
           "higher_better": true,
           "pass": true,

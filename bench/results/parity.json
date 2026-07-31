@@ -12,14 +12,13 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 0.0
-      },
-      "pj_value": 4.1416183048968446e-15
+      }
     },
     {
       "case": "airway",
       "substep": "dispersion",
       "metric": "p95 rel",
-      "value": 0.0004488752584482299,
+      "value": 0.0004488752584457424,
       "tol": 0.1,
       "higher_better": false,
       "pass": true,
@@ -27,8 +26,7 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 3.114687423533269e-07
-      },
-      "pj_value": 0.4085804005023479
+      }
     },
     {
       "case": "airway",
@@ -42,8 +40,7 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 9.6712367003704e-09
-      },
-      "pj_value": 0.03594545917547447
+      }
     },
     {
       "case": "airway",
@@ -57,14 +54,13 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 1.5324969321328652e-06
-      },
-      "pj_value": 0.9145631067961165
+      }
     },
     {
       "case": "airway",
       "substep": "lfc_shrink",
       "metric": "Pearson r",
-      "value": 0.9999981357518747,
+      "value": 0.9999981357435558,
       "tol": 0.9,
       "higher_better": true,
       "pass": true,
@@ -73,8 +69,7 @@
         "graph": 0.0,
         "triton": 7.850840363681985e-05
       },
-      "aux": "\u03c1=1.000",
-      "pj_value": 0.9883399505965765
+      "aux": "\u03c1=1.000"
     }
   ],
   "airway_cell": [
@@ -90,14 +85,13 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 0.0
-      },
-      "pj_value": 4.1416183048968446e-15
+      }
     },
     {
       "case": "airway_cell",
       "substep": "dispersion",
       "metric": "p95 rel",
-      "value": 0.0028355909228399995,
+      "value": 0.002835590907321941,
       "tol": 0.1,
       "higher_better": false,
       "pass": true,
@@ -105,14 +99,13 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 6.109679898114173e-08
-      },
-      "pj_value": 0.21183037316986705
+      }
     },
     {
       "case": "airway_cell",
       "substep": "glm_fit",
       "metric": "p95 |\u0394|",
-      "value": 8.088202815126898e-05,
+      "value": 8.088202775407004e-05,
       "tol": 0.01,
       "higher_better": false,
       "pass": true,
@@ -120,8 +113,7 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 2.8655296954727127e-09
-      },
-      "pj_value": 0.01312444082261609
+      }
     },
     {
       "case": "airway_cell",
@@ -135,14 +127,13 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 1.3035062577286885e-08
-      },
-      "pj_value": 0.9013452914798207
+      }
     },
     {
       "case": "airway_cell",
       "substep": "lfc_shrink",
       "metric": "Pearson r",
-      "value": 0.9972238129067502,
+      "value": 0.9972238129366802,
       "tol": 0.9,
       "higher_better": true,
       "pass": true,
@@ -151,8 +142,7 @@
         "graph": 0.0,
         "triton": 6.417939811334222e-05
       },
-      "aux": "\u03c1=0.996",
-      "pj_value": 0.9598780578585675
+      "aux": "\u03c1=0.996"
     }
   ],
   "airway_dex": [
@@ -168,14 +158,13 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 0.0
-      },
-      "pj_value": 4.1416183048968446e-15
+      }
     },
     {
       "case": "airway_dex",
       "substep": "dispersion",
       "metric": "p95 rel",
-      "value": 0.0010405662605654205,
+      "value": 0.0010405662545795254,
       "tol": 0.1,
       "higher_better": false,
       "pass": true,
@@ -183,14 +172,13 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 2.2860267456792371e-07
-      },
-      "pj_value": 0.1373217388599617
+      }
     },
     {
       "case": "airway_dex",
       "substep": "glm_fit",
       "metric": "p95 |\u0394|",
-      "value": 2.503706333966786e-05,
+      "value": 2.5037063102703592e-05,
       "tol": 0.01,
       "higher_better": false,
       "pass": true,
@@ -198,8 +186,7 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 1.753824863115483e-09
-      },
-      "pj_value": 0.006107301740619686
+      }
     },
     {
       "case": "airway_dex",
@@ -213,14 +200,13 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 1.520427176382455e-07
-      },
-      "pj_value": 0.9774545454545455
+      }
     },
     {
       "case": "airway_dex",
       "substep": "lfc_shrink",
       "metric": "Pearson r",
-      "value": 0.9985925562327209,
+      "value": 0.9985925562323493,
       "tol": 0.9,
       "higher_better": true,
       "pass": true,
@@ -229,8 +215,7 @@
         "graph": 0.0,
         "triton": 9.143231526564932e-06
       },
-      "aux": "\u03c1=1.000",
-      "pj_value": 0.9987267046068954
+      "aux": "\u03c1=1.000"
     }
   ],
   "gtex_blood_muscle": [
@@ -246,14 +231,13 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 0.0
-      },
-      "pj_value": 5.471337373222495e-15
+      }
     },
     {
       "case": "gtex_blood_muscle",
       "substep": "dispersion",
       "metric": "p95 rel",
-      "value": 0.0037126786099968547,
+      "value": 0.004395942472197017,
       "tol": 0.1,
       "higher_better": false,
       "pass": true,
@@ -261,14 +245,13 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 0.2603959758848937
-      },
-      "pj_value": 0.006043975984072504
+      }
     },
     {
       "case": "gtex_blood_muscle",
       "substep": "glm_fit",
       "metric": "p95 |\u0394|",
-      "value": 1.810708773835597e-05,
+      "value": 1.7970189517652056e-05,
       "tol": 0.01,
       "higher_better": false,
       "pass": true,
@@ -276,29 +259,27 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 0.00012239744421860266
-      },
-      "pj_value": 4.52293365855494e-05
+      }
     },
     {
       "case": "gtex_blood_muscle",
       "substep": "significance",
       "metric": "Jaccard@.05",
-      "value": 0.9999399110683812,
+      "value": 0.9999705388445335,
       "tol": 0.95,
       "higher_better": true,
       "pass": true,
-      "gpu_modes_maxdiff": 0.00199416786316281,
+      "gpu_modes_maxdiff": 0.001989146533250441,
       "maxdiff_vs_eager": {
         "graph": 0.0,
-        "triton": 0.00199416786316281
-      },
-      "pj_value": 0.9714824416686307
+        "triton": 0.001989146533250441
+      }
     },
     {
       "case": "gtex_blood_muscle",
       "substep": "lfc_shrink",
       "metric": "Pearson r",
-      "value": 0.9999982471299121,
+      "value": 0.9999982314064358,
       "tol": 0.9,
       "higher_better": true,
       "pass": true,
@@ -307,8 +288,7 @@
         "graph": 0.0,
         "triton": 0.005701924792822943
       },
-      "aux": "\u03c1=1.000",
-      "pj_value": 0.9999950626100806
+      "aux": "\u03c1=1.000"
     }
   ],
   "pasilla": [
@@ -324,14 +304,13 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 0.0
-      },
-      "pj_value": 2.926098047964346e-15
+      }
     },
     {
       "case": "pasilla",
       "substep": "dispersion",
       "metric": "p95 rel",
-      "value": 0.0006671986490209519,
+      "value": 0.0006671983827313886,
       "tol": 0.1,
       "higher_better": false,
       "pass": true,
@@ -339,14 +318,13 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 1.8968723691087375e-07
-      },
-      "pj_value": 0.1208681396533606
+      }
     },
     {
       "case": "pasilla",
       "substep": "glm_fit",
       "metric": "p95 |\u0394|",
-      "value": 2.342118401312819e-05,
+      "value": 2.3421167925174998e-05,
       "tol": 0.01,
       "higher_better": false,
       "pass": true,
@@ -354,8 +332,7 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 1.3443008650693145e-09
-      },
-      "pj_value": 0.008214648178100118
+      }
     },
     {
       "case": "pasilla",
@@ -369,14 +346,13 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 1.8289657843229001e-06
-      },
-      "pj_value": 0.9741176470588235
+      }
     },
     {
       "case": "pasilla",
       "substep": "lfc_shrink",
       "metric": "Pearson r",
-      "value": 0.9999966667782288,
+      "value": 0.9999966667737589,
       "tol": 0.9,
       "higher_better": true,
       "pass": true,
@@ -385,8 +361,7 @@
         "graph": 0.0,
         "triton": 5.432778247826953e-07
       },
-      "aux": "\u03c1=1.000",
-      "pj_value": 0.9952169812985178
+      "aux": "\u03c1=1.000"
     }
   ],
   "pasilla_2fac": [
@@ -402,14 +377,13 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 0.0
-      },
-      "pj_value": 2.926098047964346e-15
+      }
     },
     {
       "case": "pasilla_2fac",
       "substep": "dispersion",
       "metric": "p95 rel",
-      "value": 0.0002353977448946235,
+      "value": 0.0002353977466255918,
       "tol": 0.1,
       "higher_better": false,
       "pass": true,
@@ -417,8 +391,7 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 1.0795106852867775e-07
-      },
-      "pj_value": 0.23293498315235348
+      }
     },
     {
       "case": "pasilla_2fac",
@@ -432,8 +405,7 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 1.400971860743283e-08
-      },
-      "pj_value": 0.02155938206497041
+      }
     },
     {
       "case": "pasilla_2fac",
@@ -447,14 +419,13 @@
       "maxdiff_vs_eager": {
         "graph": 0.0,
         "triton": 1.3978304509443262e-06
-      },
-      "pj_value": 0.9389380530973451
+      }
     },
     {
       "case": "pasilla_2fac",
       "substep": "lfc_shrink",
       "metric": "Pearson r",
-      "value": 0.9999906702689575,
+      "value": 0.9999906699409427,
       "tol": 0.9,
       "higher_better": true,
       "pass": true,
@@ -463,8 +434,7 @@
         "graph": 0.0,
         "triton": 1.5066337518895856e-07
       },
-      "aux": "\u03c1=1.000",
-      "pj_value": 0.9953220315824359
+      "aux": "\u03c1=1.000"
     }
   ]
 }

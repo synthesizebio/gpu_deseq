@@ -52,7 +52,7 @@ make container-gpu-benchmark
 ```
 
 The GPU benchmark reuses the R reference in `bench/cache/` and reruns all six
-GPU cases. This is the command needed to replace the pending GTEx timing.
+GPU cases.
 
 The CUDA libraries are supplied by the PyTorch wheel. The host supplies only a
 compatible NVIDIA driver and the GPU device through the container runtime.

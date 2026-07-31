@@ -31,11 +31,9 @@ On a host configured with the NVIDIA Container Toolkit,
 > the three tables in [`bench/results/TABLES.md`](bench/results/TABLES.md):
 > total-pipeline timing, per-substep timing, and output parity — for R DESeq2,
 > cuDESeq2 (eager / CUDA-graph / Triton), and a PyDESeq2 competitor, across six
-> real RNA-seq datasets (7–300 samples) on an A100. The five designs with
-> complete current standard-pipeline timings are 10.4–27.7× faster than
-> single-threaded R. The GTEx GPU total is marked pending because the available
-> A100 artifact predates implementation of its count-outlier refit; it is not
-> used in the speedup range.
+> real RNA-seq datasets (7–300 samples) on an A100. Across all six current
+> standard-pipeline measurements, the best GPU mode is 10.3–99.2× faster than
+> single-threaded R.
 
 ## What's tested vs R DESeq2
 
