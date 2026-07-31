@@ -59,8 +59,11 @@
 pipeline}
 
 % Single-anonymized review: authors ARE named.
+% TODO(authorship): replace the placeholder below with the real co-author
+% names before submission. Confirm each person consents to being listed and
+% recheck the Conflict of Interest section if anyone is outside Synthesize Bio.
 \author{%
-Max~Highsmith\,$^{1,\ast}$\\[2pt]
+Max~Highsmith\,$^{1,\ast}$, [ADDITIONAL AUTHORS TBD]\,$^{1}$\\[2pt]
 {\normalsize $^{1}$Synthesize Bio}\\[2pt]
 {\normalsize $^{\ast}$To whom correspondence should be addressed:
 max@synthesize.bio}}
@@ -594,8 +597,9 @@ Sec.~\ref{sec:ablations}, the graph path reproduces eager exactly: gene-wise, MA
 and final dispersion all agree to max $|\Delta|=\fact{0}$
 (\texttt{benchmarks/results\_a100*.json}). Triton's fused reduction order and
 hand-written \texttt{digamma} change the last bits; its dispersion agrees with
-eager to $\le$3.2e-7 on the five small-$n$ sets. The current standard-pipeline
-\texttt{gtex} mode comparison awaits the A100 rerun.
+eager to $\le$3.2e-7 on the five small-$n$ sets. The standard-pipeline
+\texttt{gtex} comparison includes count replacement and refitting in every
+mode (Table~\ref{tab:realtiming}).
 
 \subsubsection{Parity in the standard DE plots}
 \label{sec:deplots}
@@ -796,11 +800,10 @@ time. This is the signature of a loop paying mainly for launches and dispatch.
 That is the cost graph replay and Triton fusion attack, and why they buy more than a
 better-tuned kernel could.
 
-The earlier synthetic end-to-end comparison used
-\texttt{nbinomWaldTest} without the standard replacement/refit branch. We do
-not relabel those measurements as DESeq2~1.52.0 results. A new A100 run is
-required before that table can be restored. The scaling experiments below
-isolate the dispersion optimizer and do not depend on the wrapper branch.
+The synthetic scaling experiments below isolate the dispersion optimizer rather
+than report end-to-end DESeq2 speedups; they therefore do not exercise the
+standard replacement/refit wrapper branch. The real-data timings in
+Table~\ref{tab:realtiming} use that branch where applicable.
 If the loop is launch-bound, the accelerators should pay most where iterations are
 many and each is cheap, and fade as every iteration acquires enough arithmetic to
 fill the device. The sample axis tests that directly
@@ -850,14 +853,14 @@ $S$ & iters & eager & graph & Triton & graph & Triton & graph & Triton \\\midrul
 
 The gene axis says the same thing from the other side. Taking $2{,}000$ to
 $20{,}000$ genes at fixed $S{=}60$ multiplies the work tenfold but the eager stage
-time only by \fact{1.7$\times$} at $P{=}2$ (\fact{128}$\to$\fact{215}\,ms) and
-\fact{1.2$\times$} at $P{=}4$ (\fact{196}$\to$\fact{228}\,ms): nine tenths of the
+time only by \fact{1.7$\times$} at $P{=}2$ (\fact{128}$\to$\fact{212}\,ms) and
+\fact{1.2$\times$} at $P{=}4$ (\fact{195}$\to$\fact{225}\,ms): nine tenths of the
 added genes are absorbed into launch latency the small case already paid. Because
 that fixed overhead is amortized over more genes at $20{,}000$, it is also where
 the graph has least left to remove, its stage speedup dropping from
 \fact{4.5$\times$} to \fact{1.8$\times$} at $P{=}2$ (\fact{3.7$\times$} to
 \fact{2.2$\times$} at $P{=}4$). Graph capture is a warm-path optimization: the
-one-time capture costs \fact{508--819\,ms} across these four configurations, so it
+one-time capture costs \fact{494--791\,ms} across these four configurations, so it
 is recovered only when many matrices of one shape are fitted in a session, as in the
 serving pattern the virtual-cell evaluation loops of the Introduction generate.
 

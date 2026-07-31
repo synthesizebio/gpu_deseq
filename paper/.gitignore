@@ -7,4 +7,5 @@
 *.fls
 *.fdb_latexmk
 *.synctex.gz
-main.pdf
+
+# main.pdf is deliberately tracked: the built manuscript is a repo deliverable.

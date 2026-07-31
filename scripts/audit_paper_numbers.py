@@ -181,7 +181,7 @@ converged = [row["eager_iters"] for n, row in sample.items() if n >= 30]
 check("sample-axis converged range", (min(converged), max(converged)) == (13, 25))
 
 gene = {(row["n_genes"], row["P"]): row for row in GENE}
-for p, lo_ms, hi_ms, growth in ((2, 128, 215, 1.7), (4, 196, 228, 1.2)):
+for p, lo_ms, hi_ms, growth in ((2, 128, 212, 1.7), (4, 195, 225, 1.2)):
     lo, hi = gene[(2000, p)], gene[(20000, p)]
     check(f"gene-axis P={p} times",
           round(lo["fit_dispersions_eager_ms"]) == lo_ms
@@ -211,11 +211,11 @@ allowed = {
     "1.000", "1.01$\\times$", "1.2$\\times$", "1.4\\%", "1.7$\\times$",
     "1.8$\\times$", "1.84$\\times$", "10.3--99.2$\\times$", "100", "128",
     "1287\\,\\textmu s", "1292\\,\\textmu s", "13--25", "1369\\,GB/s",
-    "141", "196", "1e-14", "2.2$\\times$", "2.45$\\times$", "206", "215",
-    "21\\%", "228", "22\\%", "25", "3--8\\%", "3.0e-5", "3.0e-8",
+    "141", "195", "1e-14", "2.2$\\times$", "2.45$\\times$", "206", "212",
+    "21\\%", "225", "22\\%", "25", "3--8\\%", "3.0e-5", "3.0e-8",
     "3.7$\\times$", "31", "36\\%", "3e-14", "3e-15", "3{,", "4.4e-3",
-    "4.5$\\times$", "4.5e-4", "43\\%", "470\\,ms", "5.57$\\times$",
-    "508--819\\,ms", "5e-15", "6.4$\\times$", "6.7\\%", "67.8$\\times$",
+    "494--791\\,ms", "4.5$\\times$", "4.5e-4", "43\\%", "470\\,ms",
+    "5.57$\\times$", "5e-15", "6.4$\\times$", "6.7\\%", "67.8$\\times$",
     "7.6$\\times$", "76/76 step-parity tests", "8.5e-4", "88\\%",
 }
 unregistered = sorted(
