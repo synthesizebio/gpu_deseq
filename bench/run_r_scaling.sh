@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
-# run_r_scaling.sh — R DESeq2 multi-core scaling benchmark (standalone)
+# run_r_scaling.sh — archived DESeq2 1.30.1 multi-core scaling harness
 #
-# Measures how R DESeq2 1.30.1 scales across CPU cores on the six real
+# This preserves the historical, version-pinned multi-core experiment. It is
+# not the source of the current DESeq2 1.52.0 paper baseline; use bench/run_r.R
+# for that baseline. Measures how R DESeq2 1.30.1 scales across CPU cores on the six real
 # benchmark datasets, so the paper can report the GPU speedup against R given a
 # genuinely large CPU budget instead of only a single-threaded baseline.
 #
@@ -40,9 +42,8 @@
 #     compute parallel speedup against Track A -- the call paths differ.
 #
 # DESeq() is called with minReplicatesForReplace=Inf, which disables the
-# replaceOutliers refit. This is the fair setting: cuDESeq2 does not implement
-# that refit (see the paper's Limitations), so leaving it on would charge R for
-# work the GPU never does and inflate the reported speedup.
+# replaceOutliers refit. That matched the historical GPU run but not the current
+# standard pipeline; do not use this sweep as a current end-to-end baseline.
 #
 # BLAS threading is pinned to 1 everywhere. Otherwise a multithreaded OpenBLAS
 # would silently invalidate the "R single-threaded" baseline, and would

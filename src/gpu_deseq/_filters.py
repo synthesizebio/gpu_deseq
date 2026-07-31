@@ -1,4 +1,4 @@
-"""Cook's-distance and independent-filtering, matching R DESeq2 1.30.1.
+"""Cook's-distance and independent-filtering, validated against R DESeq2 1.52.0.
 
 Both run per DE task (typically ~5k genes), so the filtering is implemented on
 CPU via numpy/scipy. The hot work (dispersions, IRLS) stays in the batched GPU
@@ -125,7 +125,9 @@ def _lowess(
     n = len(features)
     r = int(ceil(frac * n))
     h = np.maximum(
-        np.array([np.sort(np.abs(features - features[i]))[r] for i in range(n)]), 1e-12
+        # R's lowess uses the r-th nearest point with one-based indexing.
+        np.array([np.sort(np.abs(features - features[i]))[r - 1] for i in range(n)]),
+        1e-12,
     )
     w = np.clip(
         np.abs(np.nan_to_num((features[:, None] - features[None, :]) / h)), 0.0, 1.0
@@ -133,7 +135,9 @@ def _lowess(
     w = (1 - w**3) ** 3
     yest = np.zeros(n)
     delta = np.ones(n)
-    for _ in range(iter):
+    # ``iter`` is the number of robustifying iterations after the initial fit
+    # in R's lowess implementation.
+    for _ in range(iter + 1):
         for i in range(n):
             weights = delta * w[:, i]
             b = np.array(

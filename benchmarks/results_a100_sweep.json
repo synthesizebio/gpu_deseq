@@ -1,12 +1,12 @@
 {
   "provenance": {
-    "utc": "2026-07-14 00:17 UTC",
+    "utc": "2026-07-29 19:07 UTC",
     "gpu": "NVIDIA A100-SXM4-40GB",
     "cuda": "12.4",
     "torch": "2.6.0+cu124",
     "python": "3.10.17",
     "platform": "Linux-5.10.0-45-cloud-amd64-x86_64-with-glibc2.31",
-    "commit": "ba296fb",
+    "commit": "07de906",
     "working_tree_dirty": true,
     "n_timed": 15,
     "default_chunk": 10
@@ -16,49 +16,56 @@
       "n_samples": 60,
       "n_genes": 2000,
       "design": "~ condition",
-      "eager_ms": 89.38,
+      "eager_ms": 90.02,
       "eager_iters": 26,
       "sweep": [
         {
           "chunk": 2,
-          "graph_ms": 18.49,
-          "speedup": 4.83,
+          "graph_ms": 18.34,
+          "speedup": 4.91,
           "graph_iters": 26,
           "max_abs_diff": 0.0
         },
         {
           "chunk": 5,
-          "graph_ms": 16.42,
-          "speedup": 5.44,
+          "graph_ms": 16.32,
+          "speedup": 5.52,
           "graph_iters": 30,
           "max_abs_diff": 0.0
         },
         {
           "chunk": 10,
-          "graph_ms": 16.3,
-          "speedup": 5.48,
+          "graph_ms": 16.17,
+          "speedup": 5.57,
           "graph_iters": 30,
           "max_abs_diff": 0.0
         },
         {
           "chunk": 20,
-          "graph_ms": 20.94,
-          "speedup": 4.27,
+          "graph_ms": 20.8,
+          "speedup": 4.33,
           "graph_iters": 40,
           "max_abs_diff": 0.0
         },
         {
           "chunk": 25,
-          "graph_ms": 25.66,
-          "speedup": 3.48,
+          "graph_ms": 25.49,
+          "speedup": 3.53,
           "graph_iters": 50,
           "max_abs_diff": 0.0
         },
         {
           "chunk": 50,
-          "graph_ms": 25.77,
-          "speedup": 3.47,
+          "graph_ms": 25.4,
+          "speedup": 3.54,
           "graph_iters": 50,
+          "max_abs_diff": 0.0
+        },
+        {
+          "chunk": 100,
+          "graph_ms": 48.81,
+          "speedup": 1.84,
+          "graph_iters": 100,
           "max_abs_diff": 0.0
         }
       ]
@@ -67,49 +74,56 @@
       "n_samples": 60,
       "n_genes": 20000,
       "design": "~ condition",
-      "eager_ms": 141.16,
+      "eager_ms": 140.27,
       "eager_iters": 40,
       "sweep": [
         {
           "chunk": 2,
-          "graph_ms": 58.63,
+          "graph_ms": 58.2,
           "speedup": 2.41,
           "graph_iters": 40,
           "max_abs_diff": 0.0
         },
         {
           "chunk": 5,
-          "graph_ms": 57.83,
+          "graph_ms": 57.47,
           "speedup": 2.44,
           "graph_iters": 40,
           "max_abs_diff": 0.0
         },
         {
           "chunk": 10,
-          "graph_ms": 57.57,
+          "graph_ms": 57.29,
           "speedup": 2.45,
           "graph_iters": 40,
           "max_abs_diff": 0.0
         },
         {
           "chunk": 20,
-          "graph_ms": 57.58,
-          "speedup": 2.45,
+          "graph_ms": 56.96,
+          "speedup": 2.46,
           "graph_iters": 40,
           "max_abs_diff": 0.0
         },
         {
           "chunk": 25,
-          "graph_ms": 71.46,
+          "graph_ms": 70.79,
           "speedup": 1.98,
           "graph_iters": 50,
           "max_abs_diff": 0.0
         },
         {
           "chunk": 50,
-          "graph_ms": 71.3,
+          "graph_ms": 70.82,
           "speedup": 1.98,
           "graph_iters": 50,
+          "max_abs_diff": 0.0
+        },
+        {
+          "chunk": 100,
+          "graph_ms": 139.27,
+          "speedup": 1.01,
+          "graph_iters": 100,
           "max_abs_diff": 0.0
         }
       ]

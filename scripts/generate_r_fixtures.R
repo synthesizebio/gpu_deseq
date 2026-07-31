@@ -18,7 +18,8 @@
 #   local_dispfit.csv, mean_dispfit.csv     dispFit per gene under fitType="local" / "mean"
 #   apeglm_priorinfo.csv                    apeglm prior_var (lfcShrink)
 
-.libPaths(c("~/R/library", .libPaths()))
+custom_lib <- Sys.getenv("R_DESEQ2_LIB", unset = "")
+if (nzchar(custom_lib)) .libPaths(c(custom_lib, .libPaths()))
 suppressPackageStartupMessages({
   library(DESeq2)
 })

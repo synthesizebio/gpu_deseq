@@ -3,62 +3,80 @@
     "airway": {
       "case": "airway",
       "reps": 3,
-      "normalization": 213.302,
-      "dispersion": 10422.724,
-      "glm_fit": 4738.41,
-      "significance": 364.738,
-      "lfc_shrink": 17717.111,
-      "total": 33456.286
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "normalization": 222.968,
+      "dispersion": 8076.502,
+      "glm_fit": 12686.042,
+      "significance": 872.484,
+      "lfc_shrink": 19711.647,
+      "total": 41569.643
     },
     "airway_cell": {
       "case": "airway_cell",
       "reps": 3,
-      "normalization": 200.581,
-      "dispersion": 5723.723,
-      "glm_fit": 4189.761,
-      "significance": 361.951,
-      "lfc_shrink": 17422.913,
-      "total": 27898.929
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "normalization": 183.064,
+      "dispersion": 5793.543,
+      "glm_fit": 9584.194,
+      "significance": 361.936,
+      "lfc_shrink": 20156.979,
+      "total": 36079.716
     },
     "airway_dex": {
       "case": "airway_dex",
       "reps": 3,
-      "normalization": 197.74,
-      "dispersion": 6211.643,
-      "glm_fit": 5665.509,
-      "significance": 1299.152,
-      "lfc_shrink": 12290.369,
-      "total": 25664.413
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "normalization": 189.254,
+      "dispersion": 4707.422,
+      "glm_fit": 9923.826,
+      "significance": 1396.694,
+      "lfc_shrink": 14714.983,
+      "total": 30932.18
     },
     "gtex_blood_muscle": {
       "case": "gtex_blood_muscle",
       "reps": 1,
-      "normalization": 2953.721,
-      "dispersion": 231275.913,
-      "glm_fit": 42321.063,
-      "significance": 17864.851,
-      "lfc_shrink": 56019.58,
-      "total": 350435.127
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "normalization": 3114.718,
+      "dispersion": 188956.738,
+      "glm_fit": 239690.745,
+      "significance": 495.908,
+      "lfc_shrink": 39329.627,
+      "total": 471587.735
     },
     "pasilla": {
       "case": "pasilla",
       "reps": 3,
-      "normalization": 175.401,
-      "dispersion": 2335.063,
-      "glm_fit": 2137.589,
-      "significance": 277.431,
-      "lfc_shrink": 4381.961,
-      "total": 9307.445
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "normalization": 142.681,
+      "dispersion": 1722.448,
+      "glm_fit": 3877.926,
+      "significance": 205.619,
+      "lfc_shrink": 5142.763,
+      "total": 11091.437
     },
     "pasilla_2fac": {
       "case": "pasilla_2fac",
       "reps": 3,
-      "normalization": 175.936,
-      "dispersion": 2791.035,
-      "glm_fit": 1501.656,
-      "significance": 240.3,
-      "lfc_shrink": 5636.685,
-      "total": 10345.612
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "normalization": 144.809,
+      "dispersion": 2139.828,
+      "glm_fit": 3755.136,
+      "significance": 185.104,
+      "lfc_shrink": 5911.832,
+      "total": 12136.71
     }
   },
   "cu": {
@@ -147,6 +165,8 @@
       }
     },
     "gtex_blood_muscle": {
+      "_status": "superseded_for_standard_pipeline",
+      "_pipeline": "wald_without_count_replacement_refit",
       "_P": 2,
       "_n": 300,
       "eager": {

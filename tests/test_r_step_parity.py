@@ -144,7 +144,7 @@ def test_step_size_factors(spec: FixtureSpec) -> None:
     "spec,p95_rel,med_rel",
     [
         # Calibrated 2026-04-29: bit-exact (within FP rounding) parity with
-        # R DESeq2 1.30.1 across all fixtures. Achieved by faithful port of
+        # R DESeq2 across all fixtures. Achieved by faithful port of
         # DESeq2 src/DESeq2.cpp::fitDisp (gradient ascent + Armijo line
         # search + periodic kappa halving + noIncrease revert + grid fallback).
         # Measured max rel-err: <1e-8 with median ~1e-15 across 5 fixtures.

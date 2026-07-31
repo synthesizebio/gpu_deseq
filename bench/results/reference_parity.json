@@ -1,0 +1,294 @@
+{
+  "device": "cpu",
+  "pipeline": "standard_wald_with_outlier_refit",
+  "cases": {
+    "airway": {
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "metrics": [
+        {
+          "substep": "normalization",
+          "metric": "max rel",
+          "value": 4.1416183048968446e-15,
+          "tol": 1e-06,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "dispersion",
+          "metric": "p95 rel",
+          "value": 0.0004488752653985187,
+          "tol": 0.1,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "glm_fit",
+          "metric": "p95 |\u0394|",
+          "value": 3.0378430732058676e-05,
+          "tol": 0.01,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "significance",
+          "metric": "Jaccard@.05",
+          "value": 1.0,
+          "tol": 0.95,
+          "higher_better": true,
+          "pass": true
+        },
+        {
+          "substep": "lfc_shrink",
+          "metric": "Pearson r",
+          "value": 0.9999981357193238,
+          "tol": 0.9,
+          "higher_better": true,
+          "pass": true,
+          "aux": "\u03c1=1.000"
+        }
+      ]
+    },
+    "airway_cell": {
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "metrics": [
+        {
+          "substep": "normalization",
+          "metric": "max rel",
+          "value": 4.1416183048968446e-15,
+          "tol": 1e-06,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "dispersion",
+          "metric": "p95 rel",
+          "value": 0.002835590893634361,
+          "tol": 0.1,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "glm_fit",
+          "metric": "p95 |\u0394|",
+          "value": 8.088202809742871e-05,
+          "tol": 0.01,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "significance",
+          "metric": "Jaccard@.05",
+          "value": 1.0,
+          "tol": 0.95,
+          "higher_better": true,
+          "pass": true
+        },
+        {
+          "substep": "lfc_shrink",
+          "metric": "Pearson r",
+          "value": 0.9972238131284098,
+          "tol": 0.9,
+          "higher_better": true,
+          "pass": true,
+          "aux": "\u03c1=0.996"
+        }
+      ]
+    },
+    "airway_dex": {
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "metrics": [
+        {
+          "substep": "normalization",
+          "metric": "max rel",
+          "value": 4.1416183048968446e-15,
+          "tol": 1e-06,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "dispersion",
+          "metric": "p95 rel",
+          "value": 0.0010405662169926419,
+          "tol": 0.1,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "glm_fit",
+          "metric": "p95 |\u0394|",
+          "value": 2.5037062289497146e-05,
+          "tol": 0.01,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "significance",
+          "metric": "Jaccard@.05",
+          "value": 0.9996297667530544,
+          "tol": 0.95,
+          "higher_better": true,
+          "pass": true
+        },
+        {
+          "substep": "lfc_shrink",
+          "metric": "Pearson r",
+          "value": 0.9985925562309887,
+          "tol": 0.9,
+          "higher_better": true,
+          "pass": true,
+          "aux": "\u03c1=1.000"
+        }
+      ]
+    },
+    "gtex_blood_muscle": {
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "metrics": [
+        {
+          "substep": "normalization",
+          "metric": "max rel",
+          "value": 4.9784838816982516e-15,
+          "tol": 1e-06,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "dispersion",
+          "metric": "p95 rel",
+          "value": 0.004266158745712758,
+          "tol": 0.1,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "glm_fit",
+          "metric": "p95 |\u0394|",
+          "value": 1.7837141543730613e-05,
+          "tol": 0.01,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "significance",
+          "metric": "Jaccard@.05",
+          "value": 0.9999705388445335,
+          "tol": 0.95,
+          "higher_better": true,
+          "pass": true
+        },
+        {
+          "substep": "lfc_shrink",
+          "metric": "Pearson r",
+          "value": 0.9999982346136819,
+          "tol": 0.9,
+          "higher_better": true,
+          "pass": true,
+          "aux": "\u03c1=1.000"
+        }
+      ]
+    },
+    "pasilla": {
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "metrics": [
+        {
+          "substep": "normalization",
+          "metric": "max rel",
+          "value": 2.5359516415690998e-15,
+          "tol": 1e-06,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "dispersion",
+          "metric": "p95 rel",
+          "value": 0.0006671977700919489,
+          "tol": 0.1,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "glm_fit",
+          "metric": "p95 |\u0394|",
+          "value": 2.3421139025525658e-05,
+          "tol": 0.01,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "significance",
+          "metric": "Jaccard@.05",
+          "value": 1.0,
+          "tol": 0.95,
+          "higher_better": true,
+          "pass": true
+        },
+        {
+          "substep": "lfc_shrink",
+          "metric": "Pearson r",
+          "value": 0.999996666772231,
+          "tol": 0.9,
+          "higher_better": true,
+          "pass": true,
+          "aux": "\u03c1=1.000"
+        }
+      ]
+    },
+    "pasilla_2fac": {
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "metrics": [
+        {
+          "substep": "normalization",
+          "metric": "max rel",
+          "value": 2.5359516415690998e-15,
+          "tol": 1e-06,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "dispersion",
+          "metric": "p95 rel",
+          "value": 0.00023554046468983944,
+          "tol": 0.1,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "glm_fit",
+          "metric": "p95 |\u0394|",
+          "value": 1.455394459759507e-05,
+          "tol": 0.01,
+          "higher_better": false,
+          "pass": true
+        },
+        {
+          "substep": "significance",
+          "metric": "Jaccard@.05",
+          "value": 1.0,
+          "tol": 0.95,
+          "higher_better": true,
+          "pass": true
+        },
+        {
+          "substep": "lfc_shrink",
+          "metric": "Pearson r",
+          "value": 0.9999906699044782,
+          "tol": 0.9,
+          "higher_better": true,
+          "pass": true,
+          "aux": "\u03c1=1.000"
+        }
+      ]
+    }
+  }
+}

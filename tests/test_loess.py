@@ -22,6 +22,7 @@ from __future__ import annotations
 import numpy as np
 
 from gpu_deseq import _deseq2_core as core
+from gpu_deseq._filters import _lowess
 
 _XOUT = np.array([0.0, 0.37, 1.25, 2.5, 3.9, 5.05, 6.4, 7.2, 7.83, 8.0])
 _R_LOESS_INTERPOLATE = np.array([
@@ -81,3 +82,28 @@ def test_prior_var_uses_loess_not_savgol() -> None:
     # the returned value must sit on R's 1000-point output grid
     fine = np.linspace(0.0, 8.0, 1000)
     assert pv == 0.25 or np.min(np.abs(fine - pv)) < 1e-12
+
+
+def test_independent_filter_lowess_matches_r() -> None:
+    """Pin the linear lowess used to select DESeq2's filtering threshold."""
+    num_rej = np.array([
+        34670, 34711, 34746, 34780, 34814, 34858, 34888, 34941, 34975, 35011,
+        35057, 35101, 35136, 35151, 34988, 34661, 34192, 33538, 32793, 31973,
+        31112, 30235, 29353, 28451, 27549, 26624, 25670, 24702, 23743, 22769,
+        21801, 20817, 19833, 18846, 17840, 16835, 15829, 14817, 13804, 12780,
+        11766, 10749, 9738, 8717, 7709, 6697, 5689, 4682, 3671, 2646,
+    ])
+    theta = np.linspace(0.0, 0.95, 50)
+    got = _lowess(theta, num_rej, frac=0.2, iter=3)
+    expected_first = np.array([
+        34671.17565976124, 34707.92591621406, 34744.80656426102,
+        34781.84410479688, 34818.93313085196, 34856.96915853188,
+        34895.59460576034, 34935.09154463185, 34975.42824139399,
+        35015.89220688996, 35055.94339368709, 35095.47494234336,
+        35134.60239336986, 35170.06087940008, 35195.96961609437,
+    ])
+    np.testing.assert_allclose(got[:15], expected_first, rtol=0, atol=1e-8)
+
+    residual = num_rej[num_rej > 0] - got[num_rej > 0]
+    threshold = got.max() - np.sqrt(np.mean(residual**2))
+    assert np.flatnonzero(num_rej > threshold)[0] == 10

@@ -5,7 +5,15 @@ import pandas as pd
 import pytest
 import torch
 
-from gpu_deseq import DESeqDataset, fit_dispersions, fit_size_factors, lrt_test, results, wald_test
+from gpu_deseq import (
+    DESeqDataset,
+    deseq,
+    fit_dispersions,
+    fit_size_factors,
+    lrt_test,
+    results,
+    wald_test,
+)
 
 
 def _synthetic_dataset() -> tuple[np.ndarray, pd.DataFrame]:
@@ -141,3 +149,41 @@ def test_wald_handles_extreme_count_ranges_without_non_finite_results() -> None:
     assert np.isfinite(res["stat"]).all()
     assert np.isfinite(res["pvalue"]).all()
     assert np.isfinite(res["padj"]).all()
+
+
+def test_deseq_replaces_and_refits_eligible_count_outlier() -> None:
+    rng = np.random.default_rng(3)
+    counts = rng.negative_binomial(
+        20, 20 / (20 + 100), size=(100, 14)
+    ).astype(float)
+    counts[0, 0] = 100_000
+    coldata = pd.DataFrame({"condition": ["control"] * 7 + ["treated"] * 7})
+
+    dds = DESeqDataset(counts, coldata, design="~ condition", backend="torch")
+    fit = deseq(dds, contrast="condition[T.treated]")
+    res = results(fit)
+
+    assert fit.replaced_genes is not None and bool(fit.replaced_genes[0])
+    assert fit.replaceable_samples is not None and bool(torch.all(fit.replaceable_samples))
+    assert fit.replacement_counts is not None
+    assert fit.replacement_counts[0, 0] < counts[0, 0]
+    assert np.isfinite(res.loc["gene_0", "pvalue"])
+
+
+def test_deseq_can_disable_count_outlier_replacement() -> None:
+    rng = np.random.default_rng(3)
+    counts = rng.negative_binomial(
+        20, 20 / (20 + 100), size=(100, 14)
+    ).astype(float)
+    counts[0, 0] = 100_000
+    coldata = pd.DataFrame({"condition": ["control"] * 7 + ["treated"] * 7})
+
+    dds = DESeqDataset(counts, coldata, design="~ condition", backend="torch")
+    fit = deseq(
+        dds,
+        contrast="condition[T.treated]",
+        min_replicates_for_replace=None,
+    )
+
+    assert fit.replaced_genes is None
+    assert fit.replacement_counts is None

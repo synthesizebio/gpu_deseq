@@ -3,8 +3,10 @@
   "gpu_timings_are_not_from_these_hosts": "GPU numbers are the committed A100 measurements in bench/results/timings.json. No host below has a GPU attached; speedups involving them are arithmetic on existing numbers.",
   "hosts": {
     "A100 host": {
-      "role": "reference (published R column)",
-      "deseq2": "1.30.1",
+      "role": "current R reference",
+      "r": "4.6.0",
+      "deseq2": "1.52.0",
+      "apeglm": "1.34.0",
       "source": "bench/results/timings.json"
     },
     "EPYC 9B14": {
@@ -22,17 +24,17 @@
   "datasets": {
     "airway": {
       "r_serial_ms": {
-        "A100 host": 33456.286,
+        "A100 host": 41569.643,
         "EPYC 9B14": 17101.081
       },
       "r_substeps_ms": {
         "A100 host": {
-          "normalization": 213.302,
-          "dispersion": 10422.724,
-          "glm_fit": 4738.41,
-          "significance": 364.738,
-          "lfc_shrink": 17717.111,
-          "total": 33456.286
+          "normalization": 222.968,
+          "dispersion": 8076.502,
+          "glm_fit": 12686.042,
+          "significance": 872.484,
+          "lfc_shrink": 19711.647,
+          "total": 41569.643
         },
         "EPYC 9B14": {
           "normalization": 92.802,
@@ -64,24 +66,24 @@
         "total_ms": 1500.5708200333174
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 22.3,
+        "vs_A100 host_serial": 27.7,
         "vs_EPYC 9B14_serial": 11.4,
         "vs_EPYC 9B14_best_multicore": 3.31
       }
     },
     "airway_cell": {
       "r_serial_ms": {
-        "A100 host": 27898.929,
+        "A100 host": 36079.716,
         "EPYC 9B14": 14754.421
       },
       "r_substeps_ms": {
         "A100 host": {
-          "normalization": 200.581,
-          "dispersion": 5723.723,
-          "glm_fit": 4189.761,
-          "significance": 361.951,
-          "lfc_shrink": 17422.913,
-          "total": 27898.929
+          "normalization": 183.064,
+          "dispersion": 5793.543,
+          "glm_fit": 9584.194,
+          "significance": 361.936,
+          "lfc_shrink": 20156.979,
+          "total": 36079.716
         },
         "EPYC 9B14": {
           "normalization": 92.305,
@@ -113,24 +115,24 @@
         "total_ms": 3468.7916330294684
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 8.04,
+        "vs_A100 host_serial": 10.4,
         "vs_EPYC 9B14_serial": 4.25,
         "vs_EPYC 9B14_best_multicore": 1.32
       }
     },
     "airway_dex": {
       "r_serial_ms": {
-        "A100 host": 25664.413,
+        "A100 host": 30932.18,
         "EPYC 9B14": 12688.628
       },
       "r_substeps_ms": {
         "A100 host": {
-          "normalization": 197.74,
-          "dispersion": 6211.643,
-          "glm_fit": 5665.509,
-          "significance": 1299.152,
-          "lfc_shrink": 12290.369,
-          "total": 25664.413
+          "normalization": 189.254,
+          "dispersion": 4707.422,
+          "glm_fit": 9923.826,
+          "significance": 1396.694,
+          "lfc_shrink": 14714.983,
+          "total": 30932.18
         },
         "EPYC 9B14": {
           "normalization": 96.922,
@@ -162,24 +164,24 @@
         "total_ms": 1361.3375849672593
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 18.85,
+        "vs_A100 host_serial": 22.72,
         "vs_EPYC 9B14_serial": 9.32,
         "vs_EPYC 9B14_best_multicore": 4.06
       }
     },
     "gtex_blood_muscle": {
       "r_serial_ms": {
-        "A100 host": 350435.127,
+        "A100 host": 471587.735,
         "EPYC 9B14": 147211.291
       },
       "r_substeps_ms": {
         "A100 host": {
-          "normalization": 2953.721,
-          "dispersion": 231275.913,
-          "glm_fit": 42321.063,
-          "significance": 17864.851,
-          "lfc_shrink": 56019.58,
-          "total": 350435.127
+          "normalization": 3114.718,
+          "dispersion": 188956.738,
+          "glm_fit": 239690.745,
+          "significance": 495.908,
+          "lfc_shrink": 39329.627,
+          "total": 471587.735
         },
         "EPYC 9B14": {
           "normalization": 1047.18,
@@ -211,24 +213,24 @@
         "total_ms": 4482.953632017598
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 78.17,
+        "vs_A100 host_serial": 105.2,
         "vs_EPYC 9B14_serial": 32.84,
         "vs_EPYC 9B14_best_multicore": 8.8
       }
     },
     "pasilla": {
       "r_serial_ms": {
-        "A100 host": 9307.445,
+        "A100 host": 11091.437,
         "EPYC 9B14": 4527.046
       },
       "r_substeps_ms": {
         "A100 host": {
-          "normalization": 175.401,
-          "dispersion": 2335.063,
-          "glm_fit": 2137.589,
-          "significance": 277.431,
-          "lfc_shrink": 4381.961,
-          "total": 9307.445
+          "normalization": 142.681,
+          "dispersion": 1722.448,
+          "glm_fit": 3877.926,
+          "significance": 205.619,
+          "lfc_shrink": 5142.763,
+          "total": 11091.437
         },
         "EPYC 9B14": {
           "normalization": 81.923,
@@ -260,24 +262,24 @@
         "total_ms": 701.9866899354383
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 13.26,
+        "vs_A100 host_serial": 15.8,
         "vs_EPYC 9B14_serial": 6.45,
         "vs_EPYC 9B14_best_multicore": 5.08
       }
     },
     "pasilla_2fac": {
       "r_serial_ms": {
-        "A100 host": 10345.612,
+        "A100 host": 12136.71,
         "EPYC 9B14": 4664.726
       },
       "r_substeps_ms": {
         "A100 host": {
-          "normalization": 175.936,
-          "dispersion": 2791.035,
-          "glm_fit": 1501.656,
-          "significance": 240.3,
-          "lfc_shrink": 5636.685,
-          "total": 10345.612
+          "normalization": 144.809,
+          "dispersion": 2139.828,
+          "glm_fit": 3755.136,
+          "significance": 185.104,
+          "lfc_shrink": 5911.832,
+          "total": 12136.71
         },
         "EPYC 9B14": {
           "normalization": 83.648,
@@ -309,7 +311,7 @@
         "total_ms": 866.1567730014212
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 11.94,
+        "vs_A100 host_serial": 14.01,
         "vs_EPYC 9B14_serial": 5.39,
         "vs_EPYC 9B14_best_multicore": 4.21
       }

@@ -1,9 +1,9 @@
 """Render a cross-host comparison of the R DESeq2 baseline.
 
-The R column in bench/results/TABLES.md is one measurement on one machine with
-one DESeq2 version. This script adds further R columns from
+The R column in bench/results/TABLES.md is the current reference measurement on
+one machine. This script adds historical R columns from
 run_r_scaling.sh runs on other hosts, WITHOUT modifying TABLES.md or
-timings.json -- those stay the record of the original A100-host session.
+timings.json -- those stay the record of the current reference session.
 
 Inputs
   bench/results/timings.json                 the reference R column (host A)
@@ -30,7 +30,7 @@ import pathlib
 SUBSTEPS = ["normalization", "dispersion", "glm_fit", "significance", "lfc_shrink", "total"]
 
 REF_LABEL = "A100 host"
-REF_NOTE = ("R DESeq2 1.30.1, single thread, as committed in "
+REF_NOTE = ("R 4.6.0, DESeq2 1.52.0, apeglm 1.34.0, single thread, as committed in "
             "`bench/results/timings.json` (the source of the R column in `TABLES.md`)")
 
 
@@ -171,7 +171,7 @@ def main():
     cu = json.load(open("bench/results/timings.json")).get("cu", {})
     if cu and hosts:
         L += ["", "## Effect on the reported speedup (recomputed, not measured)", "",
-              "The GPU columns below are the **already-published A100 timings** from",
+              "The GPU columns below are retained A100 timings from",
               "`bench/results/timings.json`; only the R denominator changes. Nothing",
               "here is a new GPU measurement -- this host has no GPU -- so these are",
               "arithmetic on existing numbers, shown because swapping the CPU baseline",
@@ -183,7 +183,7 @@ def main():
               "|---|--:|--:|" + "--:|" * (2 * len(hosts))]
         for c in cases:
             crow = cu.get(c)
-            if not crow:
+            if not crow or crow.get("_status") == "superseded_for_standard_pipeline":
                 continue
             gpu = min(crow[m]["total"] for m in ("eager", "graph", "triton") if m in crow)
             old_r = ref.get(c, {}).get("total")
@@ -248,8 +248,9 @@ def main():
             "datasets": {},
         }
         payload["hosts"][REF_LABEL] = {
-            "role": "reference (published R column)",
-            "deseq2": "1.30.1", "source": "bench/results/timings.json",
+            "role": "current R reference",
+            "r": "4.6.0", "deseq2": "1.52.0", "apeglm": "1.34.0",
+            "source": "bench/results/timings.json",
         }
         for h in hosts:
             m = h["meta"]
@@ -258,7 +259,7 @@ def main():
                 "host": m.get("host"), "r": m.get("r"), "deseq2": m.get("deseq2"),
                 "apeglm": m.get("apeglm"), "blas": m.get("blas"),
                 "measured_utc": m.get("utc"), "source": h["path"],
-                "comparable_to_reference": m.get("deseq2") == "1.30.1",
+                "comparable_to_reference": m.get("deseq2") == "1.52.0",
             }
         for c in cases:
             d = {"r_serial_ms": {REF_LABEL: ref.get(c, {}).get("total")},

@@ -1,6 +1,6 @@
 """Real-data validation, step 2 (cuDESeq2 side): run cuDESeq2 on the same real
 Bioconductor datasets and quantify agreement with R DESeq2's reference output
-(written by fetch_and_reference.R).
+(written by the benchmark reference run).
 
 For each dataset it reports, joined per gene:
   - raw LFC (results):   Pearson/Spearman r, max|Δ|, p95 |Δ|
@@ -15,6 +15,8 @@ Reference levels are read from meta.json and reproduced via a pandas Categorical
 (base level first) so the contrast matches R exactly (no sign flip).
 
 Usage: PYTHONPATH=src python validation/validate.py [--device cuda|cpu]
+                                                      [--from-cache]
+                                                      [--skip-timing]
 """
 from __future__ import annotations
 
@@ -33,10 +35,11 @@ import matplotlib.pyplot as plt
 import sys
 sys.path.insert(0, "src")
 import torch
-from gpu_deseq import DESeqDataset, fit_size_factors, fit_dispersions, wald_test, results, lfc_shrink
+from gpu_deseq import DESeqDataset, deseq, results, lfc_shrink
 import gpu_deseq._deseq2_core as _core
 
 DATA = Path("validation/data")
+BENCH_CACHE = Path("bench/cache")
 RESD = Path("validation/results"); RESD.mkdir(parents=True, exist_ok=True)
 FIGD = Path("validation/figures"); FIGD.mkdir(parents=True, exist_ok=True)
 
@@ -84,7 +87,7 @@ def _jaccard(sa, sb):
     return float(inter / union) if union else 1.0
 
 
-def run_case(name, device):
+def run_case(name, device, *, from_cache=False, skip_timing=False):
     d = DATA / name
     meta = json.loads((d / "meta.json").read_text())
     counts = pd.read_csv(d / "counts.csv", index_col=0)
@@ -95,20 +98,31 @@ def run_case(name, device):
     coldata[factor] = pd.Categorical(coldata[factor], categories=[ref] + [l for l in levels if l != ref])
     contrast = f"{factor}[T.{nonref}]"
 
-    dds = DESeqDataset(counts.to_numpy(np.float64), coldata, design=meta["design"],
-                       gene_ids=list(counts.index), sample_ids=list(counts.columns),
-                       backend="torch").to(device)
-    fit_size_factors(dds)
-    fit_dispersions(dds)
-    fit = wald_test(dds, contrast=contrast)
-    res = results(fit)                                             # baseMean, LFC, lfcSE, stat, pvalue, padj
-    shr = results(lfc_shrink(fit, coeff=contrast),
-                  cooks_filter=False, independent_filter=False)    # shrunk LFC / SE
-    our_disp = pd.Series(dds.dispersions.cpu().numpy(), index=list(counts.index))
+    reference = BENCH_CACHE / name
+    if from_cache:
+        cached = pd.read_csv(reference / "cu_reference_results.csv", index_col=0)
+        if len(cached) != len(counts):
+            raise ValueError(f"{name}: cached row count does not match counts")
+        cached.index = counts.index
+        cached.index.name = "gene"
+        res = cached[["baseMean", "log2FoldChange", "stat", "padj"]].copy()
+        from scipy.stats import norm
+        res["pvalue"] = 2.0 * norm.sf(np.abs(res["stat"]))
+        shr = cached[["shrunk_lfc"]].rename(columns={"shrunk_lfc": "log2FoldChange"})
+        our_disp = cached["dispersion"]
+    else:
+        dds = DESeqDataset(counts.to_numpy(np.float64), coldata, design=meta["design"],
+                           gene_ids=list(counts.index), sample_ids=list(counts.columns),
+                           backend="torch").to(device)
+        fit = deseq(dds, contrast=contrast)
+        res = results(fit)
+        shr = results(lfc_shrink(fit, coeff=contrast),
+                      cooks_filter=False, independent_filter=False)
+        our_disp = pd.Series(dds.dispersions.cpu().numpy(), index=list(counts.index))
 
-    r_res = pd.read_csv(d / "r_results.csv").set_index("gene")
-    r_disp = pd.read_csv(d / "r_dispersions.csv").set_index("gene")["dispersion"]
-    r_shr = pd.read_csv(d / "r_shrink.csv").set_index("gene")
+    r_res = pd.read_csv(reference / "r_results.csv").set_index("gene")
+    r_disp = pd.read_csv(d / "r_disp_details.csv").set_index("gene")["dispersion"]
+    r_shr = pd.read_csv(reference / "r_shrink.csv").set_index("gene")
 
     j = res.join(r_res, rsuffix="_r")
     o_lfc, r_lfc = j["log2FoldChange"].to_numpy(), j["log2FoldChange_r"].to_numpy()
@@ -145,8 +159,16 @@ def run_case(name, device):
         "n_sig_ours_0.05": int(sig(o_padj, 0.05).sum()),
         "n_sig_r_0.05": int(sig(r_padj, 0.05).sum()),
     }
-    report["timing_ms"] = _time_modes(counts, coldata, meta["design"], contrast, device, reps=5)
-    report["r_full_ms"] = meta.get("r_full_ms")
+    if not skip_timing:
+        report["timing_ms"] = _time_modes(
+            counts, coldata, meta["design"], contrast, device, reps=5
+        )
+    timing_meta = json.loads((reference / "r_timings.json").read_text())
+    meta["r_full_ms"] = timing_meta["total"]
+    report["reference_versions"] = {
+        key: timing_meta.get(key)
+        for key in ("r_version", "deseq2_version", "apeglm_version")
+    }
     _plot(name, o_lfc, r_lfc, o_slfc, r_slfc, o_padj, r_padj, report)
     (RESD / f"{name}.json").write_text(json.dumps(report, indent=2))
     return report
@@ -161,8 +183,10 @@ def _time_modes(counts, coldata, design, contrast, device, reps=5):
                             backend="torch").to(device)
 
     def run(kw):
-        d = build(); fit_size_factors(d); fit_dispersions(d, **kw)
-        f = wald_test(d, contrast=contrast); results(f); lfc_shrink(f, coeff=contrast)
+        d = build()
+        f = deseq(d, contrast=contrast, **kw)
+        results(f)
+        lfc_shrink(f, coeff=contrast)
 
     out = {}
     cuda = device == "cuda"
@@ -199,7 +223,7 @@ def _plot(name, o_lfc, r_lfc, o_slfc, r_slfc, o_padj, r_padj, rep):
     ax[2].set_title("-log10 padj"); ax[2].set_xlabel("R DESeq2"); ax[2].set_ylabel("cuDESeq2")
     ax[2].text(0.04, 0.92, f"Jaccard@.05={rep['sig_jaccard_0.05']:.3f}",
                transform=ax[2].transAxes, fontsize=9, va="top", family="monospace")
-    fig.suptitle(f"cuDESeq2 vs R DESeq2 1.30.1 — {name}  ({rep['meta']['design']})", fontsize=12)
+    fig.suptitle(f"cuDESeq2 vs R DESeq2 1.52.0 — {name}  ({rep['meta']['design']})", fontsize=12)
     fig.tight_layout()
     fig.savefig(FIGD / f"{name}.png", dpi=140)
     plt.close(fig)
@@ -208,6 +232,10 @@ def _plot(name, o_lfc, r_lfc, o_slfc, r_slfc, o_padj, r_padj, rep):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cuda" if _cuda() else "cpu")
+    ap.add_argument("--from-cache", action="store_true",
+                    help="score the current benchmark captures without recomputing")
+    ap.add_argument("--skip-timing", action="store_true",
+                    help="do not run a timing loop")
     args = ap.parse_args()
     cases = sorted(p.name for p in DATA.iterdir() if (p / "meta.json").exists()) if DATA.exists() else []
     if not cases:
@@ -215,7 +243,8 @@ def main():
     print(f"device={args.device}\n")
     reports = {}
     for name in cases:
-        r = run_case(name, args.device)
+        r = run_case(name, args.device, from_cache=args.from_cache,
+                     skip_timing=args.skip_timing)
         reports[name] = r
         print(f"=== {name}  ({r['meta']['design']}, {r['meta']['n_samples']} samples) ===")
         print(f"  raw LFC        Pearson r = {r['lfc_pearson']:.6f}   Spearman = {r['lfc_spearman']:.6f}   p95|Δ| = {r['lfc_p95_abs']:.2e}")
@@ -224,6 +253,9 @@ def main():
         print(f"  significance   Jaccard@0.05 = {r['sig_jaccard_0.05']:.4f}"
               f"   (sig: ours={r['n_sig_ours_0.05']}, R={r['n_sig_r_0.05']})")
         print(f"  figure -> validation/figures/{name}.png\n")
+
+    if args.skip_timing:
+        return
 
     # Timing table: R (1-thread) vs cuDESeq2 eager/graph/triton, full pipeline.
     print("full-pipeline wall time (ms) + speedup vs R (1-thread):")

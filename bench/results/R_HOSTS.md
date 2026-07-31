@@ -8,7 +8,7 @@ datasets.
 
 ## Columns
 
-- **A100 host** -- R DESeq2 1.30.1, single thread, as committed in `bench/results/timings.json` (the source of the R column in `TABLES.md`).
+- **A100 host** -- R 4.6.0, DESeq2 1.52.0, apeglm 1.34.0, single thread, as committed in `bench/results/timings.json` (the source of the R column in `TABLES.md`).
 - **EPYC 9B14** -- R 4.5.0, DESeq2 1.46.0, apeglm 1.32.0, BLAS `/usr/lib/x86_64-linux-gnu/blas/libblas.so.3.12.1`, single thread. Host: `AMD EPYC 9B14 | 15p/30l cores | 117GB`. Measured 2026-07-28T23:03:32Z.
 
 > **These columns are not a controlled comparison.** Hardware, R version,
@@ -21,53 +21,53 @@ datasets.
 
 | dataset | substep | A100 host | EPYC 9B14 | ratio EPYC 9B14 / A100 host |
 |---|---|--:|--:|--:|
-| airway | normalization | 213 | 93 | 2.30x |
-| airway | dispersion | 10,423 | 4,314 | 2.42x |
-| airway | glm_fit | 4,738 | 2,840 | 1.67x |
-| airway | significance | 365 | 665 | 0.55x |
-| airway | lfc_shrink | 17,717 | 9,189 | 1.93x |
-| airway | **total** | 33,456 | 17,101 | 1.96x |
-| airway_cell | normalization | 201 | 92 | 2.17x |
-| airway_cell | dispersion | 5,724 | 2,784 | 2.06x |
-| airway_cell | glm_fit | 4,190 | 2,067 | 2.03x |
+| airway | normalization | 223 | 93 | 2.40x |
+| airway | dispersion | 8,077 | 4,314 | 1.87x |
+| airway | glm_fit | 12,686 | 2,840 | 4.47x |
+| airway | significance | 872 | 665 | 1.31x |
+| airway | lfc_shrink | 19,712 | 9,189 | 2.15x |
+| airway | **total** | 41,570 | 17,101 | 2.43x |
+| airway_cell | normalization | 183 | 92 | 1.98x |
+| airway_cell | dispersion | 5,794 | 2,784 | 2.08x |
+| airway_cell | glm_fit | 9,584 | 2,067 | 4.64x |
 | airway_cell | significance | 362 | 174 | 2.08x |
-| airway_cell | lfc_shrink | 17,423 | 9,637 | 1.81x |
-| airway_cell | **total** | 27,899 | 14,754 | 1.89x |
-| airway_dex | normalization | 198 | 97 | 2.04x |
-| airway_dex | dispersion | 6,212 | 1,990 | 3.12x |
-| airway_dex | glm_fit | 5,666 | 2,859 | 1.98x |
-| airway_dex | significance | 1,299 | 731 | 1.78x |
-| airway_dex | lfc_shrink | 12,290 | 7,012 | 1.75x |
-| airway_dex | **total** | 25,664 | 12,689 | 2.02x |
-| gtex_blood_muscle | normalization | 2,954 | 1,047 | 2.82x |
-| gtex_blood_muscle | dispersion | 231,276 | 81,454 | 2.84x |
-| gtex_blood_muscle | glm_fit | 42,321 | 23,508 | 1.80x |
-| gtex_blood_muscle | significance | 17,865 | 11,158 | 1.60x |
-| gtex_blood_muscle | lfc_shrink | 56,020 | 30,045 | 1.86x |
-| gtex_blood_muscle | **total** | 350,435 | 147,211 | 2.38x |
-| pasilla | normalization | 175 | 82 | 2.14x |
-| pasilla | dispersion | 2,335 | 802 | 2.91x |
-| pasilla | glm_fit | 2,138 | 1,179 | 1.81x |
-| pasilla | significance | 277 | 109 | 2.55x |
-| pasilla | lfc_shrink | 4,382 | 2,356 | 1.86x |
-| pasilla | **total** | 9,307 | 4,527 | 2.06x |
-| pasilla_2fac | normalization | 176 | 84 | 2.10x |
-| pasilla_2fac | dispersion | 2,791 | 986 | 2.83x |
-| pasilla_2fac | glm_fit | 1,502 | 797 | 1.88x |
-| pasilla_2fac | significance | 240 | 95 | 2.53x |
-| pasilla_2fac | lfc_shrink | 5,637 | 2,703 | 2.09x |
-| pasilla_2fac | **total** | 10,346 | 4,665 | 2.22x |
+| airway_cell | lfc_shrink | 20,157 | 9,637 | 2.09x |
+| airway_cell | **total** | 36,080 | 14,754 | 2.45x |
+| airway_dex | normalization | 189 | 97 | 1.95x |
+| airway_dex | dispersion | 4,707 | 1,990 | 2.37x |
+| airway_dex | glm_fit | 9,924 | 2,859 | 3.47x |
+| airway_dex | significance | 1,397 | 731 | 1.91x |
+| airway_dex | lfc_shrink | 14,715 | 7,012 | 2.10x |
+| airway_dex | **total** | 30,932 | 12,689 | 2.44x |
+| gtex_blood_muscle | normalization | 3,115 | 1,047 | 2.97x |
+| gtex_blood_muscle | dispersion | 188,957 | 81,454 | 2.32x |
+| gtex_blood_muscle | glm_fit | 239,691 | 23,508 | 10.20x |
+| gtex_blood_muscle | significance | 496 | 11,158 | 0.04x |
+| gtex_blood_muscle | lfc_shrink | 39,330 | 30,045 | 1.31x |
+| gtex_blood_muscle | **total** | 471,588 | 147,211 | 3.20x |
+| pasilla | normalization | 143 | 82 | 1.74x |
+| pasilla | dispersion | 1,722 | 802 | 2.15x |
+| pasilla | glm_fit | 3,878 | 1,179 | 3.29x |
+| pasilla | significance | 206 | 109 | 1.89x |
+| pasilla | lfc_shrink | 5,143 | 2,356 | 2.18x |
+| pasilla | **total** | 11,091 | 4,527 | 2.45x |
+| pasilla_2fac | normalization | 145 | 84 | 1.73x |
+| pasilla_2fac | dispersion | 2,140 | 986 | 2.17x |
+| pasilla_2fac | glm_fit | 3,755 | 797 | 4.71x |
+| pasilla_2fac | significance | 185 | 95 | 1.95x |
+| pasilla_2fac | lfc_shrink | 5,912 | 2,703 | 2.19x |
+| pasilla_2fac | **total** | 12,137 | 4,665 | 2.60x |
 
 ## Totals only (median ms)
 
 | dataset | n | genes | P | A100 host | EPYC 9B14 |
 |---|--:|--:|--:|--:|--:|
-| airway | 8 | 33469 | 5 | 33,456 | 17,101 |
-| airway_cell | 8 | 33469 | 4 | 27,899 | 14,754 |
-| airway_dex | 8 | 33469 | 2 | 25,664 | 12,689 |
-| gtex_blood_muscle | 300 | 54922 | 2 | 350,435 | 147,211 |
-| pasilla | 7 | 12359 | 2 | 9,307 | 4,527 |
-| pasilla_2fac | 7 | 12359 | 3 | 10,346 | 4,665 |
+| airway | 8 | 33469 | 5 | 41,570 | 17,101 |
+| airway_cell | 8 | 33469 | 4 | 36,080 | 14,754 |
+| airway_dex | 8 | 33469 | 2 | 30,932 | 12,689 |
+| gtex_blood_muscle | 300 | 54922 | 2 | 471,588 | 147,211 |
+| pasilla | 7 | 12359 | 2 | 11,091 | 4,527 |
+| pasilla_2fac | 7 | 12359 | 3 | 12,137 | 4,665 |
 
 ## EPYC 9B14 -- multi-core sweep, total pipeline (median ms)
 
@@ -87,7 +87,7 @@ whose call path differs).
 
 ## Effect on the reported speedup (recomputed, not measured)
 
-The GPU columns below are the **already-published A100 timings** from
+The GPU columns below are retained A100 timings from
 `bench/results/timings.json`; only the R denominator changes. Nothing
 here is a new GPU measurement -- this host has no GPU -- so these are
 arithmetic on existing numbers, shown because swapping the CPU baseline
@@ -97,43 +97,16 @@ is exactly what a reviewer would ask about.
 
 | dataset | best cuDESeq2 (A100, ms) | vs A100-host R (published) | vs EPYC 9B14 R serial | vs EPYC 9B14 R best multi-core |
 |---|--:|--:|--:|--:|
-| airway | 1,501 | 22.3x | 11.4x | 3.3x |
-| airway_cell | 3,469 | 8.0x | 4.3x | 1.3x |
-| airway_dex | 1,361 | 18.9x | 9.3x | 4.1x |
-| gtex_blood_muscle | 4,483 | 78.2x | 32.8x | 8.8x |
-| pasilla | 702 | 13.3x | 6.4x | 5.1x |
-| pasilla_2fac | 866 | 11.9x | 5.4x | 4.2x |
+| airway | 1,501 | 27.7x | 11.4x | 3.3x |
+| airway_cell | 3,469 | 10.4x | 4.3x | 1.3x |
+| airway_dex | 1,361 | 22.7x | 9.3x | 4.1x |
+| pasilla | 702 | 15.8x | 6.4x | 5.1x |
+| pasilla_2fac | 866 | 14.0x | 5.4x | 4.2x |
 
 The spread between the last columns and the published one is the
 share of the headline that came from the baseline machine and its
 DESeq2 version rather than from the GPU port. Quote whichever
 baseline a claim is actually about, and say which host it ran on.
-
-
-## Provenance check -- does the BLAS difference matter?
-
-The caveat above lists BLAS as one of the confounded variables.
-That one is testable, so it was tested rather than assumed:
-`bench/blas_sensitivity.R` re-times the three expensive substeps
-under each BLAS on the same host, single-threaded, selecting the
-library with `LD_PRELOAD`.
-
-```
-# BLAS sensitivity, AMD EPYC 9B14, single thread, case=airway, reps=3
-# Generated by bench/blas_sensitivity.R (see that file for why).
-
-## As benchmarked (system BLAS)
-case=airway reps=3 DESeq2=1.46.0
-BLAS=/usr/lib/x86_64-linux-gnu/blas/libblas.so.3.12.1
-dispersion=4376 glm_fit=2359 lfc_shrink=9081 ms
-
-## OpenBLAS-pthread via LD_PRELOAD (the reference host's BLAS family)
-case=airway reps=3 DESeq2=1.46.0
-BLAS=/mnt/bench/openblas/usr/lib/x86_64-linux-gnu/openblas-pthread/libopenblasp-r0.3.29.so
-dispersion=4165 glm_fit=2977 lfc_shrink=9283 ms
-```
-
-**Reading it:** the two BLAS runs differ by less than the run-to-run spread of repeated runs of the *same* configuration, and not consistently in one direction. DESeq2's per-gene IRLS is C++ scalar work that does not dispatch through BLAS, matching `benchmarks/RESULTS.md`'s finding that serial DESeq2 time is unchanged at 12 vs 1 BLAS threads. So BLAS is *not* a live confound for these columns; R version and CPU remain.
 
 
 ## Sources

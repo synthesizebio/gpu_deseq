@@ -1,6 +1,7 @@
 from .api import (
     DESeqDataset,
     DeseqResult,
+    deseq,
     fit_dispersions,
     fit_size_factors,
     lfc_shrink,
@@ -12,6 +13,7 @@ from .api import (
 __all__ = [
     "DESeqDataset",
     "DeseqResult",
+    "deseq",
     "fit_size_factors",
     "fit_dispersions",
     "wald_test",

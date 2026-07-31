@@ -9,7 +9,7 @@ renders them as **three tables**:
    and overall (Table 3, which also confirms the three GPU modes agree with each
    other)?
 
-The versions are R DESeq2 1.30.1 (the **reference/ground truth**), cuDESeq2 in
+The current reference is R 4.6.0 with DESeq2 1.52.0 and apeglm 1.34.0. cuDESeq2 runs in
 three execution modes (**eager**, **CUDA-graph**, **Triton**), and **PyDESeq2**
 as a **competitor baseline** — a third-party CPU/Python DESeq2 reimplementation
 that is timed and scored against R exactly as cuDESeq2 is, but is *never* a
@@ -20,7 +20,8 @@ skipped. Table 3 shows cuDESeq2-vs-R matches R far more tightly than
 PyDESeq2-vs-R on every substep.
 
 The **five substeps** are `normalization` (size factors), `dispersion`
-(Cox–Reid gene-est → trend → MAP), `glm_fit` (IRLS NB-GLM + Wald),
+(Cox–Reid gene-est → trend → MAP), `glm_fit` (IRLS NB-GLM, Wald, and
+Cook's-outlier replacement/refit where eligible),
 `significance` (Cook's / independent filtering + BH), and `lfc_shrink` (apeGLM).
 
 ## Run
@@ -36,16 +37,15 @@ PYTHONPATH=src python bench/bench.py       # cuDESeq2 timings + parity -> bench/
 `bench/cache/`, `--only pasilla,airway_dex` to subset, `--device cpu` to force CPU.
 
 Outputs (committed): `bench/results/TABLES.md` (the three tables),
-`timings.json`, `parity.json`.
+`timings.json`, `parity.json`, and `reference_parity.json`. Use
+`reference_parity.py` when the R reference changes but a new GPU timing run is
+not available; it validates outputs without overwriting GPU timings.
 
 ## What the numbers mean / honest caveats
 
-- **The graph and Triton flags affect only the `dispersion` substep.** The other
-  four substeps run the identical eager code in every mode. So in Table 2 those
-  rows are equal across eager/graph/triton by construction — the acceleration is
-  localized to dispersion fitting, and the harness shows this rather than hiding
-  it. (This is why the total-pipeline speedup is bounded by the non-dispersion
-  substeps — see `lfc_shrink`, the largest remaining cost on small-*n* sets.)
+- **The graph and Triton flags select the dispersion optimizer.** They affect
+  the main dispersion stage and any dispersion fit performed during the
+  standard outlier-refit branch. The other code paths are shared.
 
 - **The Triton kernel covers P ∈ {2,...,6}, so it runs on all six datasets.** Wider
   designs fall back to eager, and the harness would then report a Triton
@@ -66,10 +66,8 @@ Outputs (committed): `bench/results/TABLES.md` (the three tables),
   contributes exactly 0 to that column on every substep. Triton re-derives the
   same mathematics in registers with a different reduction order and a
   hand-written `digamma`, so it agrees with eager to ~1e-7 in dispersion on the
-  five small-*n* sets, with a worst case of 2.6e-1 relative on one `gtex` gene
-  (a gene at the dispersion-grid boundary) and 5.7e-3 absolute in the shrunk LFC,
-  where aggressive shrinkage on a few near-degenerate genes amplifies a last-bit
-  dispersion difference. No PASS verdict or DE call changes.
+  five small-*n* sets. The standard-pipeline GTEx mode comparison is pending a
+  new A100 run.
 
 - **Equivalence vs R is tolerance-based**, not bit-exact: reduction order in
   batched GPU kernels differs from R's sequential per-gene loops. (The small-dof
@@ -80,19 +78,17 @@ Outputs (committed): `bench/results/TABLES.md` (the three tables),
   | substep | metric | PASS tolerance | why |
   |---|---|---|---|
   | normalization | max relative Δ (size factors) | ≤ 1e-6 | deterministic |
-  | dispersion    | p95 relative Δ                | ≤ 0.10 | intermediate; within 10% is DE-equivalent (observed worst: 3.7e-3) |
+  | dispersion    | p95 relative Δ                | ≤ 0.10 | intermediate; observed worst: 4.3e-3 |
   | glm_fit       | p95 \|Δ\| (raw LFC)           | ≤ 1e-2 | drives significance; near-exact |
   | significance  | Jaccard of {padj<0.05}        | ≥ 0.95 | borderline-gene flicker at the threshold |
   | lfc_shrink    | Pearson r (Spearman in-cell)  | ≥ 0.90 | soft ranking quantity, see below |
 
-  Typical results: all 30 substep checks pass, and all six dispersions land
-  <0.4% (worst: `gtex_blood_muscle` at 3.7e-3). `airway` — the only case with
+  Current results: all 30 substep checks pass; the worst dispersion p95 relative
+  error is 4.3e-3 (`gtex_blood_muscle`). `airway` — the only case with
   residual dof ≤ 3, hence the only one entering R's Monte-Carlo prior-variance
   branch — reproduces R's prior variance bit for bit, lands at 4.5e-4, and calls
-  an identical significant-gene set (3993/3993). The one remaining soft spot is
-  `airway_cell` `lfc_shrink` (Pearson 0.866) — a single near-degenerate gene whose apeGLM
-  posterior is so flat that a 1e-14 dispersion difference moves the shrunk LFC by
-  ~5 (visible in that row's `GPU Δ`). Neither changes any DE call.
+  an identical significant-gene set (3993/3993). The least favorable shrunk-LFC
+  correlation is 0.997 (`airway_cell`).
 
 - **`lfc_shrink` is scored by Pearson r (Spearman shown in-cell).** The
   apeGLM-shrunk LFC is a MAP estimate under a heavy-tailed prior used for
@@ -104,9 +100,10 @@ Outputs (committed): `bench/results/TABLES.md` (the three tables),
 
 - **Timing method.** cuDESeq2 substeps are timed with `cuda.synchronize()` around
   each, median of 5 reps (3 on the 300-sample cohort). R substeps call the five
-  DESeq2 functions individually (`estimateSizeFactors → estimateDispersions →
-  nbinomWaldTest → results → lfcShrink`), median of 3 reps (1 on the 300-sample
-  cohort, where a single run already takes minutes). R is single-threaded.
+  DESeq2 stages as `estimateSizeFactors → estimateDispersions → DESeq → results
+  → lfcShrink`; because size factors and dispersions already exist, `DESeq`
+  times the Wald and replacement/refit work. R uses three reps (one on the
+  300-sample cohort) and is single-threaded.
 
 ## Files
 

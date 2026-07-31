@@ -48,7 +48,10 @@ CASES = [
     (60, 2000, "~ batch + condition"),
     (60, 20000, "~ batch + condition"),
 ]
-SWEEP_CHUNKS = [2, 5, 10, 20, 25, 50]      # must all divide maxit (=100)
+# Must all divide maxit (=100). chunk=100 captures the whole loop in one graph,
+# i.e. it *is* the fixed-full-length capture, so the sweep doubles as the
+# fixed-vs-chunked ablation rather than needing a separate code path.
+SWEEP_CHUNKS = [2, 5, 10, 20, 25, 50, 100]
 SWEEP_CASES = [(60, 2000, "~ condition"), (60, 20000, "~ condition")]
 # Sample-count axis: fix genes, vary n_samples from a 2v2 pilot to biobank scale.
 SAMPLE_SWEEP_GENES = 2000
@@ -236,16 +239,42 @@ def run_sample_sweep(n_genes, samples_list, design, device, n_timed=7):
         core.fit_alpha_mle(c, mu_hat, d.design_matrix, alpha_init=a0, use_cuda_graph=True)
         t_mle_graph = timed(lambda: core.fit_alpha_mle(c, mu_hat, d.design_matrix, alpha_init=a0, use_cuda_graph=True), n=n_timed)
 
+        # Triton on the same axis. It is not bit-identical to eager, so its
+        # agreement is recorded alongside its time; a size Triton cannot compile
+        # (BLOCK_S grows with n_samples) records None rather than aborting the
+        # sweep, and the paper must then say the column is short.
+        t_disp_triton = t_mle_triton = tri_maxdiff = None
+        try:
+            ref = core.fit_alpha_mle(c, mu_hat, d.design_matrix, alpha_init=a0,
+                                     use_cuda_graph=False)
+            got = core.fit_alpha_mle(c, mu_hat, d.design_matrix, alpha_init=a0,
+                                     use_triton=True)
+            fin = torch.isfinite(ref) & torch.isfinite(got)
+            tri_maxdiff = (ref[fin] - got[fin]).abs().max().item()
+            t_mle_triton = timed(lambda: core.fit_alpha_mle(
+                c, mu_hat, d.design_matrix, alpha_init=a0, use_triton=True), n=n_timed)
+            fit_dispersions(d, use_triton=True)
+            t_disp_triton = timed(lambda: fit_dispersions(d, use_triton=True), n=n_timed)
+        except Exception as e:                                    # noqa: BLE001
+            print(f"  [triton unavailable at n_samples={n_s}: {type(e).__name__}: {e}]")
+
         eager_iters = _count_eager_iters(c, mu_hat, d.design_matrix, a0)
         out.append(dict(
             n_samples=n_s, n_genes=n_genes, design=design,
             max_abs_diff=max_abs, eager_iters=eager_iters,
+            triton_vs_eager_maxdiff=tri_maxdiff,
             fit_alpha_mle_eager_ms=round(t_mle_eager, 2),
             fit_alpha_mle_graph_ms=round(t_mle_graph, 2),
             fit_alpha_mle_speedup=round(t_mle_eager / t_mle_graph, 2),
+            fit_alpha_mle_triton_ms=None if t_mle_triton is None else round(t_mle_triton, 2),
+            fit_alpha_mle_triton_speedup=None if t_mle_triton is None
+            else round(t_mle_eager / t_mle_triton, 2),
             fit_dispersions_eager_ms=round(t_disp_eager, 2),
             fit_dispersions_graph_ms=round(t_disp_graph, 2),
             fit_dispersions_speedup=round(t_disp_eager / t_disp_graph, 2),
+            fit_dispersions_triton_ms=None if t_disp_triton is None else round(t_disp_triton, 2),
+            fit_dispersions_triton_speedup=None if t_disp_triton is None
+            else round(t_disp_eager / t_disp_triton, 2),
         ))
     return out
 
@@ -297,14 +326,24 @@ def main():
         ss = run_sample_sweep(SAMPLE_SWEEP_GENES, SAMPLE_SWEEP_N, "~ condition", "cuda")
         payload["sample_sweep"] = ss
         print(f"\nSample-count sweep (n_genes={SAMPLE_SWEEP_GENES}, ~condition):")
-        print(f"  {'samples':>7} {'iters':>5}  {'mle eager':>9} {'mle graph':>9} {'mle x':>6}  "
-              f"{'disp eager':>10} {'disp graph':>10} {'disp x':>6}  max|Δ|")
+        print(f"  {'samples':>7} {'iters':>5}  {'mle eager':>9} {'mle graph':>9} {'mle x':>6} "
+              f"{'mle tri':>8} {'tri x':>6}  "
+              f"{'disp eager':>10} {'disp graph':>10} {'disp x':>6} {'disp tri':>9} {'tri x':>6}  max|Δ|")
+
+        def _f(v, w, p=1):
+            return f"{'--':>{w}}" if v is None else f"{v:>{w}.{p}f}"
+
         for r in ss:
             print(f"  {r['n_samples']:>7} {r['eager_iters']:>5}  "
                   f"{r['fit_alpha_mle_eager_ms']:>9.1f} {r['fit_alpha_mle_graph_ms']:>9.1f} "
-                  f"{r['fit_alpha_mle_speedup']:>5.2f}x  "
+                  f"{r['fit_alpha_mle_speedup']:>5.2f}x "
+                  f"{_f(r['fit_alpha_mle_triton_ms'], 8)} "
+                  f"{_f(r['fit_alpha_mle_triton_speedup'], 5, 2)}x  "
                   f"{r['fit_dispersions_eager_ms']:>10.1f} {r['fit_dispersions_graph_ms']:>10.1f} "
-                  f"{r['fit_dispersions_speedup']:>5.2f}x  {r['max_abs_diff']['final']:.0e}")
+                  f"{r['fit_dispersions_speedup']:>5.2f}x "
+                  f"{_f(r['fit_dispersions_triton_ms'], 9)} "
+                  f"{_f(r['fit_dispersions_triton_speedup'], 5, 2)}x  "
+                  f"{r['max_abs_diff']['final']:.0e}")
     else:
         results = run_comparison(CASES, "cuda")
         payload["results"] = results

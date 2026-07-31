@@ -4,7 +4,7 @@
   Table 2  per-substep timing      (dataset x substep x {R, eager, graph, triton})
   Table 3  output parity           (dataset x substep: GPU-modes agree? + vs-R verdict)
 
-Versions ("4"): R DESeq2 1.30.1 (reference) and cuDESeq2 in eager / CUDA-graph /
+Versions ("4"): the installed R DESeq2 (reference) and cuDESeq2 in eager / CUDA-graph /
 Triton modes. The graph and Triton flags affect only the dispersion substep; the
 other four substeps run identical code across modes (Table 3's GPU-agreement
 column makes that explicit).
@@ -185,7 +185,8 @@ def main():
 
     if not args.skip_r:
         print("Running R side (bench/run_r.R) ...", flush=True)
-        subprocess.run(["Rscript", "bench/run_r.R", *cases], check=True)
+        rscript = os.environ.get("R_BIN", "Rscript")
+        subprocess.run([rscript, "bench/run_r.R", *cases], check=True)
 
     r_time, cu_time, pj_time, parity = {}, {}, {}, {}
     for c in cases:

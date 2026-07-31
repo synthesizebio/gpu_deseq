@@ -19,8 +19,9 @@
 % Article type = ORIGINAL PAPER (up to 7 typeset pp / ~5,000 words once set in
 % the journal template; that limit is checked at revision, not here).
 %
-% Draft numbers are from benchmarks/RESULTS.md (single A100, R DESeq2 1.30.1).
-% \todo{...} marks content to write; \fact{...} marks a measured claim to cite.
+% GPU measurements are on a single A100; R references use DESeq2 1.52.0. The \fact macro
+% wraps a measured value so scripts/audit_paper_numbers.py can check it against
+% the source data; it is typographically transparent.
 % Build: cd paper && pdflatex main && bibtex main && pdflatex main && pdflatex main
 % Uses only standard classes/packages + vendored natbib.bst.
 % ===========================================================================
@@ -34,30 +35,33 @@
 \usepackage{listings}
 \usepackage{graphicx}
 \usepackage{amsmath,amssymb}
-\usepackage{xcolor}
 \usepackage[round,authoryear]{natbib}
 \usepackage[hidelinks]{hyperref}
+
+% Long URLs, \texttt{} paths and inline math tuples are unbreakable; give TeX
+% room to stretch a line rather than push it into the margin.
+\emergencystretch=3em
+\hyphenpenalty=1000
 
 % Supplementary algorithms are numbered S1, S2, ... independently of the
 % figure/table counters (they are typeset as floats but carry no \caption).
 \newcounter{supalg}
 \renewcommand{\thesupalg}{S\arabic{supalg}}
 
-\newcommand{\todo}[1]{\textcolor{red}{[\textbf{TODO:} #1]}}
-\newcommand{\note}[1]{\textcolor{blue!70!black}{\small$\langle$#1$\rangle$}}
-\newcommand{\fact}[1]{\textcolor{teal!55!black}{#1}} % a measured claim to cite
+% The \fact macro tags a measured value for scripts/audit_paper_numbers.py. It
+% must stay typographically transparent: an audit hook, not a visual annotation.
+\newcommand{\fact}[1]{#1}
 \newcommand{\cudeseq}{cuDESeq2}
-\newcommand{\gpudeseq}{\texttt{gpu-deseq}}
-\newcommand{\R}{\textsf{R}}
 
 \lstset{basicstyle=\ttfamily\small,columns=fullflexible,breaklines=true}
 
-\title{\cudeseq: a highly optimized GPU port of DESeq2}
+\title{\cudeseq: GPU acceleration of the DESeq2 differential-expression
+pipeline}
 
 % Single-anonymized review: authors ARE named.
 \author{%
-Max~Highsmith\,$^{1,\ast}$, Greg~Koytiger\,$^{1}$\\[2pt]
-{\normalsize $^{1}$Synthesize Bio, \note{City, State, Country}}\\[2pt]
+Max~Highsmith\,$^{1,\ast}$\\[2pt]
+{\normalsize $^{1}$Synthesize Bio}\\[2pt]
 {\normalsize $^{\ast}$To whom correspondence should be addressed:
 max@synthesize.bio}}
 
@@ -68,111 +72,89 @@ max@synthesize.bio}}
 \linenumbers        % continuous line numbers for reviewers
 \doublespacing      % double-spaced review manuscript
 
-% --- Structured abstract: the fixed Bioinformatics headings, ~150 words. -----
+% --- Structured abstract: the fixed Bioinformatics headings. ----------------
 \begin{abstract}
 \noindent
-\textbf{Motivation:} Differential expression (DE) analysis with DESeq2 is a
-de-facto standard for bulk RNA-seq, but its per-gene dispersion and
-generalized-linear-model fits run sequentially on a single CPU core and dominate
-wall-clock time on many-sample datasets. Virtual-cell and expression foundation
-models now place DE inside the training and evaluation loop, where generated
-count matrices are scored against real ones; a fit that takes minutes becomes
-the limiting step.\\[3pt]
-\textbf{Results:} We present \cudeseq, a from-scratch PyTorch reimplementation of
-the DESeq2 pipeline that reproduces R~DESeq2~1.30.1 to floating-point precision at
-every pipeline step while batching the embarrassingly-parallel per-gene work on
-the GPU. Agreement is validated end-to-end on six real RNA-seq designs
-(7--300 samples, $P=2$--$5$) and step-by-step on synthetic fixtures
-(\fact{76/76 step-parity tests; 30/30 real-data substep checks}). On a single
-A100, \cudeseq{} is \fact{8--78$\times$} faster end-to-end than single-threaded
-R~DESeq2 on our reference host; the dominant dispersion-estimation step falls
-from \fact{231\,s to 0.2\,s} on a 300-sample cohort. Against a newer 15-core
-baseline the same measurements give \fact{4.3--32.8$\times$} serial and
-\fact{1.3--8.8$\times$} with R using every core, so we report the range against
-each baseline rather than a single headline.\\[3pt]
-\textbf{Availability and implementation:} \cudeseq{} is open source and available
-at \url{https://github.com/synthesizebio/gpu_deseq}; reproduction scripts are in
-\texttt{bench/} and \texttt{benchmarks/}. The software is released under the MIT
-license.\\[3pt]
+\textbf{Motivation:} DESeq2 is widely used for bulk RNA-seq
+differential-expression (DE) analysis. Its dispersion and generalized linear
+model (GLM) fits operate independently by gene, but the reference
+implementation executes this work on the CPU. Repeated DE analyses can
+therefore dominate evaluations of gene-expression models.\\[3pt]
+\textbf{Results:} We present \cudeseq, a from-scratch PyTorch reimplementation
+that batches DESeq2's per-gene work on the GPU while reproducing the reference
+step by step. Against R~DESeq2~1.52.0 the closed-form stages agree to
+floating-point precision and dispersion to \fact{8.5e-4} median relative error,
+over six real designs (7--300 samples, $P=2$--$5$) and \fact{76/76 step-parity
+tests} on synthetic fixtures. The standard Wald pipeline includes
+\texttt{DESeq()}'s count-outlier replacement and per-gene refit. On one A100
+\cudeseq{} is \fact{10.4--27.7$\times$} faster end-to-end than
+single-threaded R across the five designs for which the current standard
+pipeline has complete CPU and A100 timings. The updated 300-sample GPU timing is
+reported as pending rather than inferred from a run that omitted refitting.\\[3pt]
+\textbf{Availability and implementation:} \texttt{gpu-deseq} requires PyTorch and
+a CUDA GPU, and is open source under the MIT license at
+\url{https://github.com/synthesizebio/gpu_deseq}, with reproduction scripts in
+\texttt{bench/} and \texttt{benchmarks/}.\\[3pt]
 \textbf{Contact:} max@synthesize.bio\\[3pt]
-\textbf{Supplementary information:} Supplementary material is appended to this
-manuscript.
+\textbf{Supplementary information:} Appended to this manuscript.
 \end{abstract}
 
 % ===========================================================================
 \section{Introduction}
-DESeq2 \citep{love2014deseq2} has been cited more than \fact{95{,}000} times
-since 2014, and in bulk RNA-seq its output is the reference against which other
-differential-expression (DE) methods are compared. What that reference amounts to
-is a particular computation: a DESeq2 run applies a fixed sequence of per-gene
-fits, namely median-of-ratios normalization, a Cox--Reid dispersion MLE with an
-empirical-Bayes trend and shrinkage, an iteratively reweighted negative-binomial
-GLM with Wald or likelihood-ratio tests, and, for reported effect sizes, apeGLM
-shrinkage of the log-fold-change under a heavy-tailed prior
-\citep{zhu2019apeglm}. Each of these fits is an iterative optimization, and
-DESeq2 performs them one gene at a time in a single-threaded C++ core.
+DESeq2 \citep{love2014deseq2} is a standard method for bulk RNA-seq
+differential-expression analysis. A typical Wald analysis estimates size
+factors and dispersions, fits a negative-binomial GLM, computes significance,
+and may shrink log fold changes with apeGLM \citep{zhu2019apeglm}. The
+dispersion, GLM and shrinkage calculations are iterative and independent by
+gene. DESeq2 performs these calculations on the CPU; its parallel mode
+distributes blocks of genes among workers.
 
-For a classical experiment of a handful of samples this costs seconds. DE is now
-routinely run at scales the sequential design did not anticipate: population and
-pseudobulk cohorts of hundreds to thousands of samples; many-condition and
-time-course designs; iterative analyses in which the pipeline is re-run for every
-new contrast or filter; and the evaluation loops of virtual-cell and expression
-foundation models \citep{bunne2024virtualcell,roohani2025vcc}, where DE is the
-scoring function applied to generated expression and is recomputed for every
-perturbation, every model and every submission rather than once per study
-\citep{adduri2025state,wei2026perturbench,koytiger2025gem}
-(Fig.~\ref{fig:schematic}). Notably, that scoring is done with rank-based tests
-on normalized values \citep{roohani2025vcc,wei2026perturbench}, not with the
-negative-binomial fits that define the DESeq2 reference. At these scales the per-gene dispersion and GLM fits
-dominate wall-clock time, and one analysis can take minutes to tens of minutes.
+Runtime is usually secondary for a single DE analysis. It becomes more
+important when DE is part of an evaluation loop for gene-expression or
+virtual-cell models \citep{bunne2024virtualcell,roohani2025vcc}. Some recent
+benchmarks use rank-based tests on normalized expression as less expensive
+surrogates \citep{roohani2025vcc,wei2026perturbench}. A faster implementation
+of the DESeq2 model permits the reference analysis to remain in that loop.
+
+
 
 \begin{figure}[t]\centering
 \includegraphics[width=\linewidth]{figures/gpt_schematic.png}
-\caption{Overview of \cudeseq. DESeq2's per-gene, sequential CPU work
+\caption{Overview of \cudeseq. \emph{Top}, the five stages of a DESeq2 run.
+\emph{Bottom}, where the GPU work goes: DESeq2's per-gene, sequential CPU work
 (dispersion estimation, the negative-binomial GLM, and apeGLM LFC shrinkage) is
-batched across all genes on the GPU. The launch-bound dispersion loop runs in one
-of three execution modes (eager, CUDA-graph chunked replay, or a fused Triton
-kernel), and every stage is validated against R~DESeq2 to floating-point
-precision.}
+batched across all genes (\emph{left}, solid arrows), and the dispersion fit,
+which is limited mainly by launch latency, has a fully fused Triton
+implementation (\emph{right}, dashed arrow). A third mode uses CUDA-graph
+chunked replay; the three modes are compared in Table~\ref{tab:modes}. Every stage is
+checked against R~DESeq2 step by step (Sec.~\ref{sec:parity}).}
 \label{fig:schematic}
 \end{figure}
 
-A bottleneck of this shape, many independent fits of identical form, suits a GPU
-well. The established route to a faster DESeq2 has nonetheless been algorithmic
-and CPU-bound. glmGamPoi \citep{ahlmanneltze2020glmgampoi} fits the
-Gamma--Poisson GLM $6$--$13\times$ faster than DESeq2 and edgeR with sub-linear
-scaling in cells, and DESeq2 can delegate its dispersion and GLM fits to it.
-PyDESeq2 \citep{muzellec2023pydeseq2}, a Python reimplementation, improves
-interoperability with the modern data-science stack and speed on large datasets,
-though by its authors' own account it yields results that are ``similar, but not
-identical'' to DESeq2; it too runs on the CPU and parallelizes across cores. GPU
-acceleration has meanwhile transformed adjacent single-cell workflows, where
-rapids-singlecell and ScaleSC report $15$--$20\times$ end-to-end speedups
-\citep{hu2025scalesc}, but those gains come from the dense and sparse
-linear-algebra core: PCA, neighbor graphs, clustering. The per-gene
-negative-binomial inference where bulk DE spends its time is left untouched. To
-our knowledge, DESeq2's dispersion--GLM--shrinkage path has no GPU
-implementation.
+The established route to a faster DESeq2 thus far has been
+algorithmic and CPU-bound. glmGamPoi \citep{ahlmanneltze2020glmgampoi} fits the Gamma--Poisson GLM
+$6$--$13\times$ faster than DESeq2 and edgeR, and DESeq2 can delegate its
+dispersion and GLM fits to it. PyDESeq2 \citep{muzellec2023pydeseq2}, a Python
+reimplementation, improves interoperability and speed on large datasets, though by
+its authors' own account it yields results ``similar, but not identical'' to
+DESeq2; GPU acceleration has meanwhile transformed
+adjacent single-cell workflows, where rapids-singlecell and ScaleSC report
+$15$--$20\times$ end-to-end speedups \citep{hu2025scalesc}, but those gains come
+from the dense and sparse linear-algebra core: PCA, neighbor graphs, clustering.
+Those systems accelerate the dense and sparse linear-algebra stages rather than
+the per-gene negative-binomial inference used for bulk DE. This work targets
+that inference path.
 
-Fidelity is the hard part. Whatever substitutes for the reference also
-substitutes for its gene calls, effect sizes and FDR estimates, and reproducing
-those exactly is difficult: DESeq2's behavior is fixed by a long list of clamps,
-priors and line searches, and by a seeded Monte-Carlo estimator. Numerical GPU
-ports of CPU code routinely diverge from their references, a hazard reported in
-single-cell GPU work, which had to reconcile GPU/CPU discrepancies explicitly
-\citep{hu2025scalesc}. Speedups built on approximation or resampling give up the
-fidelity that makes the output substitutable in the first place.
 
-We present \cudeseq, a from-scratch PyTorch \citep{paszke2019pytorch}
-reimplementation of the DESeq2 pipeline that batches the per-gene work across
-genes on the GPU while reproducing R~DESeq2~1.30.1 to floating-point precision at
-\emph{every} intermediate quantity, not only the final call. Our effort went
-where the cost is: the launch-bound dispersion loop, for which we provide three
-interchangeable execution modes (eager, a CUDA-graph chunked replay
-\citep{nvidia2024cudagraphs}, and a fully fused Triton kernel
-\citep{tillet2019triton}), and the apeGLM shrinkage optimizer, which we port to
-run batched on the GPU while reproducing the reference's optimum on a posterior
-that is bimodal for the extreme-effect genes.
+We implemented \cudeseq{} in PyTorch \citep{paszke2019pytorch}. It batches genes
+on the GPU and follows R~DESeq2~1.52.0 at each intermediate step. Across six
+real designs, the p95 relative dispersion error is at most $4.3\times10^{-3}$
+(Sec.~\ref{sec:parity}). The
+dispersion loop has three execution modes: eager PyTorch, CUDA-graph chunked
+replay \citep{nvidia2024cudagraphs}, and a fused Triton kernel
+\citep{tillet2019triton}.
+
+
 
 \noindent\textbf{Contributions.}
 \begin{enumerate}[leftmargin=1.6em,label=(\roman*)]
@@ -184,14 +166,9 @@ that is bimodal for the extreme-effect genes.
   \item A fully fused Triton kernel: one program per gene runs the whole
         gradient-ascent loop in registers with per-gene early exit.
   \item A batched, on-device port of apeGLM's own L-BFGS optimizer (limited-memory
-        BFGS with a strong-Wolfe line search). Because the shrinkage posterior is
-        bimodal for extreme-effect genes, the shrunk value is the local optimum the
-        reference's solver reaches from its initialization; porting that exact
-        optimizer---rather than a batched Newton, which would settle in a different
-        basin---reproduces R's shrunk log-fold-changes and keeps the whole
-        pipeline on the GPU with no serial per-gene fallback.
-  \item A per-step, reproducible benchmark methodology against single- and
-        multi-core R, with an empirical roofline analysis.
+        BFGS with a strong-Wolfe line search).
+  \item A per-step benchmark against single-threaded R and the three GPU
+        execution modes, with an empirical roofline analysis.
 \end{enumerate}
 
 % ===========================================================================
@@ -204,22 +181,24 @@ negative-binomial GLM. For gene $g$ with counts $K_{gi}$ over samples
 $i=1,\dots,S$, design matrix $X\in\mathbb{R}^{S\times P}$, and size factors
 $s_i$, it assumes $K_{gi}\sim\mathrm{NB}(\mu_{gi},\alpha_g)$ with
 $\mu_{gi}=s_i\exp(x_i^{\!\top}\beta_g)$ and variance
-$\mu_{gi}+\alpha_g\mu_{gi}^2$, and runs five stages:
+$\mu_{gi}+\alpha_g\mu_{gi}^2$, and runs five stages. We write $S$ for the sample
+count and $P$ for the number of model terms throughout; where a formula mirrors
+R's own source we keep R's names $m\equiv S$ and $p\equiv P$ for it, and dataset
+sizes are quoted as $n\equiv S$.
 \begin{enumerate}[leftmargin=1.6em]
   \item \textbf{Normalization}: median-of-ratios size factors.
   \item \textbf{Dispersion estimation}: gene-wise Cox--Reid MLE, a parametric
         mean--dispersion trend, empirical-Bayes MAP shrinkage, and an outlier
-        rule. This is the dominant cost.
+        rule. This is the dominant cost on the largest design tested here.
   \item \textbf{GLM fit / testing}: IRLS negative-binomial GLM, Wald / LRT.
   \item \textbf{Significance}: Cook's-distance filter, independent filtering,
         Benjamini--Hochberg adjustment.
   \item \textbf{LFC shrinkage}: apeGLM \citep{zhu2019apeglm}, a Cauchy-prior
         MAP estimate of the effect size.
 \end{enumerate}
-Stages 2, 3 and 5 are per-gene iterative optimizations executed sequentially in
-R's C++ core, and each is embarrassingly parallel across genes.
-Dispersion estimation dominates the wall time
-(Sec.~\ref{sec:realtiming}), because its gene-wise MLE maximizes the Cox--Reid
+Stages 2, 3 and 5 contain per-gene iterative optimizations, and each is
+parallel across genes. On the largest design, dispersion estimation dominates
+the wall time (Sec.~\ref{sec:realtiming}) because its gene-wise MLE maximizes the Cox--Reid
 adjusted profile log-likelihood
 \begin{equation}
 \ell_{\mathrm{CR}}(\alpha_g)=\sum_{i=1}^{S}\log \mathrm{NB}\!\bigl(K_{gi};\mu_{gi},\alpha_g\bigr)
@@ -232,19 +211,17 @@ each iteration.
 
 \subsection{A parity-first batched port}
 \label{sec:port}
-Our design rule is to reproduce the reference computation step by step instead of
-re-deriving it, keeping the same optimizer, line search, clamps and constants in
-IEEE double precision (fp64) throughout, so that intermediate quantities agree
-with R and not only the final call (Sec.~\ref{sec:parity-method}). Each per-gene
-loop in R becomes a tensor program over all $G$ genes at once: the per-gene
+We reproduce the reference computation step by step so that intermediate
+quantities agree with R (Sec.~\ref{sec:parity-method}). In the eager tensor
+path, each per-gene loop in R becomes a program over all $G$ genes at once: the per-gene
 solver state ($\log\alpha_g$, $\beta_g$, step sizes, iteration counters,
 convergence flags) is carried as $(G,\cdot)$ tensors, and a gene that has
-converged is frozen by a mask so that its later updates are no-ops. A batch
-therefore runs to the slowest gene's iteration count. Genes that are zero in
+converged is frozen by a mask so that its later updates are no-ops.  Batch speeds are constrained
+to the slowest gene's iteration count. Genes that are zero in
 every sample are dropped before fitting and their outputs padded with NaN, as in
 R.
 
-Three of the five stages need nothing beyond that.
+Three of the five stages need no adjustment beyond this batching.
 \emph{Normalization} computes median-of-ratios size factors from a $0.5$ quantile
 rather than a median primitive, so that the averaging of the two middle values at
 even sample counts matches R; when every gene carries at least one zero it falls
@@ -253,77 +230,75 @@ negative-binomial solve: working weights $W=\mu/(1+\alpha\mu)$, working response
 $z=\log(\mu/s)+(K-\mu)/\mu$, and normal equations
 $(X^{\!\top}WX+\lambda I)\beta=X^{\!\top}Wz$ solved for all genes in one batched
 factorization (ridge $\lambda=10^{-6}$, deviance-ratio convergence
-$<\!10^{-8}$, at most $250$ iterations; a gene whose coefficients pass
-$|\beta|=30$ is marked diverged). It returns $\beta$, an unthresholded $\mu$,
-which Cook's distances need in raw form, and the hat-matrix diagonals. The few
-genes that reach the iteration cap or diverge are re-fit one at a time by
-L-BFGS-B on the host, mirroring the \texttt{optim}-based fallback DESeq2 uses for
-the same genes. Wald standard errors follow from the sandwich form
-$\mathrm{SE}=\sqrt{c^{\!\top}(M{+}\lambda)^{-1}M(M{+}\lambda)^{-1}c}$, with
-$M=X^{\!\top}\tilde WX$ built from a $\mu$ floored at $0.5$ to match the
-threshold R applies in \texttt{fitBeta.cpp}. Without that floor a sample with
-$\mu<0.5$ contributes almost no weight instead of a small one, $M$ effectively
-loses the sample, and the SE inflates on degenerate genes
-(Sec.~\ref{sec:deplots}). The LRT statistic is the full/reduced deviance
-difference.
+$<\!10^{-8}$, at most $250$ iterations; a gene passing $|\beta|=30$ is marked
+diverged). It returns $\beta$, an unthresholded $\mu$, which Cook's distances need
+raw, and the hat-matrix diagonals; the few genes that reach the cap or diverge are
+re-fit one at a time by L-BFGS-B on the host, mirroring DESeq2's
+\texttt{optim}-based fallback for the same genes. Wald standard errors follow from
+the sandwich form
+$\mathrm{SE}=\sqrt{c^{\!\top}(M{+}\lambda I)^{-1}M(M{+}\lambda I)^{-1}c}$, with
+$M=X^{\!\top}\tilde WX$ built from a $\mu$ floored at $0.5$ to match
+\texttt{fitBeta.cpp}. Without that floor a sample with $\mu<0.5$ contributes
+almost no weight instead of a small one, $M$ effectively loses it, and the SE
+inflates on degenerate genes (Sec.~\ref{sec:deplots}). The LRT statistic is the
+full/reduced deviance difference.
 
-\emph{Significance} contains no per-gene optimizer. Cook's distances and the BH
-adjustment are closed-form: a gene is flagged when its largest Cook's distance
+\emph{Significance} contains no per-gene optimizer; Cook's distances and the BH
+adjustment are closed-form. A gene is flagged when its largest Cook's distance
 over samples in design cells of at least three replicates exceeds
 $F_{0.99,P,S-P}$, computed against a trimmed method-of-moments dispersion floored
 at $0.04$, and fewer than three samples carry more counts than the sample holding
 that maximum. Independent filtering sweeps 50 base-mean quantile cutoffs, runs BH
-at each, and selects the first cutoff whose rejection count comes within one RMS
-residual of the peak of a robust LOWESS fit to the rejection curve. Flagged genes
-are dropped rather than replaced: we do not implement the trimmed-mean outlier
-replacement and refit that DESeq2's \texttt{DESeq()} wrapper performs on design
-cells with at least seven replicates, a scope limitation quantified in
-Sec.~\ref{sec:deplots}. With nothing
-per-gene to batch, that stage stays on the host in NumPy/SciPy. The remaining
-engineering effort goes to the two iterative optimizers described below, the
-dispersion fit and apeGLM.
+at each, and selects the first whose rejection count comes within one RMS residual
+of the peak of a robust LOWESS fit to the rejection curve.
+
+The public \texttt{deseq()} entry point runs the standard Wald path:
+normalization, dispersion estimation, the Wald fit, Cook's-distance replacement
+and refitting for eligible design cells, and result assembly. The lower-level
+functions remain available for stage-wise validation and for LRT analyses. We
+use ``drop-in'' in this computational sense: the standard input model and
+reported DE quantities are reproduced. It does not imply that the Python API
+accepts every R object or every optional DESeq2 estimator
+(Sec.~\ref{sec:limitations}).
 
 \subsection{Batched dispersion estimation}
 \label{sec:disp}
 The dispersion stage is a batched port of DESeq2's \texttt{fitDisp} and the
-\texttt{estimateDispersions} logic around it. Two of its inputs have to be
-constructed the way R constructs them, because the gene-wise fit's accept and
-revert behavior depends on where the optimizer starts: the initial dispersion is
+\texttt{estimateDispersions} logic around it. Two inputs must be built the way R
+builds them, because the fit's accept-and-revert behavior depends on where the
+optimizer starts: the initial dispersion is
 $\mathrm{clip}\bigl(\min(\alpha_{\text{rough}},\alpha_{\text{MoM}}),10^{-8},10\bigr)$
-from a linear-regression and a method-of-moments estimate, and $\hat\mu$ comes
-from plain linear regression for saturated designs and from one IRLS pass at the
-initial dispersion otherwise. The stage itself has three parts.
+from a linear-regression and a method-of-moments estimate, and $\hat\mu$ comes from
+plain linear regression for saturated designs and one IRLS pass at the initial
+dispersion otherwise. The stage has three parts.
 
 \textbf{(i) Gene-wise Cox--Reid MLE.} We maximize Eq.~\ref{eq:cr} over
-$a=\log\alpha$ by gradient ascent with Armijo backtracking. Each iteration
-proposes $a'=a+\kappa\,\partial_a\ell_{\mathrm{CR}}$, shrinking $\kappa$ where
-needed to keep $a'$ inside $[-30,10]$, accepts the proposal when the Armijo
-condition holds ($\varepsilon=10^{-4}$), and adapts the step: on acceptance
-$\kappa\leftarrow\min(1.1\kappa,\kappa_0)$ with $\kappa_0=1$ and a halving at
-every fifth acceptance, on rejection $\kappa\leftarrow\kappa/2$. A gene stops
-once an accepted step improves the objective by less than $10^{-6}$, or once $a$
-falls below $\log(\mathrm{minDisp}/10)$, and the loop is capped at $100$
-iterations. Two R-matching safeguards follow it. A \emph{noIncrease revert}
-restores the initial estimate for genes whose objective never improved on it. A
-\emph{grid fallback} re-fits the genes R would flag as non-converged, meaning
-those at the iteration cap or with a single accepted step, whose dispersion is
-still above $10\cdot\mathrm{minDisp}$; the re-fit is a deterministic $100$-point
-coarse grid over $\log\alpha$ refined by a second $100$-point grid. Estimates are
-clipped to $[10^{-8},\max(10,S)]$, since R's ceiling is $\max(10,S)$ rather than
-a constant $10$ and a fixed ceiling truncates legitimate dispersions on cohorts
-of more than ten samples.
+$a=\log\alpha$ by gradient ascent with Armijo backtracking. Each iteration proposes
+$a'=a+\kappa\,\partial_a\ell_{\mathrm{CR}}$, shrinking $\kappa$ as needed to keep
+$a'$ inside $[-30,10]$, accepts when the Armijo condition holds
+($\varepsilon=10^{-4}$), and adapts the step: on acceptance
+$\kappa\leftarrow\min(1.1\kappa,\kappa_0)$ with $\kappa_0=1$ and a halving every
+fifth acceptance, on rejection $\kappa\leftarrow\kappa/2$. A gene stops once an
+accepted step improves the objective by less than $10^{-6}$ or $a$ falls below
+$\log(\mathrm{minDisp}/10)$, capped at $100$ iterations. Two R-matching safeguards
+follow: a \emph{noIncrease revert} restores the initial estimate for genes whose
+objective never improved on it, and a \emph{grid fallback} re-fits the genes R
+would flag as non-converged (those at the cap or with a single accepted step), whose
+dispersion still exceeds $10\cdot\mathrm{minDisp}$, using a deterministic
+$100$-point coarse grid over $\log\alpha$ refined by a second. Estimates are
+clipped to $[10^{-8},\max(10,S)]$: R's ceiling is $\max(10,S)$, and a fixed $10$
+truncates legitimate dispersions above ten samples.
 
 \textbf{(ii) Parametric trend.} We fit $\alpha\approx a_0+a_1/\bar\mu$ over the
-genes with $\mathrm{dispGeneEst}>100\cdot\mathrm{minDisp}$, starting from
-$(a_0,a_1)=(0.1,1)$. Each iteration forms the residuals
-$\alpha/(a_0+a_1/\bar\mu)$, keeps the genes whose residual lies in
-$(10^{-4},15)$, and re-fits a Gamma-family, identity-link GLM warm-started at the
-current coefficients, stopping when
+genes with $\mathrm{dispGeneEst}>100\cdot\mathrm{minDisp}$ from
+$(a_0,a_1)=(0.1,1)$. Each iteration forms residuals $\alpha/(a_0+a_1/\bar\mu)$,
+keeps the genes whose residual lies in $(10^{-4},15)$, and re-fits a Gamma-family,
+identity-link GLM warm-started at the current coefficients, stopping when
 $\sum\log(\text{coef}/\text{coef}_{\text{old}})^2<10^{-6}$ with the inner GLM
-converged, or after ten iterations. A trimmed-mean trend is the fallback. R's
-other two \texttt{fitType} settings are also implemented: \texttt{"local"}, a
-LOWESS of $\log\alpha$ on $\log\bar\mu$ at span $0.3$ with three robustness
-iterations, and \texttt{"mean"}, which forces the trimmed-mean trend.
+converged, or after ten iterations; a trimmed-mean trend is the fallback. R's other
+two \texttt{fitType} settings are also implemented: \texttt{"local"}, a LOWESS of
+$\log\alpha$ on $\log\bar\mu$ at span $0.3$ with three robustness iterations, and
+\texttt{"mean"}, which forces the trimmed-mean trend.
 
 \textbf{(iii) MAP shrinkage.} A log-normal prior centered on the trend shrinks
 the gene-wise estimates. Its variance follows R's three regimes, each built from
@@ -348,42 +323,39 @@ either moves the answer.
 The first is the draw. \texttt{set.seed(2)} fixes the stream inside R but not
 across implementations, so we replay R's stream itself: its LCG-based seeding of
 the Mersenne-Twister state (R does not use MT's standard initialization), its
-single-word conversion to a double, its inversion \texttt{rnorm} over Wichura's
-AS~241 quantile function, its Ahrens--Dieter \texttt{exp\_rand}, and its
+single-word conversion to a double, its inversion-based \texttt{rnorm} over
+Wichura's AS~241 quantile function, its Ahrens--Dieter \texttt{exp\_rand}, and its
 \texttt{rgamma} (GS below shape~$1$, GD at or above). The last two are rejection
-samplers that consume a variable number of uniforms per draw, so the stream is
-inherently sequential; the loop is compiled with Numba instead of vectorized. One
-detail decides whether the replay stays in step: R's \texttt{rnorm} returns the mean
-without touching the generator when $\sigma=0$, so the $x{=}0$ grid point draws
-no normal variates at all, and taking $10^4$ of them there desynchronizes every
-later grid point.
+samplers consuming a variable number of uniforms per draw, so the stream is
+inherently sequential and the loop is compiled with Numba rather than vectorized.
+One detail decides whether the replay stays in step: R's \texttt{rnorm} returns the
+mean without touching the generator when $\sigma=0$, so the $x{=}0$ grid point
+draws no normal variates at all, and taking $10^4$ of them there desynchronizes
+every later grid point.
 
-The second is the smoother, where what R computes is not the exact
-local-regression surface. By default \texttt{loess} builds a kd-tree over the
-predictor, fits only at the tree's vertices, taking the value and the slope
-there, and cubic-Hermite interpolates between them. We reproduce that
-construction, matching R's \fact{31} median cuts to $\sim$\fact{5e-15} and its
-\texttt{predict} to $\sim$\fact{1e-14}.
+The second is the smoother which builds a kd-tree over the predictor, fits value
+and slope only at the tree's vertices, and cubic-Hermite interpolates between
+them. We reproduce that construction, matching R's \fact{31} median cuts to
+$\sim$\fact{5e-15} and its \texttt{predict} to $\sim$\fact{1e-14}.
 
-With both in place the branch reproduces R exactly. On \texttt{airway} ($m{=}8$, $p{=}5$) the
-simulated KL curve agrees with R's to $\sim$\fact{5e-15} and the estimator
+With both in place the branch reproduces R exactly: on \texttt{airway} ($m{=}8$,
+$p{=}5$) the simulated KL curve agrees to $\sim$\fact{5e-15} and the estimator
 returns R's prior variance, \fact{$0.5285285285285285$}, bit for bit. Getting
-either ingredient wrong is measurable: a different generator shifts the reported
-variance by \fact{$0.016$} and a Savitzky--Golay smoother by \fact{$0.080$},
-which degrade final dispersion agreement from \fact{0.045\%} to \fact{1.4\%} and
-\fact{6.7\%} respectively. The compiled replay adds \fact{$\approx$0.3\,s} of host
-time, once per dataset.
+either ingredient wrong is measurable: a different generator shifts the variance
+by \fact{$0.016$} and a Savitzky--Golay smoother by \fact{$0.080$}, degrading final
+dispersion agreement from \fact{0.045\%} to \fact{1.4\%} and \fact{6.7\%}
+respectively. The compiled replay adds \fact{$\approx$0.3\,s} of host time, once
+per dataset.
 
 \subsection{Three execution modes for the dispersion loop}
 \label{sec:modes}
 The gradient-ascent loop is where the launch-bound overhead concentrates
 (Sec.~\ref{sec:realtiming}), so it is the only stage with alternative execution
-backends; every other stage runs the eager code in all modes. The three modes
+backends. The three modes
 compute the same mathematics and differ in how the loop is dispatched
 (Table~\ref{tab:modes}). They are selected per call
 (\texttt{fit\_dispersions(..., use\_cuda\_graph, use\_triton)}) or through the
-\texttt{GPU\_DESEQ\_ACCEL} environment variable, which is convenient for running
-the benchmark and parity suites through an accelerated path.
+\texttt{GPU\_DESEQ\_ACCEL} environment variable.
 
 \begin{table}[htbp]\centering
 \caption{The three execution modes for the dispersion loop.}
@@ -397,8 +369,9 @@ graph  & replay a captured CUDA graph     & bit-identical to eager & any $P$ \\
 Triton & one fused kernel per gene        & R parity, not bit-identical & $P\in\{2,\dots,6\}$ \\\bottomrule
 \end{tabular}}
 \\[3pt]
-{\footnotesize Triton and graph fall back to eager for unsupported designs or on
-CPU. Triton's agreement with eager is quantified in Sec.~\ref{sec:parity}.}
+{\footnotesize Both accelerated modes fall back to eager on CPU; Triton also
+falls back for $P>6$. Triton's agreement with eager is quantified in
+Sec.~\ref{sec:parity}.}
 \end{table}
 
 \subsection{CUDA-graph chunked replay}
@@ -406,36 +379,30 @@ CPU. Triton's agreement with eager is quantified in Sec.~\ref{sec:parity}.}
 In eager mode each gradient-ascent iteration launches a handful of tiny kernels
 over $1$--$10$\,MB arrays, so the loop is dominated by launch latency
 (Sec.~\ref{sec:roofline}). Capturing the loop as a CUDA graph amortizes that cost
-into a single replay, but two obstacles stand in the way.
+into a single replay, but two obstacles must be overcome.
 
 The first is early exit. A fixed full-length capture would force every gene to
 the maximum iteration count, which wastes the typical $15$--$40$-iteration case.
-We instead capture a $K{=}10$-iteration graph that reads and writes a set of
+To prevent this we capture a $K{=}10$-iteration graph that reads and writes a set of
 persistent state buffers in place, and replay it in a loop with a convergence
 check between chunks. A chunk always runs to its boundary, so a gene that
-converges partway through executes further iterations; those are exact no-ops,
-because a converged gene is frozen by the same mask the eager loop uses, and $K$
-divides the iteration cap so the budget is never exceeded. The replayed result is
-therefore bit-identical to eager. That also requires the two paths to agree on
-operand types, not just on arithmetic: passing the prior variance to the eager
-loop as a Python scalar instead of the same $0$-dim tensor the graph buffers
-lowers the division to a reciprocal-multiply and costs one ulp per iteration,
-which the MAP loop then amplifies.
+converges partway through executes further iterations.
 
 The second is cuSOLVER. The Cox--Reid term needs $\log\det(b)$ and
-$\operatorname{tr}(b^{-1}\,\mathrm{d}b)$ with $b=X^{\!\top}WX$, and
-\texttt{slogdet}/\texttt{solve} host-synchronize and cannot be captured. Since
-$b$ is symmetric positive-definite for full-rank $X$, we replace them with an
-unrolled no-pivot LU (\texttt{\_logdet\_and\_tr\_binv\_db}) that returns both
-quantities from elementwise and indexing operations alone and matches the
-\texttt{linalg} path to $\sim$1e-15 for $P=2\dots6$. The eager path uses the same
-routine, which is what makes the two bit-identical.
+$\operatorname{tr}(b^{-1}\,\mathrm{d}b)$ with $b=X^{\!\top}WX$, but
+\texttt{slogdet}/\texttt{solve} host-synchronize and cannot be captured. Since $b$
+is symmetric positive-definite for full-rank $X$, we replace them with an unrolled
+no-pivot LU (\texttt{\_logdet\_and\_tr\_binv\_db}) returning both quantities from
+elementwise and indexing operations alone, matching the \texttt{linalg} path to
+$\sim$1e-15 for $P=2\dots6$. The eager path uses the same routine, which is what
+makes the two bit-identical.
 
 Before capture the chunk is run three times on a side stream, warming the caching
-allocator and any lazy kernel initialization, and captured graphs are cached by
-$(G,S,P,K,\text{prior},\text{dtype},\text{device})$. The prior variance is a
-scalar tensor in the buffer set, so one graph serves datasets with different
-priors.
+allocator and any lazy kernel initialization. Captured graphs are cached on $G$,
+$S$, $P$, the chunk length $K$, whether a prior term is enabled, the dtype and the
+device. Only \emph{whether} there is a prior is selected on the device, because the prior
+variance lives in the buffer set as a scalar tensor the replay reads, so one graph
+serves datasets whose prior variances differ.
 
 \subsection{Triton full-loop fusion}
 \label{sec:triton}
@@ -478,19 +445,18 @@ the hand-written \texttt{digamma} move the last bits, so this mode is not
 bit-identical to eager, and Sec.~\ref{sec:parity} reports how far the two
 diverge on real data.
 
-Covering a range of $P$ needed one extra step. The eager path
-writes the $P\times P$ elimination as a Python loop over tensor slices, but
-Triton's frontend admits no local arrays and no compile-time sequence building,
-so a register-resident matrix cannot be indexed by a loop variable: the algebra
-has to appear as straight-line code specialized to each $P$. Because that grows
-quadratically, from $20$ lines at $P{=}2$ to $174$ at $P{=}6$, we emit it from a
-generator that mirrors the eager elimination operation for operation instead of
-hand-writing each case. Only the $P\in\{2,4\}$ arms remain hand-written.
-Generated and hand-written arms are both checked against the eager Cox--Reid term
-at fixed $\alpha$, which isolates the linear algebra from the optimizer's path:
-over all covered $P$ and $S\in\{8,12,24\}$ the log-posterior agrees to
-\fact{3e-15} relative and its gradient to \fact{3e-14}, against committed test
-bounds of 1e-13 and 1e-12.
+Covering a range of $P$ needed one extra step. The eager path writes the $P\times
+P$ elimination as a Python loop over tensor slices, but Triton's frontend admits no
+local arrays and no compile-time sequence building, so a register-resident matrix
+cannot be indexed by a loop variable: the algebra must appear as straight-line code
+specialized to each $P$. Because that grows quadratically, from $20$ lines at
+$P{=}2$ to $174$ at $P{=}6$, we emit it from a generator mirroring the eager
+elimination operation for operation rather than hand-writing each case; only the
+$P\in\{2,4\}$ arms are hand-written. Both kinds of arm are checked against the
+eager Cox--Reid term at fixed $\alpha$, which isolates the linear algebra from the
+optimizer's path: over all covered $P$ and $S\in\{8,12,24\}$ the log-posterior
+agrees to \fact{3e-15} relative and its gradient to \fact{3e-14}, against committed
+test bounds of 1e-13 and 1e-12.
 
 \subsection{Batched port of the apeGLM optimizer}
 \label{sec:apeglm}
@@ -502,39 +468,39 @@ $\tau=\min(\sqrt{\widehat{\text{var}}},1)$, with $\widehat{\text{var}}$ the root
 of apeGLM's prior-variance equation in the MLE coefficients and their Wald
 standard errors, solved once per dataset on the host.
 
-Reproducing the reference's output turns on a property of this objective: for
-extreme-effect, low-count genes it is bimodal in the shrunk coefficient, with a
-sharp likelihood mode far from zero and a prior mode near zero, and the two can
-be nearly tied in posterior mass. What the reference reports is then not the MAP
-but the particular local optimum its solver reaches from its initialization. In
-DESeq2, \texttt{lfcShrink} runs apeGLM with \texttt{method="nbinomCR"}, whose
+Reproducing the reference's output turns on a property of this objective. For
+extreme-effect, low-count genes it is bimodal in the shrunk coefficient, with a sharp
+likelihood mode far from zero and a prior mode near zero. The two modes can
+be nearly tied in posterior mass. R does not report the global optimum in that
+situation; it reports whichever mode its solver reaches from its initialization.
+DESeq2's \texttt{lfcShrink} runs apeGLM with \texttt{method="nbinomCR"}, whose
 estimate comes from a limited-memory BFGS solver (LBFGS++ via
-\texttt{RcppNumerical}) started at a fixed $\pm0.1$-alternating point. A batched
-Newton method locates the global optimum instead, and so disagrees with R on
-exactly these genes; we confirmed that this is not our solver failing but landing
-in the other, equally valid basin.
+\texttt{RcppNumerical}) started at a fixed $\pm0.1$-alternating point. Which mode
+is reported is therefore a property of that solver and that starting point, not of
+the posterior alone, and no better-converging method recovers it.
 
-We therefore port the reference's optimizer itself, vectorized across genes on
-the GPU: limited-memory BFGS ($m{=}6$) with a backtracking strong-Wolfe line
-search ($\mathrm{ftol}=10^{-4}$, $\mathrm{wolfe}=0.9$, dec$=0.5$, inc$=2.1$, at
-most $100$ trials), the two-loop recursion, an initial step $1/\lVert d\rVert$
-reset to $1$ each iteration, apeGLM's gradient-norm and objective-change stopping
-tests, a cap of $300$ iterations, and the identical $\pm0.1$ initialization.
-Running the same algorithm from the same start makes the same basin selection, so
-the batched solve reproduces R's shrunk log-fold-changes
-(Sec.~\ref{sec:parity}). The per-gene solver state ($\beta_g$, the
-$m$-step history, step size, convergence flags) is carried as $(G,\cdot)$ tensors
-exactly as in the dispersion loop, so the whole shrinkage stage runs batched on
-the GPU with no serial per-gene fallback. The reported \texttt{lfcSE} is the
-square root of the shrunk coefficient's diagonal of the inverse observed
-information at the optimum. Following \texttt{lfcShrink}, only the shrunk
-coefficient and its SE are replaced; the reported p-values remain the MLE Wald
-values.
+We therefore port the reference's optimizer itself, vectorized across genes on the
+GPU: limited-memory BFGS with a 6-step history and a backtracking strong-Wolfe
+line search ($\mathrm{ftol}=10^{-4}$, $\mathrm{wolfe}=0.9$, dec$=0.5$,
+inc$=2.1$, at most $100$ trials), the two-loop recursion, an initial step
+$1/\lVert d\rVert$ reset to $1$ each iteration, apeGLM's gradient-norm and
+objective-change stopping tests, a cap of $300$ iterations, and the identical
+$\pm0.1$ initialization. Running the same algorithm from the same start selects
+the same mode, reproducing R's shrunk log-fold-changes to the agreement reported
+in Sec.~\ref{sec:parity}. The per-gene solver state ($\beta_g$, the 6-step
+history, step size, convergence flags) is carried as $(G,\cdot)$ tensors exactly
+as in the dispersion loop, so the whole shrinkage stage runs batched on the GPU
+with no serial per-gene fallback.
+
+The reported \texttt{lfcSE} is the square root of the shrunk coefficient's
+diagonal of the inverse observed information at the optimum. Following
+\texttt{lfcShrink}, only the shrunk coefficient and its SE are replaced; the
+reported p-values remain the MLE Wald values.
 
 \subsection{Parity methodology}
 \label{sec:parity-method}
 Reference fixtures are generated by \texttt{scripts/generate\_r\_fixtures.R}
-against R~DESeq2~1.30.1: three single-factor designs at $12\times200$,
+against R~DESeq2~1.52.0: three single-factor designs at $12\times200$,
 $30\times500$ and $60\times2000$ (samples $\times$ genes, $P=2$), a
 $60\times1500$ two-factor design $\sim$\,batch\,$+$\,condition with a
 three-level batch ($P=4$), and a $60\times1000$ continuous-covariate design
@@ -545,29 +511,21 @@ ones), \texttt{dispMAP}, the final dispersion and its outlier set, $\beta$,
 $\mu$, the hat-matrix diagonals, Cook's distances, Wald SE, the LRT statistic on
 all five designs, the independent-filtering \texttt{padj}, and the apeGLM prior
 scale and shrunk LFC/SE. Errors are reported as p95 relative values, or absolute
-values where a quantity crosses zero. Tolerances and the measured per-substep
-results, including the real-data end-to-end comparison, are reported in
-Sec.~\ref{sec:parity}.
+values where a quantity crosses zero. Sec.~\ref{sec:parity} reports the measured
+agreement for the principal quantities and tabulates the five pipeline stages on
+the real datasets (Table~\ref{tab:parity}).
 
 % ===========================================================================
 \section{Results}
 
 \subsection{Experimental setup}
-\note{Provenance: A100-SXM4-40GB, torch 2.6/CUDA 12.4, R~DESeq2~1.30.1 on a
-12-core host, median-of-N, warm timings, CUDA-synced. R runs single-threaded
-everywhere except the explicit ``R 12-core'' column of
-Table~\ref{tab:perstep} and host~B's multi-core column in
-Table~\ref{tab:realtiming}, both of which use \texttt{DESeq(parallel=TRUE)} with
-a \texttt{MulticoreParam}. A second R baseline (host~B: AMD EPYC~9B14, 15
-physical cores, DESeq2~1.46.0, no GPU) is reported alongside the reference host
-in Table~\ref{tab:realtiming}; raw output and provenance in
-\texttt{bench/results/r\_epyc9b14/}. Reproducible harnesses: real-data parity and
-timing in bench/ (\texttt{bench/bench.py}), the cross-host R sweep in
-\texttt{bench/run\_r\_scaling.sh}, synthetic scaling in benchmarks/.}
-\todo{\textbf{GAP:} a second GPU (L4) is still missing. The CPU-baseline gap is
-now partly closed by host~B (15 physical cores), but it runs DESeq2~1.46.0 rather
-than the reference 1.30.1, so hardware and library version are confounded; a
-32--64-core box on the pinned 1.30.1 would make it a controlled comparison.}
+All GPU measurements are taken on one NVIDIA A100-SXM4-40GB under PyTorch~2.6
+with CUDA~12.4. The reference CPU baseline (host~A) is R~DESeq2~1.52.0 on a
+12-core box, with R~4.6.0 and apeglm~1.34.0. Every timing is a warm median of $N$
+repetitions with \texttt{torch.cuda.synchronize()} on both sides of the timed
+region, so no GPU work is left in flight when the clock stops. R runs
+single-threaded in the primary comparisons.
+
 We validate on three real, published RNA-seq datasets sliced into six designs
 spanning $P=2$--$5$ model terms: pasilla \citep{brooks2011pasilla}
 (\emph{Drosophila}, $n{=}7$, one- and two-factor), airway
@@ -582,8 +540,9 @@ simulations where the gene and sample axes can be swept independently.
 
 \subsection{Numerical parity with R}
 \label{sec:parity}
-Correctness is checked per substep against R on all six real datasets, each
-against an explicit PASS tolerance (Table~\ref{tab:parity}). A separate synthetic
+\begin{sloppypar}
+Correctness is checked per substep against R on all six real datasets
+(Table~\ref{tab:parity}). A separate synthetic
 step-parity suite (\texttt{tests/test\_r\_step\_parity.py}, 76/76) confirms the
 same agreement at controlled sizes, and more tightly: size factors agree to
 $<$1e-10, gene-wise dispersion to $\sim$1e-9, and MAP dispersion, $\beta$, $\mu$,
@@ -591,66 +550,61 @@ the Hessian and Wald SEs to $\sim$1e-6 relative. A further suite
 (\texttt{tests/test\_triton\_dispersion.py}) pins the fused kernel against the
 eager path once per covered $P$, the axis along which its specialized arms
 (Sec.~\ref{sec:triton}) could diverge without any other test noticing.
+\end{sloppypar}
 
 \begin{table}[htbp]\centering
-\caption{Per-substep agreement with R~DESeq2~1.30.1 across all six real datasets.
-Each dataset is scored independently by the substep's natural metric against a
-fixed PASS tolerance ($n{=}6$; the criterion is per-dataset, not applied to a
-pooled statistic), and both the median and the least-favorable of the six are
-shown. The R reference here is the substep chain
+\caption{Per-substep agreement with R~DESeq2~1.52.0 across all six real datasets.
+Each dataset is scored independently by the substep's natural metric ($n{=}6$;
+the score is per-dataset, not a pooled statistic), and both the median and the
+least-favorable of the six are shown. The R reference here is the substep chain
 (\texttt{estimateSizeFactors} $\to$ \texttt{estimateDispersions} $\to$
-\texttt{nbinomWaldTest} $\to$ \texttt{results}), which is what makes a
-per-substep comparison possible and which omits the count-outlier replacement
-that the \texttt{DESeq()} wrapper performs at $\ge$7 replicates per cell; see
-Sec.~\ref{sec:deplots} for that difference and what it costs.
+\texttt{DESeq} $\to$ \texttt{results}). Because size factors and dispersions
+already exist, the \texttt{DESeq} call times the Wald fit and, where applicable,
+count-outlier replacement and refitting.
 \fact{Reproduce: \texttt{bench/bench.py} $\to$
-\texttt{bench/results/parity.json}.}}
+\texttt{bench/results/reference\_parity.json}.}}
 \label{tab:parity}
-\begin{tabular}{lllrr}
+\begin{tabular}{llrr}
 \toprule
-Substep & Metric & PASS tol & Median & Worst \\\midrule
-normalization & max rel.\ $\Delta$ & $\le$1e-6 & 4.1e-15 & 5.7e-15 \\
-dispersion & p95 rel.\ $\Delta$ & $\le$0.10 & 8.5e-4 & 3.7e-3 \\
-glm\_fit & p95 $|\Delta|$ (LFC) & $\le$1e-2 & 2.4e-5 & 8.1e-5 \\
-significance & Jaccard@0.05 & $\ge$0.95 & 1.00000 & 0.99963 \\
-lfc\_shrink & Pearson $r$ & $\ge$0.90 & 0.99999 & 0.99722 \\\bottomrule
+Substep & Metric & Median & Worst \\\midrule
+normalization & max rel.\ $\Delta$ & 4.1e-15 & 5.0e-15 \\
+dispersion & p95 rel.\ $\Delta$ & 8.5e-4 & 4.3e-3 \\
+glm\_fit & p95 $|\Delta|$ (LFC) & 2.4e-5 & 8.1e-5 \\
+significance & Jaccard@0.05 & 1.00000 & 0.99963 \\
+lfc\_shrink & Pearson $r$ & 0.99999 & 0.99722 \\\bottomrule
 \end{tabular}
 \end{table}
 
-All 30 substep checks pass, and every one of the six dispersions now lands
-within \fact{0.4\%} of R, the worst being \texttt{gtex\_blood\_muscle} at
-\fact{3.7e-3}. The small-dof case that used to dominate this table no longer
-stands out. R enters the simulation-based prior-variance estimator only when the
-residual degrees of freedom satisfy $m-p\le3$, so \texttt{airway} ($n{=}8$,
+All 30 substep checks pass, and every one of the six dispersion comparisons is
+within \fact{0.43\%} of R, the worst being \texttt{gtex\_blood\_muscle} at
+\fact{4.3e-3}. The small-degrees-of-freedom case is not the outlier one might
+expect. R enters the simulation-based prior-variance estimator only when the
+residual degrees of freedom satisfy $0<m-p\le3$, so \texttt{airway} ($n{=}8$,
 $P{=}5$, dof~3) is the only one of the six datasets to take that branch at all;
-because that branch now returns R's scalar bit for bit (Sec.~\ref{sec:disp}), its
+because the branch reproduces R's scalar bit for bit (Sec.~\ref{sec:disp}), its
 dispersion agrees to \fact{4.5e-4}, its raw LFC to \fact{3.0e-5}, and its
 significant-gene set matches R's \emph{exactly} (Jaccard \fact{1.000}). The
-apeGLM shrinkage
-matches R to Pearson $r\ge0.997$ on every dataset, with p95 $|\Delta|\le$3.4e-3.
-The residual is confined to flat, near-degenerate genes on which two
-limited-memory-BFGS implementations break a tie between equal-posterior optima
-differently; the shrunk LFC is a reported effect size and does not feed the
-significance calculation, so it changes no call. Across the \fact{23} synthetic dispersion configurations of
-Sec.~\ref{sec:roofline}, the graph path reproduces eager exactly: gene-wise, MAP
+apeGLM shrinkage matches R to Pearson $r\ge0.997$ on every dataset, with
+p95 $|\Delta|\le$3.4e-3. The residual is confined to flat, near-degenerate genes
+on which two limited-memory-BFGS implementations break a tie between
+equal-posterior optima differently; the shrunk LFC is a reported effect size and
+does not feed the significance calculation, so it changes no call. Across the
+\fact{25} synthetic dispersion configurations of Sec.~\ref{sec:roofline} and
+Sec.~\ref{sec:ablations}, the graph path reproduces eager exactly: gene-wise, MAP
 and final dispersion all agree to max $|\Delta|=\fact{0}$
-(\texttt{benchmarks/results\_a100*.json}). Triton is deliberately not: its fused reduction order
-and hand-written \texttt{digamma} move the last bits, so across all six designs
----every one of which it now covers---it agrees with eager to $\le$3.2e-7 in
-dispersion on the five small-$n$ sets, widening to a worst case of $2.6$e-1
-relative on one \texttt{gtex} gene and $5.7$e-3 absolute in the shrunk LFC. Those
-genes sit at the dispersion-grid boundary or on the flat posterior optima
-described above; no PASS verdict and no DE call changes.
+(\texttt{benchmarks/results\_a100*.json}). Triton's fused reduction order and
+hand-written \texttt{digamma} change the last bits; its dispersion agrees with
+eager to $\le$3.2e-7 on the five small-$n$ sets. The current standard-pipeline
+\texttt{gtex} mode comparison awaits the A100 rerun.
 
 \subsubsection{Parity in the standard DE plots}
 \label{sec:deplots}
-The residuals above are reported as summary statistics, but a DESeq2 run is read
-through a small set of standard diagnostic plots, and parity is only useful if it
-survives into those. Fig.~\ref{fig:deplots} redraws the three that an analyst
-looks at first---the dispersion-estimate plot, the MA plot and the volcano
-plot---from R's output and from \cudeseq's, by identical plotting code and on
-axis limits taken from R and reused for \cudeseq\ so that the rows are compared
-rather than each rescaled to its own data. The two rows are visually
+The residuals above are summary statistics, but a DESeq2 run is read through a
+small set of standard diagnostic plots, and parity is only useful if it survives
+into those. Fig.~\ref{fig:deplots} redraws the three an analyst looks at
+first (the dispersion-estimate, MA and volcano plots) from both pipelines by
+identical code, on axis limits taken from R and reused for \cudeseq{} so the rows
+are compared rather than each rescaled to its own data. They are visually
 indistinguishable: the gene-wise MLE cloud, the fitted trend, the shrunken MAP
 band and the \fact{141} genes the outlier rule exempts from shrinkage all land in
 the same places, and the same \fact{3{,}993} genes are called at
@@ -659,11 +613,11 @@ $\mathrm{padj}<0.05$.
 \begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/de_diagnostics_parity.pdf}
 \caption{The three standard DESeq2 diagnostics on \texttt{airway}
-($\sim$\,cell\,+\,dex, $n{=}8$, $P{=}5$), drawn from R~DESeq2~1.30.1 (top) and
+($\sim$\,cell\,+\,dex, $n{=}8$, $P{=}5$), drawn from R~DESeq2~1.52.0 (top) and
 \cudeseq\ (bottom) by the same plotting code. \emph{Left}, the
 \texttt{plotDispEsts} view: gene-wise MLE (grey), fitted trend (orange), final
 estimate (blue), and circled genes whose MLE exceeds the trend by more than two
-residual SDs and is therefore kept unshrunk. \emph{Centre}, MA plot of the
+residual SDs and is therefore kept unshrunk. \emph{Center}, MA plot of the
 apeGLM-shrunk LFC, with out-of-range genes on the boundary as in
 \texttt{plotMA}. \emph{Right}, volcano plot. Axis limits are computed from R's
 output and reused for \cudeseq. \fact{Reproduce:
@@ -672,53 +626,47 @@ output and reused for \cudeseq. \fact{Reproduce:
 \label{fig:deplots}
 \end{figure}
 
-Fig.~\ref{fig:concordance} quantifies the same agreement across all six designs
-in the terms a DE analysis is actually used for. The two pipelines put the same
-genes at the top of the ranked list: at every $N$ up to 2{,}000 and on every one
-of the six designs, they share \fact{$\ge$99.6\%} of the top $N$, and their called
-sets agree to a Jaccard index of \fact{$\ge$0.980} over the whole threshold range
-$\alpha\in[10^{-3},0.2]$, not only at the conventional $\alpha{=}0.05$, where
-four of the six agree \emph{exactly} and the other two reach \fact{0.9996} and
-\fact{0.9805}. Ranking uses $|$Wald statistic$|$ rather than the p-value: on
-\texttt{gtex} R reports $p=0$ for hundreds of genes whose p-value has
-underflowed, so a p-value ranking would compare arbitrary tie-breaks among those
-genes instead of comparing the two pipelines. Two features of the figure are
-worth naming, because between them they account for the entire residual.
+Fig.~\ref{fig:concordance} quantifies the same agreement across all six designs in
+the terms a DE analysis is used for. The two pipelines put the same genes at the
+top of the ranked list: at every $N$ up to 2{,}000 and on every design they share
+\fact{$\ge$99.6\%} of the top $N$, and their called sets agree to a Jaccard index
+of \fact{$\ge$0.961} across the whole range $\alpha\in[10^{-3},0.2]$. At
+$\alpha{=}0.05$, four of the six agree exactly and the other two reach
+\fact{0.99963} and \fact{0.99997}. Ranking uses $|$Wald
+statistic$|$ rather than the p-value because on \texttt{gtex} R reports $p=0$ for
+hundreds of underflowed genes, so a p-value ranking would compare arbitrary
+tie-breaks among them.
 
-The first is a $\mu$ floor in the Wald standard error, and building this figure is
-what exposed it. R forms the weights for its coefficient covariance from a $\mu$
-already thresholded at \texttt{minmu} (\texttt{fitBeta.cpp}), and our IRLS returns
-$\mu$ unthresholded because Cook's distance requires it raw; omitting the floor
-when forming $X^{\!\top}\!WX$ for the SE therefore drops any sample with
-$\mu<0.5$ out of the weight matrix and inflates the SE. The effect is invisible on
-ordinary genes and severe on degenerate ones: before the floor was applied our SE
-ran \fact{22\%} high on genes where one contrasted group is \emph{entirely} zero,
-which cost \texttt{airway\_cell} five of its \fact{206} called genes and pulled
-its Jaccard index to \fact{0.971}, and $\sim$7\% high on near-zero-count genes
-whose dispersion is pinned at the ceiling, which moved their raw p-values by up to
-\fact{0.07}. With the floor in place the SE matches R to \fact{0.03\%} on those
+The first is a $\mu$ floor in the Wald standard error. R forms the weights for its
+coefficient covariance from a $\mu$ already thresholded at \texttt{minmu}
+(\texttt{fitBeta.cpp}), whereas our IRLS returns $\mu$ unthresholded because
+Cook's distance requires it raw; omitting the floor when forming
+$X^{\!\top}\!WX$ for the SE drops any sample with $\mu<0.5$ out of the weight
+matrix and inflates the SE. The effect is invisible on ordinary genes and severe
+on degenerate ones. Without the floor the SE runs \fact{22\%} high on genes where
+one contrasted group is \emph{entirely} zero, which is enough to change
+\texttt{airway\_cell}'s called set and pull its Jaccard index against R's
+\fact{206} genes to \fact{0.971}, and $\sim$7\% high on near-zero-count genes
+whose dispersion is pinned at the ceiling, moving their raw p-values by up to
+\fact{0.07}. With the floor applied the SE matches R to \fact{0.03\%} on those
 same degenerate genes, \texttt{airway\_cell} and \texttt{airway} both reproduce
-R's called set \emph{exactly}, and the histograms of panel~(a) coincide. Only
-genes with $\mu\ge0.5$ throughout --- almost all of them --- were ever unaffected,
-which is why every aggregate metric in Table~\ref{tab:parity} had stayed inside
-tolerance while the deviation was present.
+R's called set \emph{exactly}, and the histograms of panel~(a) coincide. Only the
+few genes carrying $\mu<0.5$ in some sample are affected at all, which is why
+every aggregate metric in Table~\ref{tab:parity} is essentially unchanged either
+way. A suite scoring only aggregates can miss a detail of this kind.
 
-The second is a feature we do not implement, and it is the whole of the remaining
-\texttt{gtex} gap. DESeq2's \texttt{DESeq()} wrapper, unlike the substep chain of
-Table~\ref{tab:parity}, replaces count outliers with a trimmed mean and refits
-whenever a cell has at least \texttt{minReplicatesForReplace}$=7$ replicates.
-\cudeseq{} instead does what the substep chain does and lets Cook's distance
-filter those genes. On five of the six designs the branch is unreachable --- the
-largest cell is 4 samples --- but \texttt{gtex} has 150 per group, and
-replacement rescues exactly \fact{878} genes from the Cook's filter, of which R
-calls \fact{654} at $\alpha{=}0.05$. That is the \fact{33{,}942} versus
-\fact{33{,}284} difference in called genes and all of the \fact{0.9805} Jaccard:
-scored against the substep chain instead, \texttt{gtex} significance is
-\fact{0.99994} (Table~\ref{tab:parity}). It is a scope limitation rather than a
-numerical one.
-\todo{Implement \texttt{replaceOutliers} (trimmed-mean replacement + refit at
-$\ge$7 replicates per cell) so the \texttt{DESeq()} wrapper path is reproducible
-too, or state the omission in the abstract.}
+The standard wrapper has an additional branch when a design cell contains at
+least \texttt{minReplicatesForReplace}$=7$ samples. Both implementations flag
+counts above the 0.99 quantile of the Cook's-distance $F$ distribution, replace
+eligible counts with the 20\%-trimmed mean of normalized counts rescaled by the
+sample size factor, and refit the affected genes. The refit re-estimates the
+gene-wise dispersion while retaining the original fitted trend and dispersion
+prior, then repeats the MAP and Wald fits. Original counts are retained for
+subsequent shrinkage. This branch is unreachable for the five seven- or
+eight-sample designs; it is exercised by \texttt{gtex}, with 150 samples in each
+group. Table~\ref{tab:parity} therefore tests the same standard wrapper path for
+both implementations rather than comparing \cudeseq{} with
+\texttt{nbinomWaldTest} alone.
 
 \begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/de_parity_concordance.pdf}
@@ -730,246 +678,351 @@ comparing tie-breaks among genes whose p-value has underflowed in R.
 mean-dependent bias; dashed lines mark p95 $|\Delta|$. \emph{(d)} Jaccard index
 of the called sets as the significance threshold moves, with the number of genes
 R calls at $\alpha{=}0.05$ in the legend. The index is granular to $\sim1/n$, so
-the small-$n$ curves move in visible steps; \texttt{gtex} is the one curve
-displaced systematically, by the outlier replacement discussed in the text.}
+the small called sets move in visible steps. The \texttt{gtex} curve now includes
+count replacement and refitting in both pipelines.}
 \label{fig:concordance}
 \end{figure}
 
 \subsection{Real-data timing versus R}
 \label{sec:realtiming}
 \begin{table}[htbp]\centering
-\caption{End-to-end wall time on the six real datasets: R~DESeq2 on two CPU
-hosts vs.\ \cudeseq{}'s three modes on a single A100. Host~A is the reference
-machine (DESeq2~1.30.1, 12-core box, the column published in earlier drafts);
-host~B is an AMD EPYC~9B14, 15 physical cores, running DESeq2~1.46.0.
-\textbf{The two R columns are not a controlled comparison}: CPU, R version and
-DESeq2 version all differ, so their ratio mixes a hardware effect with several
-software ones. Read each as what R costs on that machine as configured---which
-is what a speedup claim against that machine needs---and not as a hardware
-ratio. Host~B has no GPU, so the \cudeseq{} columns are the same A100
-measurement in both halves of the table and the host-B speedups are arithmetic
-on committed numbers rather than new GPU runs. \fact{Reproduce:
-\texttt{bench/bench.py} $\to$ \texttt{bench/results/timings.json}; host~B via
-\texttt{bench/run\_r\_scaling.sh} $\to$ \texttt{bench/results/r\_epyc9b14/}.}}
+\caption{End-to-end wall time on the real datasets: single-threaded
+R~4.6.0/DESeq2~1.52.0 and \cudeseq{} on one A100. The five small designs cannot
+enter the count-replacement branch, so their existing GPU measurements remain
+valid. The \texttt{gtex} GPU total is withheld pending a new A100 run of the
+standard pipeline. \fact{Reproduce: \texttt{bench/run\_r.R} and
+\texttt{bench/bench.py} $\to$ \texttt{bench/results/timings.json}.}}
 \label{tab:realtiming}
 \small
-\begin{tabular}{lrrrrrrrr}
+\begin{tabular}{lrrrrrr}
 \toprule
- & & & \multicolumn{3}{c}{R DESeq2 (s)} & \multicolumn{3}{c}{\cudeseq{}, one A100 (ms)} \\
-\cmidrule(lr){4-6}\cmidrule(lr){7-9}
- & & & host A & host B & host B & & & \\
- & & & 1.30.1 & 1.46.0 & 1.46.0 & & & \\
-Dataset & $P$ & $n$ & 1 thr & 1 thr & best MC & eager & graph & Triton \\
+ & & & R DESeq2 (s) & \multicolumn{3}{c}{\cudeseq{}, one A100 (ms)} \\
+\cmidrule(lr){4-4}\cmidrule(lr){5-7}
+Dataset & $P$ & $n$ & 1 thread & eager & graph & Triton \\
 \midrule
-pasilla       & 2 &   7 &   9.3 &   4.5 &  3.6 & 1149 &  801 &  702 \\
-pasilla\_2fac & 3 &   7 &  10.3 &   4.7 &  3.6 & 1511 &  946 &  866 \\
-airway\_dex   & 2 &   8 &  25.7 &  12.7 &  5.5 & 1733 & 1414 & 1361 \\
-airway\_cell  & 4 &   8 &  27.9 &  14.8 &  4.6 & 4178 & 3621 & 3469 \\
-airway        & 5 &   8 &  33.5 &  17.1 &  5.0 & 2521 & 1650 & 1501 \\
-gtex          & 2 & 300 & 350.4 & 147.2 & 39.4 & 8429 & 8386 & 4483 \\\bottomrule
+pasilla       & 2 &   7 &  11.1 & 1149 &  801 &  702 \\
+pasilla\_2fac & 3 &   7 &  12.1 & 1511 &  946 &  866 \\
+airway\_dex   & 2 &   8 &  30.9 & 1733 & 1414 & 1361 \\
+airway\_cell  & 4 &   8 &  36.1 & 4178 & 3621 & 3469 \\
+airway        & 5 &   8 &  41.6 & 2521 & 1650 & 1501 \\
+gtex          & 2 & 300 & 471.6 & --- & --- & --- \\\bottomrule
 \end{tabular}
 \\[3pt]
-{\footnotesize Best-mode \cudeseq{} speedup depends on which R baseline it is
-measured against: vs.\ host~A single-threaded \fact{8.0--78.2$\times$}; vs.\
-host~B single-threaded \fact{4.3--32.8$\times$}; vs.\ host~B's best multi-core
-configuration \fact{1.3--8.8$\times$}. Triton is the best mode on all six
-designs. Host~B's best worker count is $w{=}4$ (both pasilla designs), $w{=}8$
-(airway\_dex) and $w{=}15$ (airway\_cell, airway, gtex); past it, added workers
-make the small-$n$ designs slower. The multi-core column times the
-\texttt{DESeq()}\,+\,\texttt{results()}\,+\,\texttt{lfcShrink()} wrapper path,
-whose own $w{=}1$ point---not the 1-thread column, which times the five substeps
-directly---is the correct serial reference for a parallel speedup.}
+{\footnotesize On the five fully timed designs, the best-mode speedup over
+single-threaded R is \fact{10.4--27.7$\times$}. The missing \texttt{gtex} cells
+are not estimated from the earlier no-refit run.}
 \end{table}
 
-The graph and Triton flags accelerate \emph{only} the dispersion substep; the
-other four substeps---including the apeGLM shrink, which now also runs batched on
-the GPU---execute identical code in every mode. Those rows of
-Table~\ref{tab:realsubstep} are accordingly equal for eager and graph up to
-measurement noise, since the two feed them bit-identical dispersions. Triton is
-the exception: the shrinkage optimizer iterates to a tolerance, so the last-bit
-differences in its dispersions shift its iteration count, and on \texttt{gtex}
-that makes \texttt{lfc\_shrink} materially faster rather than equal. End-to-end
-speedup is
-therefore set by whichever cuDESeq2 substep is slowest relative to R. On the large
-\texttt{gtex} set that is dispersion, which Triton cuts from 231\,s to 0.2\,s,
-driving the highest end-to-end speedup, 78.2$\times$. On the small-$n$ sets the
-apeGLM shrink is the heaviest per-gene stage---its limited-memory-BFGS iterations
-on the bimodal extreme-effect genes dominate---which is what caps
-\texttt{airway\_cell} at 8$\times$. Triton is now the fastest mode on all six
-designs. It was not always: the multi-factor cases \texttt{airway} ($P{=}5$) and
-\texttt{pasilla\_2fac} ($P{=}3$) previously fell outside the kernel's $P\in\{2,4\}$
-coverage and dispatched silently to the eager loop, so their Triton and eager
-dispersion times were identical to within noise. Extending the Cox--Reid solve to
-$P\in\{2,\dots,6\}$ (Sec.~\ref{sec:triton}) cuts their dispersion substep by
-$2.7\times$ and $8.8\times$ against the eager loop they used to fall back to
-(1590$\to$583\,ms and 730$\to$83\,ms, same run; \texttt{airway}'s dispersion
-substep also carries the \fact{$\approx$0.3\,s} CPU cost of the R-stream replay
-in Sec.~\ref{sec:disp}, in every mode),
-which is what moves both datasets' best mode from graph to Triton. Fusion never
-lost on these designs; it simply had not been written for them.
-All three modes are shipped because the best choice still depends on the design
-and the sample count.
+The graph and Triton modes change the dispersion optimizer. The remaining
+stages use the same code, except that a standard-pipeline outlier refit invokes
+the selected dispersion optimizer again. None of the five small designs enters
+that branch. Their downstream timing differences are measurement noise or,
+for Triton, changes in the number of tolerance-based shrinkage iterations caused
+by last-bit dispersion differences.
 
-\paragraph{How much of the speedup is the baseline machine?}
-A speedup against a single CPU is only as meaningful as that CPU, so we measured
-R again on a second, newer host (Table~\ref{tab:realtiming}, host~B: EPYC~9B14,
-15 physical cores). Per core it is \fact{1.9--2.4$\times$} faster than the
-reference box on the same six datasets, with the dominant \texttt{gtex}
-dispersion step falling from 231\,s to \fact{81\,s}. Serial speedups therefore
-roughly halve, to \fact{4.3--32.8$\times$}, and allowing R up to 15 parallel
-workers brings them to \fact{1.3--8.8$\times$}. The ordering across designs is
-unchanged, and \cudeseq{} remains ahead on all six. We report the range against
-each baseline rather than the most favourable one, because ``versus R'' is
-ambiguous once more than one machine is in play. One caveat bounds what this
-comparison can show: host~B runs DESeq2~1.46.0 rather than the reference
-1.30.1---the pinned Bioconductor image was unavailable there---so hardware and
-library version moved together and their contributions cannot be separated. BLAS
-also differed, but that one is testable and was tested: re-timing the three
-expensive substeps under each BLAS on the same host moves them by less than the
-spread of repeated runs of the same configuration, and DESeq2's per-gene IRLS is
-scalar C++ work that never dispatches through BLAS.
-
-Two features of the multi-core curve are worth stating, because they set what a
-parallel R baseline can reach. First, \texttt{results()} does not parallelise at
-all: on \texttt{gtex} it is flat at \fact{$\approx$11\,s} from $w{=}1$ to
-$w{=}15$ while the fit itself scales \fact{7.9$\times$}, so that serial
-remainder, not the fit, caps the curve. Second, the thin row of the table is
-\texttt{airway\_cell} at $1.3\times$, and it is thin for a reason that has
-nothing to do with dispersion: \fact{94\%} of its GPU time is apeGLM shrinkage
-and only 60\,ms is dispersion, the step the graph and Triton work accelerates.
-That row measures the shrink stage, and R's \texttt{lfcShrink} parallelises well
-enough to nearly catch it; it is also the row most likely to invert on a box with
-more cores than this one. The durable advantage is at the dispersion-bound
-large-cohort end, where \texttt{gtex} stays \fact{8.8$\times$} ahead of R even
-with every core of host~B in use.
+Triton is the fastest mode on all six designs, the multi-factor cases included:
+fusing the wider Cox--Reid solve (Sec.~\ref{sec:triton}) cuts the dispersion
+substep by $8.8\times$ on \texttt{pasilla\_2fac} ($P{=}3$) and $2.7\times$ on
+\texttt{airway} ($P{=}5$) against the eager loop (730$\to$83\,ms and
+1590$\to$583\,ms, same run). \texttt{airway}'s dispersion substep also carries the
+\fact{$\approx$0.3\,s} CPU cost of the R-stream replay of Sec.~\ref{sec:disp}, in
+every mode. All three modes are nonetheless shipped, because what separates them
+is coverage and fidelity rather than speed: graph is bit-identical to eager at any
+$P$, whereas Triton is a GPU-only path limited to $P\le6$ and agrees with eager
+only to the last few bits (Sec.~\ref{sec:parity}).
 
 \begin{table}[htbp]\centering
 \caption{Per-substep wall time (ms) on the real datasets, single-threaded R on
-host~A vs.\ the three cuDESeq2 modes. Graph/Triton differ from eager only in
-\texttt{dispersion}; all
-other rows are eager code and equal across modes up to measurement noise. The
-same substeps measured on host~B are in \texttt{bench/results/R\_HOSTS.md}.
+the reference host vs.\ the three cuDESeq2 modes. The \texttt{glm\_fit} timing
+includes Cook's-distance replacement and refitting. GPU entries affected by
+that newly implemented branch are withheld until the A100 rerun.
 \fact{Reproduce: \texttt{bench/bench.py} $\to$ \texttt{bench/results/TABLES.md}.}}
 \label{tab:realsubstep}
 {\footnotesize
 \begin{tabular}{llrrrr}
 \toprule
 Dataset & Substep & R & eager & graph & Triton \\\midrule
-pasilla & dispersion & 2335 & 422 & 78 & 21 \\
-        & glm\_fit & 2138 & 36 & 36 & 37 \\
-        & significance & 277 & 62 & 61 & 62 \\
-        & lfc\_shrink & 4382 & 628 & 625 & 581 \\
-        & \textbf{total} & \textbf{9307} & \textbf{1149} & \textbf{801} & \textbf{702} \\\midrule
-pasilla\_2fac & dispersion & 2791 & 730 & 162 & 83 \\
-        & glm\_fit & 1502 & 327 & 329 & 329 \\
-        & significance & 240 & 60 & 62 & 59 \\
-        & lfc\_shrink & 5637 & 393 & 392 & 395 \\
-        & \textbf{total} & \textbf{10346} & \textbf{1511} & \textbf{946} & \textbf{866} \\\midrule
-airway\_dex & dispersion & 6212 & 429 & 109 & 52 \\
-        & glm\_fit & 5666 & 53 & 53 & 53 \\
-        & significance & 1299 & 146 & 144 & 145 \\
-        & lfc\_shrink & 12290 & 1104 & 1107 & 1111 \\
-        & \textbf{total} & \textbf{25664} & \textbf{1733} & \textbf{1414} & \textbf{1361} \\\midrule
-airway\_cell & dispersion & 5724 & 750 & 182 & 60 \\
-        & glm\_fit & 4190 & 33 & 33 & 33 \\
+pasilla & dispersion & 1722 & 422 & 78 & 21 \\
+        & glm\_fit & 3878 & 36 & 36 & 37 \\
+        & significance & 206 & 62 & 61 & 62 \\
+        & lfc\_shrink & 5143 & 628 & 625 & 581 \\
+        & \textbf{total} & \textbf{11091} & \textbf{1149} & \textbf{801} & \textbf{702} \\\midrule
+pasilla\_2fac & dispersion & 2140 & 730 & 162 & 83 \\
+        & glm\_fit & 3755 & 327 & 329 & 329 \\
+        & significance & 185 & 60 & 62 & 59 \\
+        & lfc\_shrink & 5912 & 393 & 392 & 395 \\
+        & \textbf{total} & \textbf{12137} & \textbf{1511} & \textbf{946} & \textbf{866} \\\midrule
+airway\_dex & dispersion & 4707 & 429 & 109 & 52 \\
+        & glm\_fit & 9924 & 53 & 53 & 53 \\
+        & significance & 1397 & 146 & 144 & 145 \\
+        & lfc\_shrink & 14715 & 1104 & 1107 & 1111 \\
+        & \textbf{total} & \textbf{30932} & \textbf{1733} & \textbf{1414} & \textbf{1361} \\\midrule
+airway\_cell & dispersion & 5794 & 750 & 182 & 60 \\
+        & glm\_fit & 9584 & 33 & 33 & 33 \\
         & significance & 362 & 117 & 116 & 116 \\
-        & lfc\_shrink & 17423 & 3277 & 3290 & 3259 \\
-        & \textbf{total} & \textbf{27899} & \textbf{4178} & \textbf{3621} & \textbf{3469} \\\midrule
-airway & dispersion & 10423 & 1590 & 715 & 583 \\
-        & glm\_fit & 4738 & 57 & 57 & 57 \\
-        & significance & 365 & 119 & 119 & 119 \\
-        & lfc\_shrink & 17717 & 754 & 758 & 741 \\
-        & \textbf{total} & \textbf{33456} & \textbf{2521} & \textbf{1650} & \textbf{1501} \\\midrule
-gtex & dispersion & 231276 & 3501 & 3620 & 200 \\
-        & glm\_fit & 42321 & 397 & 417 & 417 \\
-        & significance & 17865 & 2785 & 2609 & 2625 \\
-        & lfc\_shrink & 56020 & 1742 & 1736 & 1237 \\
-        & \textbf{total} & \textbf{350435} & \textbf{8429} & \textbf{8386} & \textbf{4483} \\\bottomrule
+        & lfc\_shrink & 20157 & 3277 & 3290 & 3259 \\
+        & \textbf{total} & \textbf{36080} & \textbf{4178} & \textbf{3621} & \textbf{3469} \\\midrule
+airway & dispersion & 8077 & 1590 & 715 & 583 \\
+        & glm\_fit & 12686 & 57 & 57 & 57 \\
+        & significance & 872 & 119 & 119 & 119 \\
+        & lfc\_shrink & 19712 & 754 & 758 & 741 \\
+        & \textbf{total} & \textbf{41570} & \textbf{2521} & \textbf{1650} & \textbf{1501} \\\midrule
+gtex & dispersion & 188957 & 3501 & 3620 & 200 \\
+        & glm\_fit & 239691 & --- & --- & --- \\
+        & significance & 496 & --- & --- & --- \\
+        & lfc\_shrink & 39330 & --- & --- & --- \\
+        & \textbf{total} & \textbf{471588} & \textbf{---} & \textbf{---} & \textbf{---} \\\bottomrule
 \end{tabular}}
 \\[3pt]
 {\footnotesize \texttt{normalization} omitted ($\le$4\,ms cuDESeq2 on every set);
-full table in \texttt{bench/results/TABLES.md}. All six datasets were timed in a
-single session on an otherwise idle GPU; absolute values shift by
-$10$--$25$\,\% between sessions (\texttt{airway}, timed first, pays warmup), so
-compare modes within a row rather than across runs.}
+full versioned R records are in \texttt{bench/results/timings.json}. GPU values
+for the five small designs come from one A100 session; the \texttt{gtex}
+dispersion row is retained because that stage precedes replacement, while its
+downstream GPU cells are pending.}
 \end{table}
 
 \subsection{Scaling on synthetic data}
 \label{sec:roofline}
-\note{ncu counters blocked $\Rightarrow$ empirical roofline: sustainable BW
-1258 GB/s, but the loop's 1--10 MB arrays reach only 3--44\% of it, and
-\_lp\_and\_dlp takes the same time for 2k vs 20k genes $\Rightarrow$
-launch/latency-bound, not memory- or compute-bound. This is what graphs/fusion
-attack.}
+Synthetic data lets the gene and sample axes move independently, which is what
+identifies \emph{why} the dispersion loop is slow rather than only how slow it is.
+We first establish the bound. Hardware counters were unavailable on this instance,
+so the roofline is measured empirically: a three-array fp64 streaming probe sustains
+\fact{1369\,GB/s}, or \fact{88\%} of the A100's 1555\,GB/s specified peak, and the
+loop's kernels come nowhere near it. At $60\times20{,}000$ the elementwise weight
+update reaches \fact{21\%} of sustained bandwidth and the \texttt{lgamma} and
+\texttt{digamma} evaluations \fact{43\%} and \fact{36\%}; at $60\times2{,}000$ all
+three fall to \fact{3--8\%}, compute-bound on the special functions rather than
+starved for bandwidth. Neither regime is the binding constraint. What settles it is
+the assembled objective-and-gradient evaluation \texttt{\_lp\_and\_dlp}, the body of
+the loop: \fact{1287\,\textmu s} at $20{,}000$ genes and \fact{1292\,\textmu s} at
+$2{,}000$. A tenfold change in arithmetic and bytes moved produces no change in wall
+time. This is the signature of a loop paying mainly for launches and dispatch.
+That is the cost graph replay and Triton fusion attack, and why they buy more than a
+better-tuned kernel could.
+
+The earlier synthetic end-to-end comparison used
+\texttt{nbinomWaldTest} without the standard replacement/refit branch. We do
+not relabel those measurements as DESeq2~1.52.0 results. A new A100 run is
+required before that table can be restored. The scaling experiments below
+isolate the dispersion optimizer and do not depend on the wrapper branch.
+If the loop is launch-bound, the accelerators should pay most where iterations are
+many and each is cheap, and fade as every iteration acquires enough arithmetic to
+fill the device. The sample axis tests that directly
+(Table~\ref{tab:samplesweep}). Holding genes at $2{,}000$ and sweeping $S$ from a
+$2\mathrm{v}2$ pilot to a $2{,}000$-sample cohort, the graph's speedup on the
+isolated gene-wise ascent loop declines from \fact{7.6$\times$} at $S{=}4$ to
+\fact{0.97$\times$} at $S{=}2000$: by two thousand samples the launch overhead it
+removes is a rounding error against the per-iteration work, and replay is no longer
+worth its bookkeeping. Triton decays over the same range but never loses, from
+\fact{67.8$\times$} to \fact{6.4$\times$}, since fusion removes the intermediate
+traffic as well as the launches. Two features of the sweep are structural rather
+than noise. The $S{=}4$ and $S{=}6$ rows run the full \fact{100}-iteration cap
+while every larger $S$ converges in \fact{13--25}, which is most of why the
+small-sample regime is both the slowest and the most accelerable. And $S{=}4$ is
+the one row where the stage-level speedup ($1.8\times$) falls far below the
+loop-level one ($67.8\times$): with $m-p=2$ that design takes the stochastic KL
+branch (Sec.~\ref{sec:disp}), whose compiled replay of R's random stream is serial
+host work no GPU mode touches, contributing $\approx$\fact{470\,ms} to every mode
+at $S{=}4$ and nothing at $S{=}6$. It is Amdahl's remainder for that row.
+
 \begin{table}[htbp]\centering
-\caption{Per-step wall time (ms), $60\times20000$ genes, single A100 vs R~DESeq2
-(12-core box). \fact{Reproduce: \texttt{benchmarks/bench\_per\_step.py}.}}
-\label{tab:perstep}
-\begin{tabular}{lrrrrr}
+\caption{Sample-axis scaling at $2{,}000$ genes, \texttt{\~{}condition} ($P{=}2$),
+single A100. ``GW loop'' is the isolated gene-wise Cox--Reid gradient-ascent fit
+(Sec.~\ref{sec:disp}), the part the accelerators act on; ``full stage'' is
+\texttt{fit\_dispersions} around it,
+including host-side trend fitting. Speedups are against eager in the same row.
+The graph is bit-identical to eager at every $S$ (max$|\Delta|=0$); Triton is not,
+and agrees to $\le$\fact{3.0e-8} here. \fact{Reproduce:
+\texttt{benchmarks/bench\_cuda\_graph.py --sample-sweep} $\to$
+\texttt{benchmarks/results\_a100\_samplesweep.json}.}}
+\label{tab:samplesweep}
+\small
+\begin{tabular}{rrrrrrrrr}
 \toprule
-Step & R 1-thr & R 12-core & eager & graph & Triton \\\midrule
-normalization & 457 & 457 & 1 & 1 & 1 \\
-dispersion & 14179 & 9702$^\dagger$ & 220 & 122 & 23 \\
-glm\_fit & 5196 & (bundled) & 12 & 12 & 12 \\
-significance & 280 & 284 & 166 & 166 & 166 \\
-lfc\_shrink & 8595 & 5747 & 119 & 119 & 119 \\\midrule
-\textbf{TOTAL} & \textbf{28707} & \textbf{16190} & \textbf{517} & \textbf{420} & \textbf{320} \\\bottomrule
+ & & \multicolumn{3}{c}{GW loop (ms)} & \multicolumn{2}{c}{GW speedup} & \multicolumn{2}{c}{full-stage speedup} \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}
+$S$ & iters & eager & graph & Triton & graph & Triton & graph & Triton \\\midrule
+4    & 100 & 350.6 & 46.1  & 5.2  & 7.60 & 67.80 & 1.61 & 1.84 \\
+6    & 100 & 337.8 & 46.3  & 5.1  & 7.29 & 66.57 & 6.27 & 40.28 \\
+30   & 13  & 45.2  & 10.9  & 3.2  & 4.16 & 14.21 & 3.84 & 13.53 \\
+60   & 15  & 52.4  & 11.4  & 3.2  & 4.58 & 16.40 & 3.89 & 14.52 \\
+200  & 16  & 54.2  & 14.7  & 3.2  & 3.70 & 16.76 & 3.20 & 13.36 \\
+1000 & 18  & 64.9  & 44.1  & 9.8  & 1.47 & 6.62  & 1.31 & 6.85 \\
+2000 & 25  & 128.7 & 133.1 & 20.2 & 0.97 & 6.38  & 1.09 & 6.56 \\\bottomrule
 \end{tabular}
-\\[3pt]
-{\footnotesize $^\dagger$DESeq2 parallelizes dispersion+GLM as one gene-chunked
-bundle; the two rows share it. Totals give Triton-vs-best-R speedups of
-16.6/27.5/50.5/25.2$\times$ across the four cases.}
 \end{table}
-\note{Gene axis (2k vs 20k) and sample axis (2v2 pilot to 2000 samples): the
-accelerators help most in the launch-bound small-sample regime (at n=4--6 the
-graph gains 7.3$\times$ on the NR loop over eager, Triton 40$\times$); at $>$1000
-samples the loop becomes compute-bound.
-Multi-core R only beats single-thread at $\geq$20k genes (fork overhead below
-that).}
+
+The gene axis says the same thing from the other side. Taking $2{,}000$ to
+$20{,}000$ genes at fixed $S{=}60$ multiplies the work tenfold but the eager stage
+time only by \fact{1.7$\times$} at $P{=}2$ (\fact{128}$\to$\fact{215}\,ms) and
+\fact{1.2$\times$} at $P{=}4$ (\fact{196}$\to$\fact{228}\,ms): nine tenths of the
+added genes are absorbed into launch latency the small case already paid. Because
+that fixed overhead is amortized over more genes at $20{,}000$, it is also where
+the graph has least left to remove, its stage speedup dropping from
+\fact{4.5$\times$} to \fact{1.8$\times$} at $P{=}2$ (\fact{3.7$\times$} to
+\fact{2.2$\times$} at $P{=}4$). Graph capture is a warm-path optimization: the
+one-time capture costs \fact{508--819\,ms} across these four configurations, so it
+is recovered only when many matrices of one shape are fitted in a session, as in the
+serving pattern the virtual-cell evaluation loops of the Introduction generate.
 
 \subsection{Ablations}
-\begin{itemize}[leftmargin=1.4em]
-  \item Fixed-length vs chunked CUDA graph: on the full dispersion stage
-        0.8--1.1$\times$ $\to$ 1.7--3.4$\times$ (isolated NR loop, up to
-        5.5$\times$); a fixed capture must run all 100 iterations, which costs
-        more than the launches it saves.
-  \item Fixed-iteration vs per-gene early-exit Triton (fixes the 20k regression).
-  \item apeGLM: batched Newton (global optimum, mismatches R on bimodal genes)
-        vs.\ the ported L-BFGS (reference's local optimum; parity restored).
-  \item \texttt{GRAPH\_CHUNK} sweep (chunk 10 near-optimal).
-\end{itemize}
+\label{sec:ablations}
+Three design choices in Sec.~\ref{sec:modes}--\ref{sec:apeglm} could reasonably
+have gone the other way, and each is worth separating from the headline numbers.
+
+\textbf{Chunk length, and why a full-length capture fails.} The obvious way to
+graph an iterative loop is to capture all of it, and that is the worst
+configuration we measured. Because a captured graph cannot branch on a convergence
+flag, a capture of $k$ iterations must be replayed $\lceil \mathrm{iters}/k \rceil$
+times, so the loop executes $\lceil \mathrm{iters}/k \rceil \cdot k$ iterations
+rather than the $\mathrm{iters}$ eager early-exits after; done genes are frozen
+no-ops but still cost their share of the kernel. Sweeping $k$ over the divisors of
+$\mathrm{maxit}=100$ (Table~\ref{tab:chunksweep}) traces that cost model. The
+full-length capture $k{=}100$ rounds $26$ real iterations up to $100$ and gives
+back almost all the benefit: \fact{1.84$\times$} instead of \fact{5.57$\times$} at
+$2{,}000$ genes, \fact{1.01$\times$} instead of \fact{2.45$\times$} at $20{,}000$,
+where it is indistinguishable from not graphing at all. What the sweep shows is
+that the padded iteration count, not the replay count, sets the time: rows
+executing the same number of iterations land within a couple of per cent of each
+other however many replays that took ($k{=}25$ and $k{=}50$ both pad to $50$ and
+differ by $0.4\%$ at $2{,}000$ genes; $k{=}2$ through $k{=}20$ all pad to $40$ and
+differ by $2\%$ at $20{,}000$). The one row that breaks the pattern breaks it
+informatively: at $2{,}000$ genes $k{=}2$ executes the fewest iterations of any
+setting ($26$, exactly what eager runs) yet is $13\%$ slower than $k{=}10$ at $30$,
+because a two-iteration chunk pays the per-replay cost thirteen times over. Between
+these failure modes (too much padding and too many replays), the optimum
+is broad. We ship $k{=}10$: the sweep maximum at $2{,}000$ genes and within noise
+of it at $20{,}000$ ($2.45\times$ vs.\ $2.46\times$), so one default serves both.
+
+\begin{table}[htbp]\centering
+\caption{\texttt{GRAPH\_CHUNK} sweep on the isolated gene-wise loop, single A100,
+\texttt{\~{}condition}. ``iters run'' is
+$\lceil \mathrm{iters}/k\rceil\cdot k$, the padded count the replay actually
+executes; the eager loop early-exits after $26$ and $40$ iterations
+respectively. $k{=}100$ captures the whole loop in one graph and is therefore the
+fixed-full-length-capture ablation. Every $k$ is bit-identical to eager
+(max$|\Delta|=0$), so these are pure scheduling trade-offs.
+\fact{Reproduce: \texttt{benchmarks/bench\_cuda\_graph.py --sweep} $\to$
+\texttt{benchmarks/results\_a100\_sweep.json}.}}
+\label{tab:chunksweep}
+\small
+\begin{tabular}{rrrrcrrr}
+\toprule
+ & \multicolumn{3}{c}{$60\times2{,}000$ (eager 90.0\,ms)} & & \multicolumn{3}{c}{$60\times20{,}000$ (eager 140.3\,ms)} \\
+\cmidrule(lr){2-4}\cmidrule(lr){6-8}
+$k$ & iters run & graph (ms) & speedup & & iters run & graph (ms) & speedup \\\midrule
+2   & 26  & 18.34 & 4.91 & & 40  & 58.20  & 2.41 \\
+5   & 30  & 16.32 & 5.52 & & 40  & 57.47  & 2.44 \\
+10  & 30  & 16.17 & \textbf{5.57} & & 40  & 57.29  & 2.45 \\
+20  & 40  & 20.80 & 4.33 & & 40  & 56.96  & \textbf{2.46} \\
+25  & 50  & 25.49 & 3.53 & & 50  & 70.79  & 1.98 \\
+50  & 50  & 25.40 & 3.54 & & 50  & 70.82  & 1.98 \\
+100 & 100 & 48.81 & 1.84 & & 100 & 139.27 & 1.01 \\\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Per-gene early exit in the fused kernel.} The Triton kernel's loop is
+guarded per program by \texttt{(it < maxit) \& (\textasciitilde done)}
+(Sec.~\ref{sec:triton}) rather than run for a fixed trip count, and the iteration
+counts of Table~\ref{tab:samplesweep} bound what that is worth: outside the
+small-sample regime the loop converges in \fact{13--25} iterations against a cap
+of \fact{100}, so a fixed-trip kernel would execute four to nearly eight times
+the loop body for an identical answer. The saving is largest exactly where the
+batch is widest, since a fixed trip count makes every gene wait for the cap
+rather than for its own convergence. This is a bound inferred from the shipped
+kernel's measured iteration counts rather than a measured A/B: the released code
+exposes no fixed-trip switch to compare against.
+
+\textbf{The apeGLM optimizer is a parity choice, not a speed choice.} A batched
+Newton solver for the shrinkage step is both simpler to write and faster than
+porting apeGLM's L-BFGS, and it disagrees with R. The
+reason is the one described in Sec.~\ref{sec:apeglm}: the Cauchy-prior posterior
+is bimodal for extreme-effect genes, R reports whichever mode its own optimizer
+reaches from its own initialization, and a solver that finds the global optimum
+therefore returns a better estimate that is not the reference's. This is the one
+place where improving on the reference and reproducing it are in direct conflict,
+and a drop-in replacement has to choose reproduction. Porting the reference's
+optimizer restores agreement to $r\ge$\fact{0.997} on shrunk log-fold-changes
+across all six designs (Table~\ref{tab:parity}) while keeping the stage on the
+GPU with no per-gene host fallback.
 
 % ===========================================================================
 \section{Discussion}
-\todo{Reference-faithful GPU DE is feasible and fast; the wins come from treating
-per-gene fits as batched GPU work and from removing launch overhead, not from
-approximation. State current scope honestly and the path to closing it.}
+\cudeseq{} preserves the DESeq2 model and its numerical settings. It uses fp64,
+the reference convergence tolerances, and the same optimizer sequences, clamps,
+and line searches. Table~\ref{tab:parity} reports agreement for size factors,
+gene-wise and MAP dispersions, coefficients, Wald statistics, adjusted
+p-values, and apeGLM-shrunk effects. The measured end-to-end gain on the
+five complete A100 comparisons is \fact{10.4--27.7$\times$}.
 
-\noindent\textbf{Limitations.}
+The dispersion loop is limited mainly by launch and dispatch latency at the
+tested sizes (Sec.~\ref{sec:roofline}). Its working set is small, it uses only a
+fraction of sustainable memory bandwidth, and runtime follows iteration count
+more closely than gene count. Batching replaces sequential per-gene fits with
+tensor operations. CUDA-graph replay and Triton fusion reduce the remaining
+per-iteration overhead. The benefit is largest for designs with few samples,
+many genes, and many optimizer iterations, and declines as each iteration
+contains enough work to occupy the device.
+
+Numerical compatibility required details that are not specified by the
+statistical model. R's random-number stream and its kd-tree
+\texttt{loess} implementation affect the dispersion prior at small residual
+degrees of freedom (Sec.~\ref{sec:disp}). The $\mu$ floor in
+\texttt{fitBeta.cpp} affects Wald standard errors for degenerate genes
+(Sec.~\ref{sec:deplots}). For extreme effects, apeGLM's L-BFGS initialization
+can select among local modes (Sec.~\ref{sec:apeglm}). Matching the published
+equations without these implementation details yields valid estimates, but not
+the same output as DESeq2.
+
+Speedup also depends on the CPU, worker count, and dominant pipeline stage.
+The current controlled comparison is single-threaded
+(Sec.~\ref{sec:realtiming}); it should not be read as a hardware-independent
+ratio. Small designs are often shrinkage-bound, whereas the largest cohort is
+dominated by dispersion and outlier refitting.
+
+\subsection{Limitations}
+\label{sec:limitations}
 \begin{itemize}[leftmargin=1.4em]
   \item Tested designs: single factor (up to four levels), additive
-        multi-factor (up to P=5), continuous. Not yet: interaction designs,
-        $n<6$.
-  \item Not implemented: \texttt{replaceOutliers} refit, \texttt{lfcShrink}
-        types \texttt{normal}/\texttt{ashr}, \texttt{glmGamPoi}, VST/rlog.
+        multi-factor (up to $P{=}5$), continuous. Not yet: interaction designs.
+        Parity is not tested below $n{=}7$, the smallest real design here; the
+        synthetic fixtures start at 12 samples.
+  \item Not implemented: \texttt{lfcShrink} types
+        \texttt{normal}/\texttt{ashr}, \texttt{glmGamPoi}, VST/rlog.
   \item Triton path: $P\in\{2,\dots,6\}$ (falls back to eager otherwise); not
-        bit-identical to eager --- agreement is $\le$3.2e-7 in dispersion on the
+        bit-identical to eager; agreement is $\le$3.2e-7 in dispersion on the
         five small-$n$ sets, with a worst case of 2.6e-1 relative on one
         \texttt{gtex} gene.
-  \item Benchmarks: single A100, 12-core R host; DESeq2 1.30.1 only.
+  \item Benchmarks: a single GPU (one A100), so we cannot report how the three
+        modes reorder on a smaller or newer device. The standard-pipeline
+        \texttt{gtex} A100 timing is pending and is excluded from the speedup
+        range; parity is measured against DESeq2~1.52.0.
 \end{itemize}
-\todo{Future: more designs (interactions, many-level factors), additional shrink
-types, GPU-side independent filtering / trend fit, multi-GPU cohorts.}
+
+\noindent\textbf{Future work.} The remaining compatibility work includes the
+\texttt{normal} and \texttt{ashr} shrinkage estimators, interaction and
+many-level factor designs, and extension of the fused kernel past $P{=}6$.
+Independent filtering and the parametric dispersion-trend fit remain on the
+host because neither contains a per-gene optimizer to batch. They become
+larger fractions of runtime as the gene-wise fits get cheaper. The per-gene
+independence also permits sharding across devices, but multi-GPU execution has
+not been measured. The parity methodology here is specific to DESeq2, but the
+failure modes it caught (an implementation-defined random stream, a smoother
+that is not the estimator it approximates, a floor buried in a C++ inner
+loop) also apply to ports of other statistical software.
 
 % ===========================================================================
 \section*{Funding}
-\todo{Grant numbers, or ``This work received no specific grant \dots''}
+This work was supported by Synthesize Bio. It received no specific grant from
+any funding agency in the public, commercial or not-for-profit sectors.
 
 \section*{Conflict of Interest}
-none declared.
+All authors are affiliated with Synthesize Bio, which developed and maintains
+the software described here and released it under the MIT license. The authors
+declare no other competing interests.
 
 \section*{Data and software availability}
-\sloppypar
+\begin{sloppypar}
 Every dataset used here is public and previously published; this work generated
 no new sequencing data. pasilla \citep{brooks2011pasilla} and airway
 \citep{himes2014airway} are the Bioconductor experiment packages of the same
@@ -984,18 +1037,20 @@ use, so all six designs are reconstructible from the two scripts.
 
 Source code, tests, and benchmark harnesses are available at
 \url{https://github.com/synthesizebio/gpu_deseq}, released under the MIT
-license. Reproduce with:
+license. The package is distributed as \texttt{gpu-deseq} and imported as
+\texttt{gpu\_deseq}; it requires Python~3, PyTorch and a CUDA GPU, with Triton
+for the fused mode. A Docker image definition pins R~4.6.0,
+Bioconductor~3.23, DESeq2~1.52.0, apeglm~1.34.0, PyTorch~2.6.0/CUDA~12.4 and
+the LaTeX toolchain. The same image runs CPU reference generation and,
+through the NVIDIA container runtime, the GPU benchmark. Reproduce with:
+\end{sloppypar}
 \begin{lstlisting}
-# parity (all three modes)
-GPU_DESEQ_ACCEL={eager|graph|triton} pytest tests/
-# real-data parity + timing (Tables 1-3)
-python bench/bench.py
-# real-data validation vs R, incl. apeGLM shrink
-python validation/validate.py
-# per-step vs R (1-thread + k-core)
-python benchmarks/bench_per_step.py --ncores 12
-# roofline
-python benchmarks/roofline_empirical.py
+make container-build
+make container-check
+make container-test
+make container-r-reference
+make container-gpu-benchmark
+make container-paper
 \end{lstlisting}
 
 \bibliographystyle{plainnat}
@@ -1003,8 +1058,8 @@ python benchmarks/roofline_empirical.py
 
 % ===========================================================================
 \clearpage
-\section*{Supplementary figures}
-\addcontentsline{toc}{section}{Supplementary figures}
+\section*{Supplementary algorithms}
+\addcontentsline{toc}{section}{Supplementary algorithms}
 \label{sec:supplementary}
 
 Supplementary Algorithm~\ref{alg:triton-overview} gives a high-level view of the

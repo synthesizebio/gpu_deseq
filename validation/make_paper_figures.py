@@ -1,5 +1,5 @@
 """Standard differential-expression figures for the paper, drawn twice: once from
-R DESeq2 1.30.1's reference output and once from cuDESeq2, so that parity is shown
+R DESeq2 1.52.0's reference output and once from cuDESeq2, so that parity is shown
 in the plots a DE analyst actually reads rather than only as a table of residuals.
 
 Two figures are produced in paper/figures/:
@@ -45,6 +45,7 @@ sys.path.insert(0, "src")
 from gpu_deseq import DESeqDataset, fit_size_factors, fit_dispersions, wald_test, results, lfc_shrink
 
 DATA = Path("validation/data")
+BENCH_CACHE = Path("bench/cache")
 FIGD = Path("paper/figures"); FIGD.mkdir(parents=True, exist_ok=True)
 
 #: Dataset shown in the six-panel diagnostics figure. airway is the canonical
@@ -100,8 +101,9 @@ def _meta(name):
 def r_side(name):
     """R DESeq2's reference output for one case, one row per gene."""
     d = DATA / name
-    res = pd.read_csv(d / "r_results.csv").set_index("gene")
-    shr = pd.read_csv(d / "r_shrink.csv").set_index("gene")
+    reference = BENCH_CACHE / name
+    res = pd.read_csv(reference / "r_results.csv").set_index("gene")
+    shr = pd.read_csv(reference / "r_shrink.csv").set_index("gene")
     det = pd.read_csv(d / "r_disp_details.csv").set_index("gene")
     out = pd.DataFrame({
         "baseMean": det["baseMean"],
@@ -121,6 +123,18 @@ def r_side(name):
 def our_side(name, device, refresh=False):
     """cuDESeq2's output for one case, same columns as r_side(), cached on disk."""
     cache = DATA / name / "ours.csv"
+    reference_cache = BENCH_CACHE / name / "cu_reference_results.csv"
+    if reference_cache.exists() and not refresh:
+        current = pd.read_csv(reference_cache, index_col=0)
+        details = pd.read_csv(cache).set_index("gene") if cache.exists() else None
+        if details is not None:
+            for column in ("dispGeneEst", "dispFit", "dispOutlier"):
+                current[column] = details[column]
+        if "pvalue" not in current:
+            from scipy.stats import norm
+            current["pvalue"] = 2.0 * norm.sf(np.abs(current["stat"]))
+        current = current.rename(columns={"shrunk_lfc": "shrunkLFC"})
+        return current
     if cache.exists() and not refresh:
         return pd.read_csv(cache).set_index("gene")
 
@@ -306,7 +320,7 @@ def fig_diagnostics(name, device, refresh):
     r, o, meta = load(name, device, refresh)
     lims = _diagnostic_limits(r)
     fig, axes = plt.subplots(2, 3, figsize=(6.9, 4.55))
-    rows = [("R DESeq2 1.30.1", r), ("cuDESeq2", o)]
+    rows = [("R DESeq2 1.52.0", r), ("cuDESeq2", o)]
     for i, (label, df) in enumerate(rows):
         top = i == 0
         panel_dispersion(axes[i, 0], df, lims["disp"], legend=top)
@@ -380,7 +394,7 @@ def fig_concordance(cases, device, refresh, focus):
     r, o, meta = loaded[focus]
     bins = np.linspace(0, 1, 26)
     ax.hist(r["pvalue"].dropna(), bins=bins, color=BLUE, alpha=0.5,
-            label="R DESeq2 1.30.1", linewidth=0)
+            label="R DESeq2 1.52.0", linewidth=0)
     ax.hist(o["pvalue"].dropna(), bins=bins, histtype="step", color=ORANGE,
             lw=1.0, label="cuDESeq2")
     ax.set_xlabel("p-value"); ax.set_ylabel("genes")

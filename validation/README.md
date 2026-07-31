@@ -1,263 +1,72 @@
-# Real-data validation — cuDESeq2 vs R DESeq2 1.30.1
+# Real-data validation
 
-Validates cuDESeq2 against R DESeq2 on **real published RNA-seq datasets** (not
-synthetic fixtures), quantifying agreement on the outputs that drive biological
-conclusions: log2 fold changes, test statistics, adjusted p-values / significance
-calls, and apeGLM-shrunk LFCs.
+This directory compares cuDESeq2 with the current R/Bioconductor reference on
+six designs from pasilla, airway, and GTEx. The current committed reference was
+generated with R 4.6.0, DESeq2 1.52.0, and apeglm 1.34.0.
 
-## Run
+Both implementations run the standard Wald pipeline:
+
+1. size-factor estimation;
+2. gene-wise, trend, and MAP dispersion estimation;
+3. Wald fitting and Cook's-distance calculation;
+4. eligible count-outlier replacement and affected-gene refitting;
+5. independent filtering, multiple-testing correction, and apeGLM shrinkage.
+
+The replacement branch requires at least seven replicates in a design cell. It
+is therefore inactive for the five 7- or 8-sample designs and active for the
+300-sample GTEx contrast.
+
+## Reproduce
+
+The benchmark cache is the reference source used by the paper:
 
 ```bash
-Rscript validation/fetch_and_reference.R              # exports data + R reference (pasilla, airway)
-Rscript validation/prepare_gtex.R                     # large cohort: GTEx (recount2), 300 samples
-PYTHONPATH=src python validation/validate.py          # runs cuDESeq2, compares, plots
+R_BIN=.r46/bin/Rscript PYTHONPATH=src .venv/bin/python bench/bench.py
+PYTHONPATH=src .venv/bin/python bench/reference_parity.py --device cuda
 ```
 
-For the paper's DE-plot figures, additionally export the dispersion components R
-keeps in `mcols()` but `fetch_and_reference.R` does not save, then draw them:
+The second command must run on the A100 to refresh execution-mode comparisons.
+For a version-only reference update on a machine without CUDA, use
+`--device cpu`; this updates DESeq2 parity but is not a GPU timing run.
+
+Export the R dispersion components used by the diagnostic figure and redraw the
+figures:
 
 ```bash
-Rscript validation/export_r_dispersion_details.R      # + r_disp_details.csv per case (~1 min, gtex ~5)
-PYTHONPATH=src python validation/make_paper_figures.py  # -> paper/figures/de_*.pdf|png
+PATH="$PWD/.r46/bin:$PATH" .r46/bin/Rscript \
+  validation/export_r_dispersion_details.R
+PYTHONPATH=src .venv/bin/python validation/make_paper_figures.py --device cpu
 ```
 
-Requires DESeq2 1.30.1 + apeglm + the `pasilla` and `airway` Bioconductor data
-packages (`BiocManager::install(c("pasilla","airway"))`), and `matplotlib`. The
-GTEx case additionally needs the recount2 RSE (1.37 GB, downloaded once from the
-recount-opendata S3 bucket — see the header of `prepare_gtex.R`).
-Reference factor levels are set explicitly (untreated/untrt as base) on both
-sides so the contrast matches exactly (no sign flip).
+Refresh the compact per-case reports from the committed captures without
+rerunning timing loops:
 
-## Datasets / designs
+```bash
+PYTHONPATH=src .venv/bin/python validation/validate.py \
+  --from-cache --skip-timing
+```
 
-Six real design-cases from three published datasets, spanning P=2..5, single-
-and multi-factor, two organisms, and **7 → 300 samples**. The Triton fused kernel
-covers P in {2,...,6} (wider designs defer to the eager path), so every case here
-exercises it on real data.
+## Current datasets
 
-| case | organism | design | P | samples × genes | Triton kernel |
-|---|---|---|---|---|---|
-| pasilla       | *Drosophila* | `~ condition`        | 2 | 7 × 12 359    | yes |
-| pasilla_2fac  | *Drosophila* | `~ type + condition` | 3 | 7 × 12 359    | yes |
-| airway_dex    | human        | `~ dex`              | 2 | 8 × 33 469    | yes |
-| airway_cell   | human        | `~ cell`             | 4 | 8 × 33 469    | **yes** |
-| airway        | human        | `~ cell + dex`       | 5 | 8 × 33 469    | **yes** |
-| **gtex_blood_muscle** | human | `~ tissue`         | 2 | **300 × 54 922** | **yes** |
+| case | design | P | samples × genes |
+|---|---|---:|---:|
+| pasilla | `~ condition` | 2 | 7 × 12,359 |
+| pasilla_2fac | `~ type + condition` | 3 | 7 × 12,359 |
+| airway_dex | `~ dex` | 2 | 8 × 33,469 |
+| airway_cell | `~ cell` | 4 | 8 × 33,469 |
+| airway | `~ cell + dex` | 5 | 8 × 33,469 |
+| gtex_blood_muscle | `~ tissue` | 2 | 300 × 54,922 |
 
-`gtex_blood_muscle` is a large-cohort case: GTEx (GTEx Consortium — the canonical
-human RNA-seq resource) via recount2, Whole Blood vs Skeletal Muscle, 150 samples
-per group. It is ~40× the sample count of airway and is where R's single-thread
-cost becomes prohibitive (5.4 minutes; see timing).
+The authoritative current metrics are
+[`bench/results/reference_parity.json`](../bench/results/reference_parity.json);
+the paper-ready summary is
+[`bench/results/TABLES.md`](../bench/results/TABLES.md). At adjusted
+`p < 0.05`, four designs reproduce the R called set exactly. Airway/dex and
+GTEx differ by one boundary gene each, with Jaccard indices 0.99963 and
+0.99997. The worst dispersion p95 relative error is 0.00427, and the worst
+apeGLM-shrunk-LFC Pearson correlation is 0.99722.
 
-## Results (single A100)
-
-| case | LFC Pearson r | Wald stat r | sig Jaccard@0.05 | sig (ours/R) | dispersion p95 | shrunk LFC r |
-|---|---|---|---|---|---|---|
-| pasilla      | 1.000000 | 1.00000 | **1.000** | 840 / 840     | 6.7e-4 | 0.999997 |
-| pasilla_2fac | 0.999858 | 1.00000 | **1.000** | 1069 / 1069   | 2.4e-4 | 0.999991 |
-| airway_dex   | 1.000000 | 0.99999 | **0.9996** | 2701 / 2700   | 1.0e-3 | 0.998593 |
-| airway_cell  | 1.000000 | 1.00000 | **1.000** | 206 / 206     | 2.8e-3 | 0.997224 |
-| airway       | 1.000000 | 1.00000 | **1.000** | 3993 / 3993   | 4.5e-4 | 0.999998 |
-| **gtex_blood_muscle** | 0.998087† | 0.99961 | **0.9805**‡ | 33 284 / 33 942 | 4.4e-3 | 0.999995 |
-
-†GTEx raw-LFC p95 |Δ| = **2.2e-5** (absolute agreement is essentially exact); the
-Pearson r sits at 0.998 only because 300-sample tissue contrasts produce a handful
-of extreme-LFC genes (near-zero counts in one tissue) that dominate the
-correlation.
-
-‡GTEx is the only case that does not reach an exact or near-exact called set, and
-the reason is entirely the `replaceOutliers` step we do not implement (see
-[Residuals](#residuals-not-attributable-to-the-dof3-prior-estimator)): scored
-against the R substep chain, which also skips replacement, GTEx significance is
-**0.9996**. Four of the six designs now reproduce R's called set exactly.
-
-The apeGLM-shrunk LFC now matches R to **r ≥ 0.997** on every case (0 divergent
-genes on pasilla/pasilla_2fac/GTEx; 1–12 flat-optimum tie genes on the others,
-p95 |Δ| ≤ 4e-4). The three execution modes (eager / CUDA-graph / Triton) produce
-identical results on every case except a handful of dispersion-boundary genes
-whose ~1e-14 kernel differences don't affect any DE call
-(verify: `GPU_DESEQ_ACCEL={graph,triton} python validation/validate.py`).
-
-Figures: `validation/figures/*.png`. Raw metrics: `validation/results/*.json`.
-
-## Timing
-
-The authoritative, reproducible timing tables (total-pipeline and per-substep,
-for R / cuDESeq2 eager·graph·triton / a PyDESeq2 competitor) live in
-[`../bench/results/TABLES.md`](../bench/results/TABLES.md), regenerated by
-`bench/bench.py`. Headline on the same six datasets (single A100 vs single-thread
-R DESeq2 1.30.1): best cuDESeq2 mode is **8–78× faster end-to-end**, with the
-300-sample GTEx cohort going from R's **5.8 minutes to ~4.5 s** and its dominant
-dispersion step from **231 s to 0.2 s**. `validate.py` also prints a full-pipeline
-timing table (including apeGLM shrink) and writes it to `results/*.json`.
-
-### Coverage note
-
-Coverage now spans **7 → 300 samples**. The large-cohort case is GTEx via recount2
-(the Bioconductor 3.12 experiment-data mirror 504'd for `parathyroid`/`fission`/
-`macrophage`, so we pulled GTEx from the recount-opendata S3 bucket instead — the
-harness takes any counts+coldata). apeGLM-shrunk LFC now agrees with R to r ≥ 0.997
-on every case (see the results table); the residual is a handful of flat-optimum
-tie genes with no effect on any DE call.
-
-## Root-cause history (three dispersion bugs, all fixed)
-
-An earlier run showed per-gene dispersion diverging 11–37 % on the small-*n* real
-data (while LFC/significance already matched), which a stage-by-stage comparison
-(gene-wise MLE → trend → MAP → final) localized to **two** specific stages:
-
-1. **Parametric dispersion trend fit.** Our port used scipy L-BFGS-B on a
-   *progressively shrunk* fit set and lacked R's `useForFit` filter. Replaced
-   with a faithful port of R's `parametricDispersionFit`: an IRLS Gamma GLM
-   (identity link), warm-started, with the outlier set recomputed from the full
-   `dispGeneEst > 100·minDisp` set each iteration. Fixed both datasets
-   (`dispFit` 14–31 % → ~1e-4).
-2. **Small-residual-dof prior variance.** R's `estimateDispersionsPriorVar` uses
-   a **KL-divergence grid search** (not the closed-form
-   `max(varLogDispEsts − trigamma, 0.25)`) when residual dof `(m−p) ≤ 3` — which
-   is airway (n=8, P=5 ⇒ dof=3) but not pasilla (dof=5). We now implement it
-   (`_prior_var_kl_grid`). This took airway's final dispersion from 37 % →
-   **6.7 %**; fixes 2b and 2c below then closed it completely.
-
-2b. **KL-curve smoother: Savitzky–Golay → R's actual loess.** The first pass
-   approximated R's `loess(span=0.2, degree=2)` with a local-quadratic
-   Savitzky–Golay filter, and the second attempt (an exact tricube
-   local-quadratic fit) was **also** wrong, because R's default
-   `surface="interpolate"` is not the exact surface. R builds a kd-tree over the
-   predictor, fits only at its vertices (value **and** slope), and cubic-Hermite
-   interpolates between them. Since that is what DESeq2 computes, it is what we
-   must compute. `_loess_quadratic` now reproduces it: kd-tree cuts match R's
-   `kd$xi` to **5e-15** and `predict` to **1e-14**. Argmin on the same KL
-   curve — Savitzky–Golay **0.6086**, exact "direct" surface **0.5526**, R's
-   "interpolate" surface **0.5445**, R itself **0.5285** — taking airway
-   dispersion p95 **6.7 % → 2.8 % → 1.4 %**.
-
-2c. **RNG: NumPy PCG64 → a bit-exact replay of R's stream** (`_r_rng`).
-   `set.seed(2)` fixes the stream *within R only*, so any other generator draws
-   different numbers and shifts the KL curve's noise. We now replay R's stream
-   itself: its LCG-based seeding of the MT state (R does **not** use MT's
-   `init_genrand`), its single-word 32-bit → double conversion, its inversion
-   `rnorm` over **Wichura AS 241** (SciPy's Cephes `ndtri` differs in the last
-   bit), its Ahrens–Dieter `exp_rand`, and its `rgamma` (GS below shape 1, GD
-   above). These are rejection samplers consuming a variable number of uniforms
-   per draw, so the stream is inherently sequential and is compiled with numba
-   (~0.3 s, vs ~38 s interpreted).
-
-   One detail is load-bearing: **R's `rnorm` returns `mu` without touching the
-   generator when `sigma == 0`**, so the `x = 0` grid point draws no normals.
-   Taking them desynchronises every later grid point — that bug alone was worth
-   one grid step. Pinned by `tests/test_r_rng.py`.
-
-   Result: the simulated KL curve matches R's to **5e-15** and the branch
-   returns R's prior variance **0.5285285285285285 bit for bit**. airway
-   dispersion p95 **1.4 % → 0.045 %**, and its significant-gene set is now
-   **identical** to R's (3993/3993).
-
-Adding the **300-sample GTEx cohort** then surfaced a **third**, sample-size-
-dependent bug that the small-*n* cases could not have caught:
-
-3. **Dispersion cap not sample-size-aware.** R sets `maxDisp <- max(10, ncol)`,
-   so at n=300 it reports dispersions up to ~300. The final MAP dispersion was
-   re-clamped to the constant `MAX_DISP = 10` ([`api.py`](../src/gpu_deseq/api.py)),
-   truncating the ~27 % of (near-zero-count, genuinely ultra-overdispersed) genes
-   whose true dispersion exceeds 10 — giving them p95 relative error up to 97 %.
-   For n ≤ 10 (pasilla/airway) `max(10, n) = 10`, so the clamp coincided with R
-   and the bug was invisible; it only bites once n > 10. Fixed by clamping the
-   MAP to `max(MAX_DISP, n_samples)`, matching R's rule. GTEx final-dispersion
-   p95 **0.967 → 4.4e-3** (0 genes over 10 % error, from 27 %); log-posterior
-   check confirms the fixed estimates match R's optimum. The small-*n* cases are
-   byte-identical before/after (their effective cap is unchanged).
-
-All three fixes preserve the synthetic step-parity suite (92/92).
-
-## Honest reading (for the paper)
-
-- **pasilla (dof=5): effectively bit-exact** — LFC Pearson r = 1.000000,
-  **identical** significant-gene set (840/840, Jaccard 1.0), dispersion 6.7e-4.
-- **airway (dof=3): identical DE calls** — LFC r = 1.000000, significant-gene
-  set **identical** to R's (3993/3993, Jaccard 1.000), dispersion within
-  0.045 %. It is the only one of the six with residual dof ≤ 3 and so the only
-  one that enters R's Monte-Carlo prior-variance branch; since that branch now
-  reproduces R's stream and smoother exactly (2b, 2c), it returns R's prior
-  variance **0.5285285285285285 bit for bit** and airway is no longer an
-  outlier in any table.
-- **GTEx (n=300, large cohort): DE-equivalent with tight dispersions** — LFC
-  p95 |Δ| = 2.2e-5, shrunk-LFC r = 0.999995, significance Jaccard 0.9805
-  (33 284 / 33 942 genes) against the `DESeq()` wrapper and 0.9996 against the
-  substep chain, final dispersion p95 = 4.4e-3 across all 54 922 genes.
-  R takes 5.4 min single-thread; cuDESeq2/Triton is bit-mode-identical and 84×
-  faster.
-- So the fidelity claim is precise: **bit-exact on controlled inputs and on
-  moderate-dof real data; DE-equivalent on very-small-dof and large-cohort real
-  data (LFC r>0.9999 or p95|Δ|≈2e-5, significance Jaccard ≥0.98)** — with the
-  single documented scope gap being `replaceOutliers`, which only engages at ≥7
-  replicates per cell and so only affects GTEx of the six.
-
-### Residuals not attributable to the dof≤3 prior estimator
-
-Both were found while building the paper's DE-plot figures
-(`make_paper_figures.py`). The first is **fixed**; the second is a known scope
-limitation.
-
-- **FIXED — missing `minmu` floor in the Wald SE.** R forms the weights for its
-  coefficient covariance from a μ already thresholded at `minmu = 0.5`
-  (`fitBeta.cpp`), while `irls_batched` returns μ *un*-thresholded because Cook's
-  distance needs it raw. `_wald_se_and_stat` was building `W = μ/(1+αμ)` from that
-  raw μ, so any sample with μ < 0.5 contributed ~0 weight, `XᵀWX` lost it, and the
-  SE came out too large. Invisible on ordinary genes (μ ≥ 0.5 throughout), severe
-  on degenerate ones:
-
-  | gene class | SE ratio ours/R, before | after |
-  |---|---|---|
-  | one contrasted group entirely zero (airway_cell, 531 genes) | 1.219 (p10–p90 1.15–1.33) | 1.00032 |
-  | dispersion pinned at ceiling, near-zero counts (airway) | ~1.07 | ~1.0003 |
-  | everything else | 1.00056 | 1.00036 |
-
-  It changed calls: `airway_cell` lost 5 of its 206 called genes (Jaccard 0.971)
-  and `airway` 0.977. Both now reproduce R's called set **exactly**. It also
-  produced the visible gap between the p-value histograms above p≈0.6 in
-  `de_parity_concordance` panel (a), which now coincide. Fixed by clamping μ at
-  `_core.MIN_MU` inside `_wald_se_and_stat` only — *not* at the `irls_batched`
-  return, which Cook's distance depends on staying raw.
-
-  Why the step-parity suite missed it: it asserts on μ, β and the Hessian, all of
-  which *are* clamped, and its synthetic fixtures contain no empty groups.
-
-- **OPEN (scope) — `replaceOutliers` is not implemented.** DESeq2's `DESeq()`
-  wrapper replaces count outliers with a trimmed mean and refits whenever a cell
-  has ≥ `minReplicatesForReplace` (7) replicates; we instead let Cook's distance
-  filter those genes, which is what the substep chain
-  (`estimateSizeFactors → estimateDispersions → nbinomWaldTest → results`) also
-  does. This is the **entire** remaining GTEx gap: replacement rescues exactly
-  878 genes from the Cook's filter, R calls 654 of them at α=0.05, and that is
-  both the 33 942 vs 33 284 deficit and all of the 0.9805 Jaccard.
-
-  **Beware: the two harnesses use different R references.** `bench/run_r.R` runs
-  the substep chain (no replacement) while `validation/prepare_gtex.R` and
-  `fetch_and_reference.R` use the `DESeq()` wrapper (replacement). On GTEx they
-  disagree — R nsig@.05 33 282 vs 33 942, NaN padj 11 526 vs 10 648 — so
-  `bench/results/parity.json` scores GTEx significance at 0.9996 while
-  `validation/results/gtex_blood_muscle.json` scores it at 0.9805. Both are
-  correct against their own reference; only the five small designs are
-  reference-independent (no cell reaches 7 replicates).
-
-- Note that ranking genes by raw p-value is not a usable parity metric on GTEx:
-  R reports p = 0 for hundreds of underflowed genes, so a p-value ranking
-  compares arbitrary tie-breaks. Rank by |Wald statistic| instead — doing so
-  moves GTEx's top-N agreement from ~0.96 to ≥0.998.
-
-## Files
-
-- `fetch_and_reference.R` — export counts/coldata + R reference (results,
-  dispersions, apeGLM shrink) for the Bioconductor datasets (pasilla, airway).
-- `prepare_gtex.R` — build the large-cohort GTEx case (recount2) + R reference.
-- `validate.py` — run cuDESeq2, compute concordance, write JSON + parity figures.
-- `export_r_dispersion_details.R` — re-fit each case in R and export
-  `dispGeneEst` / `dispFit` / `dispersion` / `dispOutlier` per gene, which
-  `plotDispEsts` needs and `fetch_and_reference.R` does not save.
-- `make_paper_figures.py` — the paper's two DE-plot figures: the three standard
-  diagnostics (dispersion / MA / volcano) drawn from R and from cuDESeq2 by the
-  same code, and a four-panel concordance figure over all six designs. Caches
-  cuDESeq2's per-gene output as `data/<case>/ours.csv` (`--refresh` to recompute).
-- `data/` — regenerable inputs + R reference (git-ignored).
-- `results/`, `figures/` — committed summary + plots.
+`validation/results/*.json` contains the same standard-pipeline comparison in a
+legacy per-case schema. The timing fields are intentionally omitted when those
+files are refreshed with `--skip-timing`; GPU timing belongs in
+`bench/results/timings.json`.

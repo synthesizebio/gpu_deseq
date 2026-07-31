@@ -1,9 +1,10 @@
 #!/usr/bin/env Rscript
 # Benchmark harness, R side. For every prepared case in validation/data/<case>/
 # (counts.csv, coldata.csv, meta.json) this:
-#   (1) runs the DESeq2 1.30.1 pipeline substep-by-substep, timing each of the
-#       five substeps (normalization, dispersion, glm_fit, significance,
-#       lfc_shrink), median over BENCH_R_REPS reps (1 for large cohorts, 3 else);
+#   (1) runs the installed DESeq2 standard Wald pipeline substep-by-substep,
+#       including DESeq()'s Cook's-outlier replacement/refit in glm_fit, and
+#       times the five substeps (normalization, dispersion, glm_fit,
+#       significance, lfc_shrink), median over BENCH_R_REPS reps;
 #   (2) exports every per-substep intermediate so the Python side can verify
 #       equivalence: size factors, dispersions, results (LFC/stat/padj/baseMean),
 #       apeGLM-shrunk LFC.
@@ -11,7 +12,8 @@
 # r_results.csv, r_shrink.csv}.
 #
 # Usage: Rscript bench/run_r.R [case ...]   (default: all cases)
-.libPaths(c(Sys.getenv("R_DESEQ2_LIB", unset = "~/R/library"), .libPaths()))
+custom_lib <- Sys.getenv("R_DESEQ2_LIB", unset = "")
+if (nzchar(custom_lib)) .libPaths(c(custom_lib, .libPaths()))
 suppressMessages({library(DESeq2); library(apeglm)})
 
 DATA <- "validation/data"; CACHE <- "bench/cache"
@@ -46,7 +48,9 @@ for (case in cases) {
     dds <- mk()
     t0 <- Sys.time(); dds <- estimateSizeFactors(dds);                 tt$normalization <- c(tt$normalization, as.numeric(Sys.time()-t0, units="secs"))
     t0 <- Sys.time(); dds <- estimateDispersions(dds, quiet = TRUE);   tt$dispersion    <- c(tt$dispersion,    as.numeric(Sys.time()-t0, units="secs"))
-    t0 <- Sys.time(); dds <- nbinomWaldTest(dds);                      tt$glm_fit       <- c(tt$glm_fit,       as.numeric(Sys.time()-t0, units="secs"))
+    # DESeq() recognizes the existing size factors and dispersions, so this
+    # call times the Wald fit and the standard count-outlier replacement/refit.
+    t0 <- Sys.time(); dds <- DESeq(dds, test = "Wald", quiet = TRUE); tt$glm_fit       <- c(tt$glm_fit,       as.numeric(Sys.time()-t0, units="secs"))
     t0 <- Sys.time(); res <- results(dds, name = meta$coef);          tt$significance  <- c(tt$significance,  as.numeric(Sys.time()-t0, units="secs"))
     t0 <- Sys.time(); sh  <- lfcShrink(dds, coef = meta$coef, type = "apeglm", quiet = TRUE); tt$lfc_shrink <- c(tt$lfc_shrink, as.numeric(Sys.time()-t0, units="secs"))
   }
@@ -61,8 +65,10 @@ for (case in cases) {
   sdf <- as.data.frame(sh); sdf$gene <- rownames(sh)
   write.csv(sdf[, c("gene","log2FoldChange","lfcSE")], file.path(out, "r_shrink.csv"), row.names = FALSE)
 
-  writeLines(sprintf('{"case":"%s","reps":%d,"normalization":%.3f,"dispersion":%.3f,"glm_fit":%.3f,"significance":%.3f,"lfc_shrink":%.3f,"total":%.3f}',
-    case, reps, timings$normalization, timings$dispersion, timings$glm_fit, timings$significance, timings$lfc_shrink, timings$total),
+  writeLines(sprintf('{"case":"%s","reps":%d,"r_version":"%s","deseq2_version":"%s","apeglm_version":"%s","normalization":%.3f,"dispersion":%.3f,"glm_fit":%.3f,"significance":%.3f,"lfc_shrink":%.3f,"total":%.3f}',
+    case, reps, as.character(getRversion()), as.character(packageVersion("DESeq2")),
+    as.character(packageVersion("apeglm")), timings$normalization, timings$dispersion,
+    timings$glm_fit, timings$significance, timings$lfc_shrink, timings$total),
     file.path(out, "r_timings.json"))
   cat(sprintf("  %-18s reps=%d  norm=%.0f disp=%.0f glm=%.0f sig=%.0f shrink=%.0f  total=%.0f ms\n",
     case, reps, timings$normalization, timings$dispersion, timings$glm_fit, timings$significance, timings$lfc_shrink, timings$total))

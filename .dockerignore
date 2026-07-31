@@ -1,0 +1,27 @@
+.git
+.agents
+.codex
+.claude
+.venv
+.r46
+.pytest_cache
+**/__pycache__
+**/*.py[cod]
+**/.DS_Store
+
+# Generated and machine-local artifacts.
+bench/cache
+validation/data
+paper/main.pdf
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.log
+paper/*.out
+paper/*.toc
+texput.log
+
+# Packaging output.
+build
+dist
+*.egg-info

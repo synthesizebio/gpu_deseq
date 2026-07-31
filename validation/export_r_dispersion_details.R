@@ -15,17 +15,33 @@
 # fit is the same one the reference results came from.
 #
 # Usage: Rscript validation/export_r_dispersion_details.R [case ...]
-.libPaths(c(Sys.getenv("R_DESEQ2_LIB", unset = "~/R/library"), .libPaths()))
-suppressMessages({library(DESeq2); library(jsonlite)})
+custom_lib <- Sys.getenv("R_DESEQ2_LIB", unset = "")
+if (nzchar(custom_lib)) .libPaths(c(custom_lib, .libPaths()))
+suppressMessages(library(DESeq2))
+
+read_meta <- function(path) {
+  text <- paste(readLines(path), collapse = " ")
+  value <- function(key) {
+    match <- regmatches(
+      text, regexpr(sprintf('"%s"\\s*:\\s*"?([^",}]+)', key), text)
+    )
+    sub(sprintf('"%s"\\s*:\\s*"?', key), "", match)
+  }
+  list(
+    design = value("design"),
+    factor = value("factor"),
+    ref = value("ref"),
+    n_samples = as.integer(value("n_samples"))
+  )
+}
 
 OUT <- "validation/data"
 cases <- commandArgs(trailingOnly = TRUE)
-if (!length(cases)) cases <- sort(basename(Sys.glob(file.path(OUT, "*", "meta.json"))))
 if (!length(cases)) cases <- sort(basename(dirname(Sys.glob(file.path(OUT, "*", "meta.json")))))
 
 for (name in cases) {
   d <- file.path(OUT, name)
-  meta <- fromJSON(file.path(d, "meta.json"))
+  meta <- read_meta(file.path(d, "meta.json"))
   counts <- as.matrix(read.csv(file.path(d, "counts.csv"), row.names = 1, check.names = FALSE))
   storage.mode(counts) <- "integer"
   coldata <- read.csv(file.path(d, "coldata.csv"), row.names = 1, check.names = FALSE)

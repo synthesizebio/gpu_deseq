@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 # Large-cohort real-data case: GTEx (recount2), Whole Blood vs Skeletal Muscle.
-# Exports counts + coldata + R DESeq2 1.30.1 reference to
+# Exports counts + coldata + R DESeq2 reference to
 # validation/data/gtex_blood_muscle/ (same format as the other cases, so
 # validate.py picks it up). ~tissue is P=2, so it exercises the Triton kernel.
 #
@@ -11,7 +11,8 @@
 # recount2 stores base-coverage counts; we convert to read counts via
 # coverage / avg_read_length (DESeq2's median-of-ratios then handles library
 # size). Both engines get identical integer counts, so parity is unaffected.
-.libPaths(c(Sys.getenv("R_DESEQ2_LIB", unset = "~/R/library"), .libPaths()))
+custom_lib <- Sys.getenv("R_DESEQ2_LIB", unset = "")
+if (nzchar(custom_lib)) .libPaths(c(custom_lib, .libPaths()))
 suppressMessages({library(SummarizedExperiment); library(DESeq2); library(apeglm)})
 
 RSE <- Sys.getenv("GTEX_RSE", unset = "/var/tmp/geuvadis/rse_gene.Rdata")

@@ -1,4 +1,4 @@
-"""Realistic-scale end-to-end parity against R Bioconductor DESeq2 1.30.1.
+"""Realistic-scale end-to-end parity against the current R Bioconductor DESeq2.
 
 The 6-sample fixtures in test_api.py fall into degenerate regimes (the
 parametric trend fit punts to the mean fallback, and the dispersion prior is

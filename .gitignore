@@ -1,9 +1,11 @@
 .venv/
+.r46/
 .pytest_cache/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+texput.log
 .DS_Store
 dist/
 build/

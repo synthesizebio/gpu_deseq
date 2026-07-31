@@ -473,6 +473,38 @@ instead of 3–5× slower.
 Earlier "full pipeline 15–74×" numbers had *excluded* `lfc_shrink`; with it fixed
 the full 5-step pipeline beats R by the totals above.
 
+### 2026-07-29 — re-measured at HEAD for the paper (READ THIS FIRST)
+
+Provenance: same A100-SXM4-40GB · torch 2.6.0+cu124 · CUDA 12.4 · commit
+`07de906`. The three JSONs the entries above link to
+(`results_a100.json`, `results_a100_sweep.json`,
+`results_a100_samplesweep.json`) were **overwritten by this re-run**, so the
+2026-07-14 tables in this file are historical and no longer match their own
+"Raw:" links. Every conclusion above survived; only the absolute timings moved
+(within the ±10–25 % session-to-session spread already noted).
+
+Three things changed in the harness, all to make the paper's Sec. 4.5--4.6
+exhibits reproducible from committed data:
+
+1. `SWEEP_CHUNKS` gained **`chunk = 100`**. Since `maxit = 100`, that captures
+   the entire loop in one graph and *is* the fixed-full-length capture of the
+   superseded entry above — so the chunk sweep now contains its own fixed-vs-
+   chunked ablation instead of needing a separate code path. It measures
+   **1.84×** (2k genes) and **1.01×** (20k) against **5.57×** / **2.45×** at
+   chunk 10, reproducing the original finding on one axis.
+2. The sample sweep now times **Triton** alongside eager and graph, and records
+   `triton_vs_eager_maxdiff`. Triton compiled at every `S` up to 2000 and stays
+   ahead throughout (67.8× at `S=4` down to 6.4× at `S=2000`), while the graph
+   decays to 0.97× at `S=2000` — the launch-bound → compute-bound crossover.
+   Triton is not bit-identical: max |Δ| over the sweep is 3.0e-8.
+3. `roofline_empirical.py` gained `--json` and now commits
+   `results_roofline.json`. Its printed peak-probe line also had a unit bug: it
+   showed GiB/s next to a percentage computed from decimal GB/s. Fixed to report
+   both, so the paper's "1369 GB/s = 88 % of 1555 GB/s spec" is self-consistent.
+
+`scripts/audit_paper_numbers.py` now checks every cell of both new paper tables
+and each prose number drawn from them against these files.
+
 ## Summary of the three accelerators (as of 2026-07-14, single A100)
 
 | | mechanism | bit-identical to eager? | R parity | full-stage speedup | notes |

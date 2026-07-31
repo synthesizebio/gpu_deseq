@@ -9,30 +9,29 @@
     "P": 4,
     "n_samples": 8,
     "n_genes": 33469,
-    "r_full_ms": 28895.6
+    "r_full_ms": 36079.716
   },
   "n_genes_compared": 33469,
   "lfc_pearson": 0.9999999992755974,
   "lfc_spearman": 0.9999988468474832,
-  "lfc_p95_abs": 8.088202815126898e-05,
-  "stat_pearson": 0.9999977017107982,
-  "pvalue_pearson": 0.9999935017603014,
-  "padj_p95_abs": 1.6781100233842494e-06,
-  "dispersion_p95_rel": 0.0028355909228399995,
-  "shrunk_lfc_pearson": 0.9972238129067502,
-  "shrunk_lfc_p95_abs": 0.0003674686148996813,
+  "lfc_p95_abs": 8.088202809737876e-05,
+  "stat_pearson": 0.9999977017091038,
+  "pvalue_pearson": 0.9999935017592003,
+  "padj_p95_abs": 1.6781099904106256e-06,
+  "dispersion_p95_rel": 0.0028355908936321295,
+  "shrunk_lfc_pearson": 0.99722381312841,
+  "shrunk_lfc_p95_abs": 0.00036755872372687984,
   "shrunk_lfc_divergent_threshold": 0.1,
   "shrunk_lfc_n_divergent": 21,
   "shrunk_lfc_n_compared": 33469,
-  "shrunk_lfc_max_abs": 2.258230765972848,
+  "shrunk_lfc_max_abs": 2.2582307075028916,
   "sig_jaccard_0.05": 1.0,
   "sig_jaccard_0.10": 0.991869918699187,
   "n_sig_ours_0.05": 206,
   "n_sig_r_0.05": 206,
-  "timing_ms": {
-    "eager": 4214.731878018938,
-    "graph": 3670.7932339631952,
-    "triton": 3585.8002359746024
-  },
-  "r_full_ms": 28895.6
+  "reference_versions": {
+    "r_version": "4.6.0",
+    "deseq2_version": "1.52.0",
+    "apeglm_version": "1.34.0"
+  }
 }

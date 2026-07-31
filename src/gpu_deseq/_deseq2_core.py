@@ -1,7 +1,7 @@
-"""Batched GPU kernels reproducing R DESeq2 1.30.1 numerics.
+"""Batched GPU kernels reproducing R DESeq2 numerics.
 
 Every function here is a torch implementation of a specific DESeq2 routine,
-validated bit-for-bit (within FP rounding) against R DESeq2 1.30.1 in
+validated against the current R DESeq2 reference in
 `tests/test_r_step_parity.py`. The dispersion fitter is an analytical port of
 `DESeq2/src/DESeq2.cpp::fitDisp` (gradient ascent on the Cox-Reid log-posterior);
 where a gene fails to converge we use a deterministic coarse+fine grid search

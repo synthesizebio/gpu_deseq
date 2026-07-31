@@ -2,10 +2,21 @@
 
 Implements the apeGLM MAP estimator (Cauchy prior on the shrunk coefficient)
 and its empirical-Bayes prior-variance fit, matching R DESeq2's
-`lfcShrink(type="apeglm")`. The per-gene posterior is unimodal in β on
-[min_beta, max_beta], and gradient + Hessian are analytical in closed form, so
-batched Newton's method converges in a handful of iterations per gene.
-Divergent genes fall back to per-gene scipy L-BFGS-B.
+`lfcShrink(type="apeglm")`.
+
+The solver is a batched, on-device port of apeglm's *own* L-BFGS (LBFGS++ via
+RcppNumerical) -- see `_batched_lbfgs` -- run from apeglm's exact initial point,
+with the whole per-gene optimization vectorized across genes on the GPU and no
+per-gene host fallback.
+
+Porting the reference's optimizer rather than choosing a better one is
+deliberate and load-bearing. For extreme-effect, low-count genes the posterior
+is *bimodal* (a sharp likelihood mode far from zero, a prior mode near zero),
+and apeglm reports whichever local optimum its L-BFGS reaches from ~0. A method
+that converges to the global optimum -- a batched Newton, or any damped
+Newton-family solver -- lands in the other basin and disagrees with R on exactly
+those genes, by being more correct. Parity requires reproducing the search, not
+just the objective.
 
 Reference: Zhu, Ibrahim, Love (2019) "Heavy-tailed prior distributions for
 sequence count data: removing the noise and preserving large differences."
@@ -14,7 +25,7 @@ from __future__ import annotations
 
 import numpy as np
 import torch
-from scipy.optimize import minimize, root_scalar
+from scipy.optimize import root_scalar
 
 
 def fit_prior_var(
@@ -149,7 +160,7 @@ def _nbinom_apeglm_hess(
 
 
 # ---------------------------------------------------------------------------
-# Batched Newton with scipy fallback
+# Batched L-BFGS: a vectorized port of apeglm's own LBFGS++ solver
 # ---------------------------------------------------------------------------
 
 
@@ -301,18 +312,15 @@ def apeglm_shrink_batched(
     # coefficients + a Cauchy (t, df=1) prior on the shrink coefficient — with
     # L-BFGS started at apeglm's *exact* initial point 0.1, -0.1, 0.1, ...
     #
-    # This must be an L-BFGS from a near-zero start, not our batched Newton: the
-    # posterior is bimodal for extreme low-count genes (a sharp likelihood mode
-    # far from zero and a prior mode near zero), and apeglm reports the *local*
-    # optimum reached by gradient-based L-BFGS from ~0. A Newton method jumps the
-    # barrier to the global optimum and disagrees with R for exactly those genes.
-    # Replicating apeglm's solver+init reproduces R's shrunk LFC (Pearson 1.0).
-    # This runs per-gene on CPU, as R's C++ does; the other four pipeline stages
-    # stay batched on the GPU, so overall speedups are preserved.
-    # Batched, on-device port of apeglm's L-BFGS (LBFGS++), from apeglm's exact
-    # 0.1/-0.1 init. Same optimizer + init as R, so it lands in the same optimum
-    # of the (bimodal, for extreme genes) posterior and reproduces R's shrunk LFC
-    # — while running the whole per-gene optimization batched on the GPU.
+    # It must be an L-BFGS from that near-zero start rather than a Newton: the
+    # posterior is bimodal for extreme low-count genes, and apeglm reports the
+    # *local* optimum a gradient method reaches from ~0, so a solver that clears
+    # the barrier to the global optimum disagrees with R on those genes. Matching
+    # apeglm's solver and init reproduces R's shrunk LFC (Pearson 1.0).
+    #
+    # Unlike R's C++, which does this one gene at a time, the port runs every
+    # gene's optimization in one batched pass on the device — no per-gene host
+    # fallback, so the shrinkage stage stays on the GPU with the other four.
     if G:
         init_vec = 0.1 * ((-1.0) ** torch.arange(P, dtype=dtype, device=device))
         x0 = init_vec.unsqueeze(0).expand(G, P).contiguous()

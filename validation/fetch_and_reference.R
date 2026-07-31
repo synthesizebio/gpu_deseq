@@ -1,8 +1,8 @@
 #!/usr/bin/env Rscript
 # Real-data validation, step 1 (R side): export standard Bioconductor RNA-seq
 # datasets across a range of designs (P=2..5, single- and multi-factor, several
-# sample sizes) and compute the R DESeq2 1.30.1 REFERENCE output that cuDESeq2 is
-# validated against. Writes, per case, to validation/data/<name>/:
+# sample sizes) and compute R DESeq2 reference output. Writes, per case, to
+# validation/data/<name>/:
 #   counts.csv, coldata.csv, meta.json,
 #   r_results.csv, r_dispersions.csv, r_shrink.csv
 #
@@ -11,7 +11,8 @@
 # multi-level factors).
 #
 # Usage: Rscript validation/fetch_and_reference.R
-.libPaths(c(Sys.getenv("R_DESEQ2_LIB", unset = "~/R/library"), .libPaths()))
+custom_lib <- Sys.getenv("R_DESEQ2_LIB", unset = "")
+if (nzchar(custom_lib)) .libPaths(c(custom_lib, .libPaths()))
 suppressMessages({library(DESeq2); library(apeglm)})
 
 OUT <- "validation/data"; dir.create(OUT, recursive = TRUE, showWarnings = FALSE)

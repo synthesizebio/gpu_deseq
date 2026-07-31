@@ -2,8 +2,9 @@
 
 For a prepared case (validation/data/<case>/) and an execution mode
 (eager / graph / triton) this both:
-  * times each of the five pipeline substeps (normalization, dispersion,
-    glm_fit, significance, lfc_shrink), median over `reps`; and
+  * times each of the five standard-pipeline substeps (normalization,
+    dispersion, Wald fit plus Cook's-outlier replacement/refit, significance,
+    lfc_shrink), median over `reps`; and
   * captures every per-substep intermediate (size factors, dispersions, LFC,
     Wald stat, padj, shrunk LFC) so equivalence can be verified.
 
@@ -27,6 +28,7 @@ import sys
 sys.path.insert(0, "src")
 from gpu_deseq import (DESeqDataset, fit_size_factors, fit_dispersions,
                        wald_test, results, lfc_shrink)
+from gpu_deseq.api import _replace_outliers_and_refit_wald
 import gpu_deseq._deseq2_core as _core
 
 DATA = Path("validation/data")
@@ -62,7 +64,13 @@ def _run_substeps(dds, contrast, disp_kw, timed, device):
     t = {}
     sync(); s = time.perf_counter(); fit_size_factors(dds);        sync(); t["normalization"] = time.perf_counter() - s
     sync(); s = time.perf_counter(); fit_dispersions(dds, **disp_kw); sync(); t["dispersion"] = time.perf_counter() - s
-    sync(); s = time.perf_counter(); fit = wald_test(dds, contrast=contrast); sync(); t["glm_fit"] = time.perf_counter() - s
+    sync(); s = time.perf_counter()
+    fit = wald_test(dds, contrast=contrast)
+    fit = _replace_outliers_and_refit_wald(
+        dds, fit, use_cuda_graph=disp_kw.get("use_cuda_graph", False),
+        use_triton=disp_kw.get("use_triton", False),
+    )
+    sync(); t["glm_fit"] = time.perf_counter() - s
     sync(); s = time.perf_counter(); res = results(fit);           sync(); t["significance"] = time.perf_counter() - s
     sync(); s = time.perf_counter()
     shr = results(lfc_shrink(fit, coeff=contrast), cooks_filter=False, independent_filter=False)
@@ -79,6 +87,12 @@ def _run_substeps(dds, contrast, disp_kw, timed, device):
         "padj":        res["padj"].reindex(genes),
         "baseMean":    res["baseMean"].reindex(genes),
         "shrunk_lfc":  shr["log2FoldChange"].reindex(genes),
+        "replaced":    pd.Series(
+            fit.replaced_genes.cpu().numpy()
+            if fit.replaced_genes is not None
+            else np.zeros(len(genes), dtype=bool),
+            index=genes,
+        ),
     }
 
 
