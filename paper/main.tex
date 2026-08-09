@@ -87,8 +87,8 @@ therefore dominate evaluations of gene-expression models.\\[3pt]
 that batches DESeq2's per-gene work on the GPU while reproducing the reference
 step by step. Against R~DESeq2~1.52.0 the closed-form stages agree to
 floating-point precision and dispersion to \fact{8.5e-4} median relative error,
-over six real designs (7--300 samples, $P=2$--$5$) and \fact{76/76 step-parity
-tests} on synthetic fixtures. The standard Wald pipeline includes
+over six real designs (7--300 samples, $P=2$--$5$) and \fact{76/76
+parameterized intermediate-output tests} on synthetic fixtures. The standard Wald pipeline includes
 \texttt{DESeq()}'s count-outlier replacement and per-gene refit. On one A100
 \cudeseq{} is \fact{10.3--99.2$\times$} faster end-to-end than
 single-threaded R across the six designs.\\[3pt]
@@ -545,7 +545,7 @@ simulations where the gene and sample axes can be swept independently.
 \begin{sloppypar}
 Correctness is checked per substep against R on all six real datasets
 (Table~\ref{tab:parity}). A separate synthetic
-step-parity suite (\texttt{tests/test\_r\_step\_parity.py}, 76/76) confirms the
+intermediate-output suite (\texttt{tests/test\_r\_step\_parity.py}, 76/76) confirms the
 same agreement at controlled sizes, and more tightly: size factors agree to
 $<$1e-10, gene-wise dispersion to $\sim$1e-9, and MAP dispersion, $\beta$, $\mu$,
 the Hessian and Wald SEs to $\sim$1e-6 relative. A further suite

@@ -216,7 +216,7 @@ allowed = {
     "3.7$\\times$", "31", "36\\%", "3e-14", "3e-15", "3{,", "4.4e-3",
     "487--796\\,ms", "4.4$\\times$", "4.5e-4", "43\\%", "470\\,ms",
     "6.01$\\times$", "5e-15", "7.7$\\times$", "6.7\\%", "69.0$\\times$",
-    "7.6$\\times$", "76/76 step-parity tests", "8.5e-4", "88\\%",
+    "7.6$\\times$", "76/76 parameterized intermediate-output tests", "8.5e-4", "88\\%",
 }
 unregistered = sorted(
     value for value in fact_text
