@@ -30,8 +30,8 @@ PYTHONPATH=src .venv/bin/python benchmarks/bench_cuda_graph.py --json benchmarks
 
 - **Data**: negative-binomial counts, fixed seed per size (`seed = n_genes`),
   60 samples split control/treated, 20 % DE genes. `~ condition` design.
-- **Timing**: median of 10 runs, `torch.cuda.synchronize()` on both sides of
-  each timed region, 2 warm-up iterations discarded.
+- **Timing**: median of 15 runs, `torch.cuda.synchronize()` on both sides of
+  each timed region, 3 warm-up iterations discarded.
 - **Warm vs cold**: graph timings are **warm** (capture cached, then replayed) —
   the fair number for a service fitting many same-shaped matrices. The one-time
   **cold** cost (capture + first replay) is reported separately.
@@ -57,29 +57,29 @@ PYTHONPATH=src .venv/bin/python benchmarks/bench_cuda_graph.py --json benchmarks
 
 ## Results
 
-### 2026-07-14 — A100, chunked replay (P=2 and P=4)
+### 2026-08-09 — A100, chunked replay (P=2 and P=4)
 
 Provenance: NVIDIA A100-SXM4-40GB · torch 2.6.0+cu124 · CUDA 12.4 · Python
-3.10.17 · commit `ba296fb` (working tree dirty: CUDA-graph changes uncommitted)
+3.10.17 · commit `f8adde1` (working tree dirty: manuscript refresh in progress)
 · median of 15 · `GRAPH_CHUNK=10`. Raw: [`results_a100.json`](results_a100.json).
 
 | matrix | design | quantity | eager | graph (warm) | speedup | graph cold |
 |---|---|---|---:|---:|---:|---:|
-| 60 × 2000  | `~condition` (P=2)       | `fit_alpha_mle`   |  91.2 ms | 16.5 ms | **5.54×** | — |
-| 60 × 2000  | `~condition` (P=2)       | `fit_dispersions` | 164.4 ms | 47.8 ms | **3.44×** | 514 ms |
-| 60 × 20000 | `~condition` (P=2)       | `fit_alpha_mle`   | 142.4 ms | 57.7 ms | **2.47×** | — |
-| 60 × 20000 | `~condition` (P=2)       | `fit_dispersions` | 391.3 ms | 235.4 ms | **1.66×** | 738 ms |
-| 60 × 2000  | `~batch+condition` (P=4) | `fit_alpha_mle`   |  87.9 ms | 18.1 ms | **4.87×** | — |
-| 60 × 2000  | `~batch+condition` (P=4) | `fit_dispersions` | 233.7 ms | 74.1 ms | **3.15×** | 771 ms |
-| 60 × 20000 | `~batch+condition` (P=4) | `fit_alpha_mle`   |  97.2 ms | 41.0 ms | **2.37×** | — |
-| 60 × 20000 | `~batch+condition` (P=4) | `fit_dispersions` | 367.4 ms | 181.0 ms | **2.03×** | 911 ms |
+| 60 × 2000  | `~condition` (P=2)       | `fit_alpha_mle`   |  87.9 ms | 20.1 ms | **4.36×** | — |
+| 60 × 2000  | `~condition` (P=2)       | `fit_dispersions` | 126.9 ms | 28.6 ms | **4.43×** | 487 ms |
+| 60 × 20000 | `~condition` (P=2)       | `fit_alpha_mle`   | 137.2 ms | 57.2 ms | **2.40×** | — |
+| 60 × 20000 | `~condition` (P=2)       | `fit_dispersions` | 210.5 ms | 122.6 ms | **1.72×** | 605 ms |
+| 60 × 2000  | `~batch+condition` (P=4) | `fit_alpha_mle`   |  86.1 ms | 19.9 ms | **4.34×** | — |
+| 60 × 2000  | `~batch+condition` (P=4) | `fit_dispersions` | 192.9 ms | 52.2 ms | **3.70×** | 720 ms |
+| 60 × 20000 | `~batch+condition` (P=4) | `fit_alpha_mle`   |  93.3 ms | 40.5 ms | **2.30×** | — |
+| 60 × 20000 | `~batch+condition` (P=4) | `fit_dispersions` | 224.0 ms | 103.0 ms | **2.17×** | 796 ms |
 
 Bit-identity graph vs eager: max |Δ| = 0.0e+00 on gene-wise, MAP, and final α in
 **every** case (both designs, both sizes). Eager NR iterations: P=2 → 26 (2k) /
 40 (20k); P=4 → 14 (2k) / 15 (20k). Chunked graph rounds up to the next multiple
-of 10. Timings vary ~±10 % run to run; medians are stable in these ranges.
+of 10. Timings vary across runs; the reported values are 15-run medians.
 
-### 2026-07-14 — A100, GRAPH_CHUNK sweep
+### 2026-08-09 — A100, GRAPH_CHUNK sweep
 
 `fit_alpha_mle` (isolated NR loop), `~condition`, sweeping the captured chunk
 size. Raw: [`results_a100_sweep.json`](results_a100_sweep.json). Every chunk is
@@ -88,23 +88,24 @@ speed.
 
 | chunk | 60×2000 (eager 26 it) | iters | 60×20000 (eager 40 it) | iters |
 |---:|---:|---:|---:|---:|
-| 2  | 4.83× | 26 | 2.41× | 40 |
-| 5  | 5.44× | 30 | 2.44× | 40 |
-| **10** | **5.48×** | 30 | **2.45×** | 40 |
-| 20 | 4.27× | 40 | 2.45× | 40 |
-| 25 | 3.48× | 50 | 1.98× | 50 |
-| 50 | 3.47× | 50 | 1.98× | 50 |
+| **2** | **6.01×** | 26 | 2.38× | 40 |
+| 5  | 5.48× | 30 | 2.41× | 40 |
+| 10 | 5.51× | 30 | **2.42×** | 40 |
+| 20 | 4.30× | 40 | **2.42×** | 40 |
+| 25 | 3.51× | 50 | 1.95× | 50 |
+| 50 | 3.52× | 50 | 1.96× | 50 |
+| 100 | 1.83× | 100 | 0.99× | 100 |
 
-**Chosen default `GRAPH_CHUNK = 10`.** It's at or within noise of the best chunk
-at both sizes. The trade is visible: too small (2) adds replay/sync rounds; too
-large (25, 50) runs wasted iterations past convergence. The sweet spot is a
-chunk near — but not far above — the eager iteration count.
+**Current default `GRAPH_CHUNK = 10`.** The refreshed sweep shows that the
+best chunk depends on shape: 2 wins at 2,000 genes by avoiding padding, whereas
+10 and 20 tie at 20,000 genes. The default is a conservative compromise, not a
+universal optimum.
 
-**Read**: the graph accelerates the NR loop 2.4–4.4×; diluted over the full
-stage (which includes ungraphed CPU trend fitting) that's 1.6–3.2×. The win is
+**Read**: the graph accelerates the NR loop 2.3–4.4×; diluted over the full
+stage (which includes ungraphed CPU trend fitting) that's 1.7–4.4×. The win is
 larger at 2000 genes, where the loop is more launch-bound; at 20000 genes the
 loop is more compute-bound, so removing launch overhead helps less. Cold capture
-is a one-time ~0.5–0.7 s, amortized after the first fit of a given shape.
+is a one-time ~0.5–0.8 s, amortized after the first fit of a given shape.
 
 ### 2026-07-14 — A100, fixed-length capture (superseded)
 
@@ -121,7 +122,7 @@ all 100, so the extra iterations outweigh the launch savings — and cold captur
 was ~3.3 s (10× the chunked cost, since it records 10× the iterations). This is
 the key finding that motivated chunked replay.
 
-### 2026-07-14 — A100, sample-count axis
+### 2026-08-09 — A100, sample-count axis
 
 `fit_alpha_mle` and `fit_dispersions`, fixed `n_genes = 2000`, `~condition`,
 varying `n_samples` from a 2-vs-2 pilot to biobank scale. Median of 7. Raw:
@@ -129,23 +130,23 @@ varying `n_samples` from a 2-vs-2 pilot to biobank scale. Median of 7. Raw:
 
 | n_samples | eager iters | NR loop speedup | full stage speedup | max&#124;Δ&#124; |
 |---:|---:|---:|---:|:--|
-| 4 (2v2)   | 100 | **7.26×** | **4.85×** | 0.0 |
-| 6 (3v3)   | 100 | **7.30×** | **4.76×** | 0.0 |
-| 30        | 13  | 4.19× | 3.37× | 0.0 |
-| 60        | 15  | 4.52× | 3.10× | 0.0 |
-| 200       | 16  | 3.78× | 2.79× | 0.0 |
-| 1000      | 18  | 1.47× | 1.38× | 0.0 |
-| 2000      | 25  | 0.97× | 1.09× | 0.0 |
+| 4 (2v2)   | 100 | **7.59×** | **1.61×** | 0.0 |
+| 6 (3v3)   | 100 | **7.18×** | **6.20×** | 0.0 |
+| 30        | 13  | 4.15× | 3.81× | 0.0 |
+| 60        | 15  | 4.51× | 3.50× | 0.0 |
+| 200       | 16  | 3.77× | 3.10× | 0.0 |
+| 1000      | 18  | 1.45× | 1.30× | 0.0 |
+| 2000      | 25  | 0.96× | 1.08× | 0.0 |
 
 **Sample count strongly controls the payoff — it does not "barely move the cost".**
 Two effects, both pushing the same way:
 
-- **Tiny n is the best case (7.3×).** At 2v2 / 3v3 the dispersion fit is
+- **Tiny n is the best case (7.6×).** At 2v2 / 3v3 the dispersion fit is
   degenerate and never converges, so eager runs all 100 NR iterations of *tiny*
   kernels — maximally launch-bound. The graph erases those launches. (These small
   n are below the R-fixture range (n≥12); numerics are the known degenerate
   regime, but graph is still bit-identical to eager.)
-- **Thousands of samples ≈ break-even (0.97–1.09×).** Each NR iteration is now
+- **Thousands of samples ≈ break-even (0.96–1.08×).** Each NR iteration is now
   large enough to be compute-bound; there is no launch overhead left to remove.
 
 Crossover is ~1000 samples. The graph is a 1.5–7× win from pilot scale through a

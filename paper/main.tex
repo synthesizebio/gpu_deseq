@@ -91,8 +91,7 @@ over six real designs (7--300 samples, $P=2$--$5$) and \fact{76/76 step-parity
 tests} on synthetic fixtures. The standard Wald pipeline includes
 \texttt{DESeq()}'s count-outlier replacement and per-gene refit. On one A100
 \cudeseq{} is \fact{10.3--99.2$\times$} faster end-to-end than
-single-threaded R across the six designs on one A100. The 300-sample comparison
-includes count replacement and refitting in both implementations.\\[3pt]
+single-threaded R across the six designs.\\[3pt]
 \textbf{Availability and implementation:} \texttt{gpu-deseq} requires PyTorch and
 a CUDA GPU, and is open source under the MIT license at
 \url{https://github.com/synthesizebio/gpu_deseq}, with reproduction scripts in
@@ -810,16 +809,16 @@ fill the device. The sample axis tests that directly
 (Table~\ref{tab:samplesweep}). Holding genes at $2{,}000$ and sweeping $S$ from a
 $2\mathrm{v}2$ pilot to a $2{,}000$-sample cohort, the graph's speedup on the
 isolated gene-wise ascent loop declines from \fact{7.6$\times$} at $S{=}4$ to
-\fact{0.97$\times$} at $S{=}2000$: by two thousand samples the launch overhead it
+\fact{0.96$\times$} at $S{=}2000$: by two thousand samples the launch overhead it
 removes is a rounding error against the per-iteration work, and replay is no longer
 worth its bookkeeping. Triton decays over the same range but never loses, from
-\fact{67.8$\times$} to \fact{6.4$\times$}, since fusion removes the intermediate
+\fact{69.0$\times$} to \fact{7.7$\times$}, since fusion removes the intermediate
 traffic as well as the launches. Two features of the sweep are structural rather
 than noise. The $S{=}4$ and $S{=}6$ rows run the full \fact{100}-iteration cap
 while every larger $S$ converges in \fact{13--25}, which is most of why the
 small-sample regime is both the slowest and the most accelerable. And $S{=}4$ is
 the one row where the stage-level speedup ($1.8\times$) falls far below the
-loop-level one ($67.8\times$): with $m-p=2$ that design takes the stochastic KL
+loop-level one ($69.0\times$): with $m-p=2$ that design takes the stochastic KL
 branch (Sec.~\ref{sec:disp}), whose compiled replay of R's random stream is serial
 host work no GPU mode touches, contributing $\approx$\fact{470\,ms} to every mode
 at $S{=}4$ and nothing at $S{=}6$. It is Amdahl's remainder for that row.
@@ -841,26 +840,26 @@ and agrees to $\le$\fact{3.0e-8} here. \fact{Reproduce:
  & & \multicolumn{3}{c}{GW loop (ms)} & \multicolumn{2}{c}{GW speedup} & \multicolumn{2}{c}{full-stage speedup} \\
 \cmidrule(lr){3-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}
 $S$ & iters & eager & graph & Triton & graph & Triton & graph & Triton \\\midrule
-4    & 100 & 350.6 & 46.1  & 5.2  & 7.60 & 67.80 & 1.61 & 1.84 \\
-6    & 100 & 337.8 & 46.3  & 5.1  & 7.29 & 66.57 & 6.27 & 40.28 \\
-30   & 13  & 45.2  & 10.9  & 3.2  & 4.16 & 14.21 & 3.84 & 13.53 \\
-60   & 15  & 52.4  & 11.4  & 3.2  & 4.58 & 16.40 & 3.89 & 14.52 \\
-200  & 16  & 54.2  & 14.7  & 3.2  & 3.70 & 16.76 & 3.20 & 13.36 \\
-1000 & 18  & 64.9  & 44.1  & 9.8  & 1.47 & 6.62  & 1.31 & 6.85 \\
-2000 & 25  & 128.7 & 133.1 & 20.2 & 0.97 & 6.38  & 1.09 & 6.56 \\\bottomrule
+4    & 100 & 350.2 & 46.1  & 5.1  & 7.59 & 68.99 & 1.61 & 1.81 \\
+6    & 100 & 335.2 & 46.7  & 5.1  & 7.18 & 66.05 & 6.20 & 40.35 \\
+30   & 13  & 44.9  & 10.8  & 3.1  & 4.15 & 14.29 & 3.81 & 13.70 \\
+60   & 15  & 51.5  & 11.4  & 3.2  & 4.51 & 16.11 & 3.50 & 14.10 \\
+200  & 16  & 55.3  & 14.7  & 3.2  & 3.77 & 17.43 & 3.10 & 13.92 \\
+1000 & 18  & 63.9  & 44.0  & 8.0  & 1.45 & 8.02  & 1.30 & 8.17 \\
+2000 & 25  & 128.3 & 133.5 & 16.6 & 0.96 & 7.71  & 1.08 & 6.88 \\\bottomrule
 \end{tabular}
 \end{table}
 
 The gene axis says the same thing from the other side. Taking $2{,}000$ to
 $20{,}000$ genes at fixed $S{=}60$ multiplies the work tenfold but the eager stage
-time only by \fact{1.7$\times$} at $P{=}2$ (\fact{128}$\to$\fact{212}\,ms) and
-\fact{1.2$\times$} at $P{=}4$ (\fact{195}$\to$\fact{225}\,ms): nine tenths of the
+time only by \fact{1.7$\times$} at $P{=}2$ (\fact{127}$\to$\fact{210}\,ms) and
+\fact{1.2$\times$} at $P{=}4$ (\fact{193}$\to$\fact{224}\,ms): nine tenths of the
 added genes are absorbed into launch latency the small case already paid. Because
 that fixed overhead is amortized over more genes at $20{,}000$, it is also where
 the graph has least left to remove, its stage speedup dropping from
-\fact{4.5$\times$} to \fact{1.8$\times$} at $P{=}2$ (\fact{3.7$\times$} to
+\fact{4.4$\times$} to \fact{1.7$\times$} at $P{=}2$ (\fact{3.7$\times$} to
 \fact{2.2$\times$} at $P{=}4$). Graph capture is a warm-path optimization: the
-one-time capture costs \fact{494--791\,ms} across these four configurations, so it
+one-time capture costs \fact{487--796\,ms} across these four configurations, so it
 is recovered only when many matrices of one shape are fitted in a session, as in the
 serving pattern the virtual-cell evaluation loops of the Introduction generate.
 
@@ -878,20 +877,17 @@ rather than the $\mathrm{iters}$ eager early-exits after; done genes are frozen
 no-ops but still cost their share of the kernel. Sweeping $k$ over the divisors of
 $\mathrm{maxit}=100$ (Table~\ref{tab:chunksweep}) traces that cost model. The
 full-length capture $k{=}100$ rounds $26$ real iterations up to $100$ and gives
-back almost all the benefit: \fact{1.84$\times$} instead of \fact{5.57$\times$} at
-$2{,}000$ genes, \fact{1.01$\times$} instead of \fact{2.45$\times$} at $20{,}000$,
+back almost all the benefit: \fact{1.83$\times$} instead of \fact{6.01$\times$} at
+$2{,}000$ genes, \fact{0.99$\times$} instead of \fact{2.42$\times$} at $20{,}000$,
 where it is indistinguishable from not graphing at all. What the sweep shows is
 that the padded iteration count, not the replay count, sets the time: rows
 executing the same number of iterations land within a couple of per cent of each
 other however many replays that took ($k{=}25$ and $k{=}50$ both pad to $50$ and
 differ by $0.4\%$ at $2{,}000$ genes; $k{=}2$ through $k{=}20$ all pad to $40$ and
-differ by $2\%$ at $20{,}000$). The one row that breaks the pattern breaks it
-informatively: at $2{,}000$ genes $k{=}2$ executes the fewest iterations of any
-setting ($26$, exactly what eager runs) yet is $13\%$ slower than $k{=}10$ at $30$,
-because a two-iteration chunk pays the per-replay cost thirteen times over. Between
-these failure modes (too much padding and too many replays), the optimum
-is broad. We ship $k{=}10$: the sweep maximum at $2{,}000$ genes and within noise
-of it at $20{,}000$ ($2.45\times$ vs.\ $2.46\times$), so one default serves both.
+differ by $2\%$ at $20{,}000$). At $2{,}000$ genes $k{=}2$ is fastest
+(\fact{6.01$\times$}) because it avoids padding, whereas at $20{,}000$ genes
+$k{=}10$ and $k{=}20$ tie at \fact{2.42$\times$}. The current $k{=}10$ default
+is therefore a conservative compromise rather than a universal optimum.
 
 \begin{table}[htbp]\centering
 \caption{\texttt{GRAPH\_CHUNK} sweep on the isolated gene-wise loop, single A100,
@@ -907,16 +903,16 @@ fixed-full-length-capture ablation. Every $k$ is bit-identical to eager
 \small
 \begin{tabular}{rrrrcrrr}
 \toprule
- & \multicolumn{3}{c}{$60\times2{,}000$ (eager 90.0\,ms)} & & \multicolumn{3}{c}{$60\times20{,}000$ (eager 140.3\,ms)} \\
+ & \multicolumn{3}{c}{$60\times2{,}000$ (eager 89.2\,ms)} & & \multicolumn{3}{c}{$60\times20{,}000$ (eager 138.8\,ms)} \\
 \cmidrule(lr){2-4}\cmidrule(lr){6-8}
 $k$ & iters run & graph (ms) & speedup & & iters run & graph (ms) & speedup \\\midrule
-2   & 26  & 18.34 & 4.91 & & 40  & 58.20  & 2.41 \\
-5   & 30  & 16.32 & 5.52 & & 40  & 57.47  & 2.44 \\
-10  & 30  & 16.17 & \textbf{5.57} & & 40  & 57.29  & 2.45 \\
-20  & 40  & 20.80 & 4.33 & & 40  & 56.96  & \textbf{2.46} \\
-25  & 50  & 25.49 & 3.53 & & 50  & 70.79  & 1.98 \\
-50  & 50  & 25.40 & 3.54 & & 50  & 70.82  & 1.98 \\
-100 & 100 & 48.81 & 1.84 & & 100 & 139.27 & 1.01 \\\bottomrule
+2   & 26  & 14.83 & \textbf{6.01} & & 40  & 58.24  & 2.38 \\
+5   & 30  & 16.28 & 5.48 & & 40  & 57.48  & 2.41 \\
+10  & 30  & 16.18 & 5.51 & & 40  & 57.29  & \textbf{2.42} \\
+20  & 40  & 20.73 & 4.30 & & 40  & 57.45  & \textbf{2.42} \\
+25  & 50  & 25.42 & 3.51 & & 50  & 71.15  & 1.95 \\
+50  & 50  & 25.34 & 3.52 & & 50  & 70.96  & 1.96 \\
+100 & 100 & 48.73 & 1.83 & & 100 & 139.66 & 0.99 \\\bottomrule
 \end{tabular}
 \end{table}
 
