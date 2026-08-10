@@ -40,6 +40,9 @@ Outputs (committed): `bench/results/TABLES.md` (the three tables),
 `timings.json`, `parity.json`, and `reference_parity.json`. Use
 `reference_parity.py` when the R reference changes but a new GPU timing run is
 not available; it validates outputs without overwriting GPU timings.
+The [result manifest](results/README.md) identifies the source record for each
+manuscript table and keeps the latest same-host worker comparison separate from
+historical synthetic and CPU-only-host experiments.
 
 ## What the numbers mean / honest caveats
 
@@ -103,7 +106,10 @@ not available; it validates outputs without overwriting GPU timings.
   DESeq2 stages as `estimateSizeFactors → estimateDispersions → DESeq → results
   → lfcShrink`; because size factors and dispersions already exist, `DESeq`
   times the Wald and replacement/refit work. R uses three reps (one on the
-  300-sample cohort) and is single-threaded.
+  300-sample cohort) and is single-threaded. The separate end-to-end worker
+  comparison uses `DESeq() + results() + lfcShrink()` at one and 12
+  `MulticoreParam` workers, with standard count-outlier replacement/refitting;
+  its record is `bench/results/r_parallel_a100_12worker.json`.
 
 ## Files
 

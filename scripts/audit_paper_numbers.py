@@ -18,6 +18,9 @@ TEX = (ROOT / "paper/main.tex").read_text()
 TEXN = re.sub(r"\s+", " ", TEX)
 PARITY = json.loads((ROOT / "bench/results/reference_parity.json").read_text())
 TIMING = json.loads((ROOT / "bench/results/timings.json").read_text())
+PARALLEL_R = json.loads(
+    (ROOT / "bench/results/r_parallel_a100_12worker.json").read_text()
+)
 ROOF = json.loads((ROOT / "benchmarks/results_roofline.json").read_text())
 GENE = json.loads((ROOT / "benchmarks/results_a100.json").read_text())["results"]
 SAMPLE = json.loads(
@@ -58,6 +61,11 @@ for case, record in PARITY["cases"].items():
     check(f"{case}: apeglm version", record["apeglm_version"] == "1.34.0")
 check("standard reference pipeline",
       PARITY["pipeline"] == "standard_wald_with_outlier_refit")
+check("parallel R version", PARALLEL_R["provenance"]["r_version"] == "R version 4.6.0 (2026-04-24)")
+check("parallel DESeq2 version", PARALLEL_R["provenance"]["deseq2_version"] == "1.52.0")
+check("parallel apeglm version", PARALLEL_R["provenance"]["apeglm_version"] == "1.34.0")
+check("parallel worker count", PARALLEL_R["provenance"]["workers"] == 12)
+check("parallel benchmark covers six real designs", len(PARALLEL_R["cases"]) == 6)
 
 
 # Table 2: medians and least-favorable values across six designs.
@@ -105,16 +113,21 @@ for case, label in labels:
     row = next(line for line in timing_table.splitlines()
                if line.strip().startswith(label + " "))
     values = [float(x) for x in re.findall(r"(?<![\w.])(\d+(?:\.\d+)?)(?![\w.])", row)]
-    check(f"Table 3 {case}: R seconds",
-          round(values[2], 1) == round(TIMING["r"][case]["total"] / 1000, 1),
+    parallel_record = PARALLEL_R["cases"][case]
+    check(f"Table 3 {case}: R one-worker seconds",
+          round(values[2], 1) == round(parallel_record["serial"]["median_ms"] / 1000, 1),
           values)
-    shown_gpu = values[3:6]
+    check(f"Table 3 {case}: R 12-worker seconds",
+          round(values[3], 1) == round(parallel_record["parallel"]["median_ms"] / 1000, 1),
+          values)
+    shown_gpu = values[4:7]
     actual_gpu = [TIMING["cu"][case][mode]["total"]
                   for mode in ("eager", "graph", "triton")]
     check(f"Table 3 {case}: GPU totals",
           all(round(a) == round(b) for a, b in zip(shown_gpu, actual_gpu)),
           (shown_gpu, actual_gpu))
-    speedups.append(TIMING["r"][case]["total"] / min(actual_gpu))
+    speedups.append(min(parallel_record["serial"]["median_ms"],
+                         parallel_record["parallel"]["median_ms"]) / min(actual_gpu))
 
     block_start = substep_table.index(label + " &")
     next_mid = substep_table.find(r"\midrule", block_start)
@@ -129,10 +142,10 @@ for case, label in labels:
         ]
         check(f"Table 4 {case}/{stage}", shown == actual, (shown, actual))
 
-headline = re.findall(r"\\fact\{10\.3--99\.2\$\\times\$\}", TEX)
+headline = re.findall(r"\\fact\{3\.1--13\.8\$\\times\$\}", TEX)
 check("headline range appears three times", len(headline) == 3, len(headline))
-check("headline minimum", round(min(speedups), 1) == 10.3, min(speedups))
-check("headline maximum", round(max(speedups), 1) == 99.2, max(speedups))
+check("headline minimum", round(min(speedups), 1) == 3.1, min(speedups))
+check("headline maximum", round(max(speedups), 1) == 13.8, max(speedups))
 
 
 # Called-set claims are derived from the current standard-pipeline CSVs.
@@ -209,7 +222,7 @@ allowed = {
     "$\\ge$0.961", "$\\ge$99.6\\%", "0", "0.03\\%", "0.045\\%", "0.07",
     "0.44\\%", "0.96$\\times$", "0.971", "0.997", "0.99963", "0.99997",
     "1.000", "0.99$\\times$", "1.2$\\times$", "1.4\\%", "1.7$\\times$",
-    "1.83$\\times$", "10.3--99.2$\\times$", "100", "127",
+    "1.83$\\times$", "3.1--13.8$\\times$", "100", "127",
     "1287\\,\\textmu s", "1292\\,\\textmu s", "13--25", "1369\\,GB/s",
     "141", "193", "1e-14", "2.2$\\times$", "2.42$\\times$", "206", "210", "224",
     "21\\%", "225", "22\\%", "25", "3--8\\%", "3.0e-5", "3.0e-8",

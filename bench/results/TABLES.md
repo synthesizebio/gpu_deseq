@@ -1,20 +1,20 @@
 # Current standard-pipeline results
 
 R reference: R 4.6.0, DESeq2 1.52.0, apeglm 1.34.0. GPU timings are from one A100-SXM4-40GB standard-pipeline run.
+End-to-end R timings use the same standard call path with one and 12 BiocParallel workers; the speedup column uses the faster R result.
 
 ## End-to-end wall time (ms)
 
-| dataset | P | n | R | eager | graph | Triton | best measured speedup |
-|---|--:|--:|--:|--:|--:|--:|--:|
-| airway | 5 | 8 | 41570 | 2559 | 1681 | 1504 | 27.6× |
-| airway_cell | 4 | 8 | 36080 | 4169 | 3579 | 3495 | 10.3× |
-| airway_dex | 2 | 8 | 30932 | 1307 | 968 | 898 | 34.4× |
-| gtex_blood_muscle | 2 | 300 | 471588 | 8510 | 8293 | 4754 | 99.2× |
-| pasilla | 2 | 7 | 11091 | 982 | 650 | 717 | 17.1× |
-| pasilla_2fac | 3 | 7 | 12137 | 1481 | 922 | 841 | 14.4× |
-
+| dataset | P | n | R, 1 worker | R, 12 workers | eager | graph | Triton | best cuDESeq2 vs. best R |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| airway | 5 | 8 | 34739 | 12044 | 2559 | 1681 | 1504 | 8.0× |
+| airway_cell | 4 | 8 | 29417 | 10887 | 4169 | 3579 | 3495 | 3.1× |
+| airway_dex | 2 | 8 | 25948 | 12412 | 1307 | 968 | 898 | 13.8× |
+| gtex_blood_muscle | 2 | 300 | 277686 | 63471 | 8510 | 8293 | 4754 | 13.4× |
+| pasilla | 2 | 7 | 9493 | 7172 | 982 | 650 | 717 | 11.0× |
+| pasilla_2fac | 3 | 7 | 10120 | 7423 | 1481 | 922 | 841 | 8.8× |
 ## Per-substep wall time (ms)
-
+These substep timings are one-worker measurements. DESeq2 parallelizes some stages together, so they cannot be partitioned into comparable 12-worker substeps.
 | dataset | substep | R | eager | graph | Triton |
 |---|---|--:|--:|--:|--:|
 | airway | normalization | 223 | 1 | 1 | 1 |

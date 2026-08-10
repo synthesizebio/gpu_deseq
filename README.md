@@ -32,8 +32,8 @@ On a host configured with the NVIDIA Container Toolkit,
 > total-pipeline timing, per-substep timing, and output parity — for R DESeq2,
 > cuDESeq2 (eager / CUDA-graph / Triton), and a PyDESeq2 competitor, across six
 > real RNA-seq datasets (7–300 samples) on an A100. Across all six current
-> standard-pipeline measurements, the best GPU mode is 10.3–99.2× faster than
-> single-threaded R.
+> standard-pipeline measurements, the best GPU mode is 3.1–13.8× faster than
+> the faster of one-worker and 12-worker R DESeq2.
 
 ## What's tested vs R DESeq2
 

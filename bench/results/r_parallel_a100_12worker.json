@@ -1,0 +1,56 @@
+{
+  "provenance": {
+    "pipeline": "DESeq() + results() + lfcShrink(type=apeglm), standard outlier replacement/refit enabled",
+    "r_version": "R version 4.6.0 (2026-04-24)",
+    "deseq2_version": "1.52.0",
+    "apeglm_version": "1.34.0",
+    "workers": 12,
+    "backend": "BiocParallel::MulticoreParam",
+    "blas_threads": "1",
+    "measured_utc": "2026-08-10 16:34:04 UTC"
+  },
+  "cases": {
+    "airway": {
+      "n_samples": 8,
+      "design": "~ cell + dex",
+      "reps": 3,
+      "serial": {"median_ms": 34739.000, "values_ms": [32535.000, 34739.000, 34933.000]},
+      "parallel": {"median_ms": 12044.000, "values_ms": [12044.000, 12267.000, 12033.000]}
+    },
+    "airway_cell": {
+      "n_samples": 8,
+      "design": "~ cell",
+      "reps": 3,
+      "serial": {"median_ms": 29417.000, "values_ms": [29287.000, 29417.000, 29529.000]},
+      "parallel": {"median_ms": 10887.000, "values_ms": [10946.000, 10433.000, 10887.000]}
+    },
+    "airway_dex": {
+      "n_samples": 8,
+      "design": "~ dex",
+      "reps": 3,
+      "serial": {"median_ms": 25948.000, "values_ms": [26249.000, 25324.000, 25948.000]},
+      "parallel": {"median_ms": 12412.000, "values_ms": [13445.000, 12412.000, 11725.000]}
+    },
+    "gtex_blood_muscle": {
+      "n_samples": 300,
+      "design": "~ tissue",
+      "reps": 1,
+      "serial": {"median_ms": 277686.000, "values_ms": [277686.000]},
+      "parallel": {"median_ms": 63471.000, "values_ms": [63471.000]}
+    },
+    "pasilla": {
+      "n_samples": 7,
+      "design": "~ condition",
+      "reps": 3,
+      "serial": {"median_ms": 9493.000, "values_ms": [9527.000, 9456.000, 9493.000]},
+      "parallel": {"median_ms": 7172.000, "values_ms": [7313.000, 7172.000, 7002.000]}
+    },
+    "pasilla_2fac": {
+      "n_samples": 7,
+      "design": "~ type + condition",
+      "reps": 3,
+      "serial": {"median_ms": 10120.000, "values_ms": [10120.000, 10118.000, 10157.000]},
+      "parallel": {"median_ms": 7423.000, "values_ms": [7423.000, 7421.000, 7933.000]}
+    }
+  }
+}
