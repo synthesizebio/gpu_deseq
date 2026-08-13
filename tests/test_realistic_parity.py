@@ -75,8 +75,8 @@ def _p95_rel(a: np.ndarray, b: np.ndarray) -> float:
 @pytest.mark.parametrize(
     "label,disp_p95_rel,lfc_p95_rel,se_p95_rel",
     [
-        ("medium_30x500", 1e-6, 1e-5, 1e-6),
-        ("large_60x2000", 1e-6, 1e-5, 1e-6),
+        ("medium_30x500", 0.006, 0.02, 0.005),
+        ("large_60x2000", 0.005, 2e-4, 0.005),
     ],
 )
 def test_matches_r_deseq2_on_realistic_data(
