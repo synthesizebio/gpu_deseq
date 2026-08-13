@@ -88,7 +88,9 @@ def main():
          "and no existing result file is modified. Each R column is a separate",
          "measurement of the same five-substep serial call sequence",
          "(`bench/run_r.R` / Track A of `bench/run_r_scaling.sh`) on the same six",
-         "datasets.", "",
+         "datasets. The current A100-host `glm_fit` includes standard outlier",
+         "replacement/refitting; the historical EPYC Track A predates that branch",
+         "and therefore differs for GTEx, the only eligible design.", "",
          "## Columns", "",
          f"- **{REF_LABEL}** -- {REF_NOTE}."]
     for h in hosts:
@@ -177,7 +179,7 @@ def main():
               "arithmetic on existing numbers, shown because swapping the CPU baseline",
               "is exactly what a reviewer would ask about.", "",
               "`best cuDESeq2` = fastest of eager/graph/triton per dataset.", "",
-              "| dataset | best cuDESeq2 (A100, ms) | vs A100-host R (published) | "
+              "| dataset | best cuDESeq2 (A100, ms) | vs A100-host R staged serial | "
               + " | ".join(f"vs {h['label']} R serial" for h in hosts) + " | "
               + " | ".join(f"vs {h['label']} R best multi-core" for h in hosts) + " |",
               "|---|--:|--:|" + "--:|" * (2 * len(hosts))]
@@ -197,8 +199,8 @@ def main():
                 cells.append(f"{min(tots)/gpu:.1f}x" if tots else "--")
             L.append(f"| {c} | " + " | ".join(cells) + " |")
         L += ["",
-              "The spread between the last columns and the published one is the",
-              "share of the headline that came from the baseline machine and its",
+              "The spread between the serial columns is the share of the apparent",
+              "speedup that came from the baseline machine and its",
               "DESeq2 version rather than from the GPU port. Quote whichever",
               "baseline a claim is actually about, and say which host it ran on.", ""]
 

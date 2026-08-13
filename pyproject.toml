@@ -22,7 +22,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
-profile = ["pyarrow>=17", "gcsfs>=2024.6"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

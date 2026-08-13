@@ -20,10 +20,6 @@ make container-test
 make container-paper
 ```
 
-`container-test` excludes `test_bulk_v4_holdout_benchmark.py` because that test
-depends on a predictions file in another repository. All self-contained
-repository tests run.
-
 The repository is bind-mounted into the container. Compose runs with the host
 UID and GID so generated fixtures, tables, figures, and PDFs remain editable by
 the host user.

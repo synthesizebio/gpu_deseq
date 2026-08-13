@@ -124,4 +124,4 @@ if __name__ == "__main__":
     case = sys.argv[1] if len(sys.argv) > 1 else "pasilla"
     mode = sys.argv[2] if len(sys.argv) > 2 else "triton"
     dev = "cuda" if torch.cuda.is_available() else "cpu"
-    print(json.dumps(time_mode(case, mode, dev, reps=3), indent=2))
+    print(json.dumps(time_mode(case, mode, dev, reps=5), indent=2))

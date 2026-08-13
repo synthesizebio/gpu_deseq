@@ -279,7 +279,7 @@
       "case": "gtex_blood_muscle",
       "substep": "lfc_shrink",
       "metric": "Pearson r",
-      "value": 0.9999982314064358,
+      "value": 0.9999982314059583,
       "tol": 0.9,
       "higher_better": true,
       "pass": true,

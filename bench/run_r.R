@@ -2,7 +2,7 @@
 # Benchmark harness, R side. For every prepared case in validation/data/<case>/
 # (counts.csv, coldata.csv, meta.json) this:
 #   (1) runs the installed DESeq2 standard Wald pipeline substep-by-substep,
-#       including DESeq()'s Cook's-outlier replacement/refit in glm_fit, and
+#       including DESeq2's Cook's-outlier replacement/refit in glm_fit, and
 #       times the five substeps (normalization, dispersion, glm_fit,
 #       significance, lfc_shrink), median over BENCH_R_REPS reps;
 #   (2) exports every per-substep intermediate so the Python side can verify
@@ -31,16 +31,59 @@ read_meta <- function(p) {
 
 med_ms <- function(f, reps) { ts <- numeric(reps); for (i in seq_len(reps)) { t0 <- Sys.time(); f(); ts[i] <- as.numeric(Sys.time() - t0, units = "secs") }; median(ts) * 1000 }
 
+# The staged equivalent of the part of DESeq(test="Wald") that follows
+# estimateDispersions(). Calling DESeq() here would be wrong: DESeq() always
+# calls estimateDispersions() itself, even when dispersion estimates exist, and
+# would charge a second complete dispersion fit to the glm_fit stage. Keep this
+# aligned with cuDESeq2's glm_fit boundary: the initial Wald fit plus eligible
+# Cook's-outlier replacement and refitting.
+wald_and_outlier_refit <- function(dds, quiet = TRUE) {
+  dds <- nbinomWaldTest(dds, betaPrior = FALSE, quiet = quiet)
+  model_matrix <- attr(dds, "modelMatrix")
+  sufficient_reps <- any(DESeq2:::nOrMoreInCell(model_matrix, 7))
+  if (sufficient_reps) {
+    dds <- DESeq2:::refitWithoutOutliers(
+      dds,
+      test = "Wald",
+      betaPrior = FALSE,
+      full = design(dds),
+      quiet = quiet,
+      minReplicatesForReplace = 7,
+      modelMatrix = NULL
+    )
+  }
+  dds
+}
+
+assert_same_numeric <- function(label, observed, expected, tolerance = 0) {
+  if (!isTRUE(all.equal(observed, expected, tolerance = tolerance,
+                        check.attributes = FALSE))) {
+    finite <- is.finite(observed) & is.finite(expected)
+    max_abs <- if (any(finite)) max(abs(observed[finite] - expected[finite])) else NA_real_
+    stop(sprintf("staged-vs-DESeq output mismatch: %s (max abs diff %.6g)",
+                 label, max_abs))
+  }
+}
+
 for (case in cases) {
   d <- file.path(DATA, case); out <- file.path(CACHE, case); dir.create(out, recursive = TRUE, showWarnings = FALSE)
   meta <- read_meta(file.path(d, "meta.json"))
   cts <- as.matrix(read.csv(file.path(d, "counts.csv"), row.names = 1)); storage.mode(cts) <- "integer"
   cd  <- read.csv(file.path(d, "coldata.csv"), row.names = 1)
   cd[[meta$factor]] <- relevel(factor(cd[[meta$factor]]), ref = meta$ref)
-  reps <- as.integer(Sys.getenv("BENCH_R_REPS", unset = if (meta$n_samples > 100) "1" else "3"))
+  reps <- as.integer(Sys.getenv("BENCH_R_REPS", unset = "5"))
   # Use the FULL design (e.g. ~ cell + dex), not just the primary factor, so R
   # fits the same model as cuDESeq2 (which reads meta$design).
   mk <- function() DESeqDataSetFromMatrix(cts, cd, as.formula(meta$design))
+
+  # Untimed warm-up, matching the warm timing policy on the GPU side.
+  warm <- mk()
+  warm <- estimateSizeFactors(warm)
+  warm <- estimateDispersions(warm, quiet = TRUE)
+  warm <- wald_and_outlier_refit(warm)
+  warm_res <- results(warm, name = meta$coef)
+  invisible(lfcShrink(warm, coef = meta$coef, type = "apeglm", quiet = TRUE))
+  rm(warm, warm_res)
 
   # Per-substep timing: each rep runs the full chain, timing each stage.
   tt <- list(normalization = c(), dispersion = c(), glm_fit = c(), significance = c(), lfc_shrink = c())
@@ -48,14 +91,57 @@ for (case in cases) {
     dds <- mk()
     t0 <- Sys.time(); dds <- estimateSizeFactors(dds);                 tt$normalization <- c(tt$normalization, as.numeric(Sys.time()-t0, units="secs"))
     t0 <- Sys.time(); dds <- estimateDispersions(dds, quiet = TRUE);   tt$dispersion    <- c(tt$dispersion,    as.numeric(Sys.time()-t0, units="secs"))
-    # DESeq() recognizes the existing size factors and dispersions, so this
-    # call times the Wald fit and the standard count-outlier replacement/refit.
-    t0 <- Sys.time(); dds <- DESeq(dds, test = "Wald", quiet = TRUE); tt$glm_fit       <- c(tt$glm_fit,       as.numeric(Sys.time()-t0, units="secs"))
+    t0 <- Sys.time(); dds <- wald_and_outlier_refit(dds);            tt$glm_fit       <- c(tt$glm_fit,       as.numeric(Sys.time()-t0, units="secs"))
     t0 <- Sys.time(); res <- results(dds, name = meta$coef);          tt$significance  <- c(tt$significance,  as.numeric(Sys.time()-t0, units="secs"))
     t0 <- Sys.time(); sh  <- lfcShrink(dds, coef = meta$coef, type = "apeglm", quiet = TRUE); tt$lfc_shrink <- c(tt$lfc_shrink, as.numeric(Sys.time()-t0, units="secs"))
   }
   timings <- lapply(tt, function(x) median(x) * 1000)
   timings$total <- Reduce(`+`, timings)
+
+  # Untimed correctness gate: explicit staging must reproduce an ordinary
+  # DESeq() call exactly before this case's measurements are accepted. For the
+  # large GTEx case, compare against the existing version-matched DESeq() CSVs
+  # instead of retaining a second 54,922-gene DESeqDataSet in memory and running
+  # a third full pipeline. The cache is read before anything below overwrites it.
+  cached_paths <- file.path(out, c("r_sizefactors.csv", "r_dispersions.csv",
+                                   "r_results.csv", "r_shrink.csv"))
+  force_fresh_gate <- identical(Sys.getenv("BENCH_FORCE_FRESH_GATE", unset = "0"), "1")
+  if (meta$n_samples > 100 && !force_fresh_gate && all(file.exists(cached_paths))) {
+    cached_sf <- read.csv(cached_paths[1])
+    cached_disp <- read.csv(cached_paths[2])
+    cached_res <- read.csv(cached_paths[3])
+    cached_sh <- read.csv(cached_paths[4])
+    csv_tolerance <- 1e-12
+    assert_same_numeric("size factors", sizeFactors(dds), cached_sf$sizeFactor,
+                        csv_tolerance)
+    assert_same_numeric("dispersions", dispersions(dds), cached_disp$dispersion,
+                        csv_tolerance)
+    for (column in c("baseMean", "log2FoldChange", "lfcSE", "stat", "pvalue", "padj")) {
+      assert_same_numeric(column, as.data.frame(res)[[column]], cached_res[[column]],
+                          csv_tolerance)
+    }
+    assert_same_numeric("apeglm log2FoldChange", as.data.frame(sh)$log2FoldChange,
+                        cached_sh$log2FoldChange, csv_tolerance)
+    assert_same_numeric("apeglm lfcSE", as.data.frame(sh)$lfcSE, cached_sh$lfcSE,
+                        csv_tolerance)
+    validation_source <- "cached version-matched DESeq() reference (CSV tolerance 1e-12)"
+  } else {
+    standard <- DESeq(mk(), test = "Wald", quiet = TRUE)
+    standard_res <- results(standard, name = meta$coef)
+    standard_sh <- lfcShrink(standard, coef = meta$coef, type = "apeglm", quiet = TRUE)
+    assert_same_numeric("size factors", sizeFactors(dds), sizeFactors(standard))
+    assert_same_numeric("dispersions", dispersions(dds), dispersions(standard))
+    for (column in c("baseMean", "log2FoldChange", "lfcSE", "stat", "pvalue", "padj")) {
+      assert_same_numeric(column, as.data.frame(res)[[column]],
+                          as.data.frame(standard_res)[[column]])
+    }
+    assert_same_numeric("apeglm log2FoldChange", as.data.frame(sh)$log2FoldChange,
+                        as.data.frame(standard_sh)$log2FoldChange)
+    assert_same_numeric("apeglm lfcSE", as.data.frame(sh)$lfcSE,
+                        as.data.frame(standard_sh)$lfcSE)
+    validation_source <- "fresh DESeq() run"
+  }
+  cat(sprintf("  %-18s staged output exactly matches %s\n", case, validation_source))
 
   # Intermediates (deterministic — from the last rep's dds/res/sh).
   write.csv(data.frame(sample = colnames(dds), sizeFactor = sizeFactors(dds)), file.path(out, "r_sizefactors.csv"), row.names = FALSE)
@@ -65,7 +151,7 @@ for (case in cases) {
   sdf <- as.data.frame(sh); sdf$gene <- rownames(sh)
   write.csv(sdf[, c("gene","log2FoldChange","lfcSE")], file.path(out, "r_shrink.csv"), row.names = FALSE)
 
-  writeLines(sprintf('{"case":"%s","reps":%d,"r_version":"%s","deseq2_version":"%s","apeglm_version":"%s","normalization":%.3f,"dispersion":%.3f,"glm_fit":%.3f,"significance":%.3f,"lfc_shrink":%.3f,"total":%.3f}',
+  writeLines(sprintf('{"case":"%s","reps":%d,"pipeline":"staged_standard_wald_no_duplicate_dispersion","glm_fit_scope":"nbinomWaldTest_plus_outlier_replacement_refit","output_equivalent_to_DESeq":true,"r_version":"%s","deseq2_version":"%s","apeglm_version":"%s","normalization":%.3f,"dispersion":%.3f,"glm_fit":%.3f,"significance":%.3f,"lfc_shrink":%.3f,"total":%.3f}',
     case, reps, as.character(getRversion()), as.character(packageVersion("DESeq2")),
     as.character(packageVersion("apeglm")), timings$normalization, timings$dispersion,
     timings$glm_fit, timings$significance, timings$lfc_shrink, timings$total),

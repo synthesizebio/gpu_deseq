@@ -7,46 +7,46 @@ End-to-end R timings use the same standard call path with one and 12 BiocParalle
 
 | dataset | P | n | R, 1 worker | R, 12 workers | eager | graph | Triton | best cuDESeq2 vs. best R |
 |---|--:|--:|--:|--:|--:|--:|--:|--:|
-| airway | 5 | 8 | 34739 | 12044 | 2559 | 1681 | 1504 | 8.0× |
-| airway_cell | 4 | 8 | 29417 | 10887 | 4169 | 3579 | 3495 | 3.1× |
-| airway_dex | 2 | 8 | 25948 | 12412 | 1307 | 968 | 898 | 13.8× |
-| gtex_blood_muscle | 2 | 300 | 277686 | 63471 | 8510 | 8293 | 4754 | 13.4× |
-| pasilla | 2 | 7 | 9493 | 7172 | 982 | 650 | 717 | 11.0× |
-| pasilla_2fac | 3 | 7 | 10120 | 7423 | 1481 | 922 | 841 | 8.8× |
+| airway | 5 | 8 | 32130 | 12099 | 2578 | 1707 | 1531 | 7.9× |
+| airway_cell | 4 | 8 | 29341 | 10421 | 4260 | 3665 | 3629 | 2.9× |
+| airway_dex | 2 | 8 | 25968 | 11856 | 1330 | 1010 | 944 | 12.6× |
+| gtex_blood_muscle | 2 | 300 | 276016 | 63445 | 8526 | 8284 | 4744 | 13.4× |
+| pasilla | 2 | 7 | 9447 | 7336 | 1022 | 673 | 751 | 10.9× |
+| pasilla_2fac | 3 | 7 | 10200 | 7371 | 1536 | 960 | 876 | 8.4× |
 ## Per-substep wall time (ms)
 These substep timings are one-worker measurements. DESeq2 parallelizes some stages together, so they cannot be partitioned into comparable 12-worker substeps.
 | dataset | substep | R | eager | graph | Triton |
 |---|---|--:|--:|--:|--:|
-| airway | normalization | 223 | 1 | 1 | 1 |
-| airway | dispersion | 8077 | 1586 | 713 | 581 |
-| airway | glm_fit | 12686 | 62 | 60 | 60 |
-| airway | significance | 872 | 117 | 117 | 117 |
-| airway | lfc_shrink | 19712 | 793 | 790 | 746 |
-| airway_cell | normalization | 183 | 1 | 1 | 1 |
-| airway_cell | dispersion | 5794 | 748 | 186 | 60 |
-| airway_cell | glm_fit | 9584 | 37 | 36 | 36 |
-| airway_cell | significance | 362 | 114 | 115 | 115 |
-| airway_cell | lfc_shrink | 20157 | 3268 | 3240 | 3283 |
-| airway_dex | normalization | 189 | 1 | 1 | 1 |
-| airway_dex | dispersion | 4707 | 429 | 109 | 51 |
-| airway_dex | glm_fit | 9924 | 55 | 53 | 53 |
-| airway_dex | significance | 1397 | 145 | 124 | 123 |
-| airway_dex | lfc_shrink | 14715 | 676 | 681 | 670 |
-| gtex_blood_muscle | normalization | 3115 | 4 | 4 | 4 |
-| gtex_blood_muscle | dispersion | 188957 | 3500 | 3623 | 200 |
-| gtex_blood_muscle | glm_fit | 239691 | 3147 | 2810 | 2709 |
-| gtex_blood_muscle | significance | 496 | 623 | 623 | 621 |
-| gtex_blood_muscle | lfc_shrink | 39330 | 1235 | 1233 | 1220 |
-| pasilla | normalization | 143 | 1 | 1 | 1 |
-| pasilla | dispersion | 1722 | 402 | 71 | 20 |
-| pasilla | glm_fit | 3878 | 38 | 37 | 37 |
-| pasilla | significance | 206 | 63 | 63 | 63 |
-| pasilla | lfc_shrink | 5143 | 478 | 478 | 596 |
-| pasilla_2fac | normalization | 145 | 1 | 1 | 1 |
-| pasilla_2fac | dispersion | 2140 | 708 | 161 | 80 |
-| pasilla_2fac | glm_fit | 3755 | 320 | 321 | 322 |
-| pasilla_2fac | significance | 185 | 74 | 60 | 60 |
-| pasilla_2fac | lfc_shrink | 5912 | 378 | 379 | 378 |
+| airway | normalization | 189 | 1 | 1 | 1 |
+| airway | dispersion | 7463 | 1586 | 719 | 583 |
+| airway | glm_fit | 4438 | 62 | 61 | 61 |
+| airway | significance | 895 | 118 | 119 | 120 |
+| airway | lfc_shrink | 19488 | 811 | 808 | 767 |
+| airway_cell | normalization | 190 | 1 | 1 | 1 |
+| airway_cell | dispersion | 5668 | 753 | 185 | 60 |
+| airway_cell | glm_fit | 3850 | 38 | 36 | 37 |
+| airway_cell | significance | 863 | 115 | 115 | 119 |
+| airway_cell | lfc_shrink | 19755 | 3353 | 3327 | 3412 |
+| airway_dex | normalization | 182 | 1 | 1 | 1 |
+| airway_dex | dispersion | 4732 | 427 | 110 | 52 |
+| airway_dex | glm_fit | 5205 | 57 | 56 | 56 |
+| airway_dex | significance | 1391 | 145 | 126 | 124 |
+| airway_dex | lfc_shrink | 14810 | 699 | 716 | 711 |
+| gtex_blood_muscle | normalization | 3262 | 4 | 4 | 4 |
+| gtex_blood_muscle | dispersion | 184599 | 3507 | 3625 | 200 |
+| gtex_blood_muscle | glm_fit | 51134 | 3148 | 2794 | 2694 |
+| gtex_blood_muscle | significance | 492 | 613 | 610 | 609 |
+| gtex_blood_muscle | lfc_shrink | 40117 | 1254 | 1252 | 1237 |
+| pasilla | normalization | 153 | 1 | 1 | 1 |
+| pasilla | dispersion | 1760 | 417 | 71 | 20 |
+| pasilla | glm_fit | 2035 | 39 | 39 | 39 |
+| pasilla | significance | 223 | 62 | 61 | 62 |
+| pasilla | lfc_shrink | 5314 | 504 | 501 | 630 |
+| pasilla_2fac | normalization | 153 | 1 | 1 | 1 |
+| pasilla_2fac | dispersion | 2134 | 730 | 163 | 83 |
+| pasilla_2fac | glm_fit | 1465 | 334 | 338 | 335 |
+| pasilla_2fac | significance | 204 | 75 | 60 | 59 |
+| pasilla_2fac | lfc_shrink | 6043 | 396 | 399 | 398 |
 
 ## Output parity against DESeq2 1.52.0
 

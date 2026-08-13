@@ -1,12 +1,10 @@
 # Direct Python dependencies used for the DESeq2 1.52.0 reference refresh.
 # Transitive CUDA wheels are resolved by the pinned PyTorch cu124 index.
 formulaic==1.2.2
-gcsfs==2025.3.2
 matplotlib==3.10.9
 numba==0.61.2
 numpy==2.2.6
 pandas==2.3.3
-pyarrow==24.0.0
 pytest==9.0.3
 scipy==1.15.3
 statsmodels==0.14.6

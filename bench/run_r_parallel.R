@@ -61,7 +61,7 @@ for (case in cases) {
   coldata <- read.csv(file.path(path, "coldata.csv"), row.names = 1)
   coldata[[meta$factor]] <- relevel(factor(coldata[[meta$factor]]), ref = meta$ref)
   make_dds <- function() DESeqDataSetFromMatrix(counts, coldata, as.formula(meta$design))
-  reps <- if (meta$n_samples > 100) 1L else 3L
+  reps <- 5L
   serial <- timed(function() run_pipeline(make_dds, meta$coef, FALSE, serial_bp), reps)
   parallel <- timed(function() run_pipeline(make_dds, meta$coef, TRUE, parallel_bp), reps)
   records[[case]] <- list(n_samples = meta$n_samples, design = meta$design, reps = reps,

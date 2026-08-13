@@ -24,17 +24,17 @@
   "datasets": {
     "airway": {
       "r_serial_ms": {
-        "A100 host": 41569.643,
+        "A100 host": 32449.629,
         "EPYC 9B14": 17101.081
       },
       "r_substeps_ms": {
         "A100 host": {
-          "normalization": 222.968,
-          "dispersion": 8076.502,
-          "glm_fit": 12686.042,
-          "significance": 872.484,
-          "lfc_shrink": 19711.647,
-          "total": 41569.643
+          "normalization": 187.826,
+          "dispersion": 7326.269,
+          "glm_fit": 4402.941,
+          "significance": 879.979,
+          "lfc_shrink": 19652.613,
+          "total": 32449.629
         },
         "EPYC 9B14": {
           "normalization": 92.802,
@@ -66,24 +66,24 @@
         "total_ms": 1504.14161500521
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 27.64,
+        "vs_A100 host_serial": 21.57,
         "vs_EPYC 9B14_serial": 11.37,
         "vs_EPYC 9B14_best_multicore": 3.3
       }
     },
     "airway_cell": {
       "r_serial_ms": {
-        "A100 host": 36079.716,
+        "A100 host": 30681.9,
         "EPYC 9B14": 14754.421
       },
       "r_substeps_ms": {
         "A100 host": {
-          "normalization": 183.064,
-          "dispersion": 5793.543,
-          "glm_fit": 9584.194,
-          "significance": 361.936,
-          "lfc_shrink": 20156.979,
-          "total": 36079.716
+          "normalization": 187.918,
+          "dispersion": 5485.396,
+          "glm_fit": 3832.148,
+          "significance": 887.619,
+          "lfc_shrink": 20288.819,
+          "total": 30681.9
         },
         "EPYC 9B14": {
           "normalization": 92.305,
@@ -115,24 +115,24 @@
         "total_ms": 3494.765835988801
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 10.32,
+        "vs_A100 host_serial": 8.78,
         "vs_EPYC 9B14_serial": 4.22,
         "vs_EPYC 9B14_best_multicore": 1.31
       }
     },
     "airway_dex": {
       "r_serial_ms": {
-        "A100 host": 30932.18,
+        "A100 host": 26235.119,
         "EPYC 9B14": 12688.628
       },
       "r_substeps_ms": {
         "A100 host": {
-          "normalization": 189.254,
-          "dispersion": 4707.422,
-          "glm_fit": 9923.826,
-          "significance": 1396.694,
-          "lfc_shrink": 14714.983,
-          "total": 30932.18
+          "normalization": 185.289,
+          "dispersion": 4453.634,
+          "glm_fit": 5040.016,
+          "significance": 1955.334,
+          "lfc_shrink": 14600.847,
+          "total": 26235.119
         },
         "EPYC 9B14": {
           "normalization": 96.922,
@@ -164,24 +164,24 @@
         "total_ms": 898.1667050393298
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 34.44,
+        "vs_A100 host_serial": 29.21,
         "vs_EPYC 9B14_serial": 14.13,
         "vs_EPYC 9B14_best_multicore": 6.16
       }
     },
     "gtex_blood_muscle": {
       "r_serial_ms": {
-        "A100 host": 471587.735,
+        "A100 host": 277774.89,
         "EPYC 9B14": 147211.291
       },
       "r_substeps_ms": {
         "A100 host": {
-          "normalization": 3114.718,
-          "dispersion": 188956.738,
-          "glm_fit": 239690.745,
-          "significance": 495.908,
-          "lfc_shrink": 39329.627,
-          "total": 471587.735
+          "normalization": 3067.8,
+          "dispersion": 184710.776,
+          "glm_fit": 50660.673,
+          "significance": 473.231,
+          "lfc_shrink": 38862.411,
+          "total": 277774.89
         },
         "EPYC 9B14": {
           "normalization": 1047.18,
@@ -213,24 +213,24 @@
         "total_ms": 4753.89826198807
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 99.2,
+        "vs_A100 host_serial": 58.43,
         "vs_EPYC 9B14_serial": 30.97,
         "vs_EPYC 9B14_best_multicore": 8.3
       }
     },
     "pasilla": {
       "r_serial_ms": {
-        "A100 host": 11091.437,
+        "A100 host": 9468.154,
         "EPYC 9B14": 4527.046
       },
       "r_substeps_ms": {
         "A100 host": {
-          "normalization": 142.681,
-          "dispersion": 1722.448,
-          "glm_fit": 3877.926,
-          "significance": 205.619,
-          "lfc_shrink": 5142.763,
-          "total": 11091.437
+          "normalization": 157.751,
+          "dispersion": 1770.908,
+          "glm_fit": 2048.765,
+          "significance": 237.919,
+          "lfc_shrink": 5252.811,
+          "total": 9468.154
         },
         "EPYC 9B14": {
           "normalization": 81.923,
@@ -262,24 +262,24 @@
         "total_ms": 649.6589459711686
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 17.07,
+        "vs_A100 host_serial": 14.57,
         "vs_EPYC 9B14_serial": 6.97,
         "vs_EPYC 9B14_best_multicore": 5.49
       }
     },
     "pasilla_2fac": {
       "r_serial_ms": {
-        "A100 host": 12136.71,
+        "A100 host": 9970.884,
         "EPYC 9B14": 4664.726
       },
       "r_substeps_ms": {
         "A100 host": {
-          "normalization": 144.809,
-          "dispersion": 2139.828,
-          "glm_fit": 3755.136,
-          "significance": 185.104,
-          "lfc_shrink": 5911.832,
-          "total": 12136.71
+          "normalization": 156.596,
+          "dispersion": 2172.754,
+          "glm_fit": 1476.77,
+          "significance": 195.982,
+          "lfc_shrink": 5968.782,
+          "total": 9970.884
         },
         "EPYC 9B14": {
           "normalization": 83.648,
@@ -311,7 +311,7 @@
         "total_ms": 841.1821180488914
       },
       "speedup_recomputed": {
-        "vs_A100 host_serial": 14.43,
+        "vs_A100 host_serial": 11.85,
         "vs_EPYC 9B14_serial": 5.55,
         "vs_EPYC 9B14_best_multicore": 4.34
       }

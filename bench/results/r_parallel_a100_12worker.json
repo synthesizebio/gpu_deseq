@@ -7,50 +7,50 @@
     "workers": 12,
     "backend": "BiocParallel::MulticoreParam",
     "blas_threads": "1",
-    "measured_utc": "2026-08-10 16:34:04 UTC"
+    "measured_utc": "2026-08-13 02:00:23 UTC"
   },
   "cases": {
     "airway": {
       "n_samples": 8,
       "design": "~ cell + dex",
-      "reps": 3,
-      "serial": {"median_ms": 34739.000, "values_ms": [32535.000, 34739.000, 34933.000]},
-      "parallel": {"median_ms": 12044.000, "values_ms": [12044.000, 12267.000, 12033.000]}
+      "reps": 5,
+      "serial": {"median_ms": 32130.000, "values_ms": [32497.000, 32045.000, 32130.000, 32713.000, 31654.000]},
+      "parallel": {"median_ms": 12099.000, "values_ms": [12279.000, 12053.000, 11526.000, 12099.000, 12102.000]}
     },
     "airway_cell": {
       "n_samples": 8,
       "design": "~ cell",
-      "reps": 3,
-      "serial": {"median_ms": 29417.000, "values_ms": [29287.000, 29417.000, 29529.000]},
-      "parallel": {"median_ms": 10887.000, "values_ms": [10946.000, 10433.000, 10887.000]}
+      "reps": 5,
+      "serial": {"median_ms": 29341.000, "values_ms": [29588.000, 29055.000, 29903.000, 29112.000, 29341.000]},
+      "parallel": {"median_ms": 10421.000, "values_ms": [10421.000, 10348.000, 10312.000, 10961.000, 11004.000]}
     },
     "airway_dex": {
       "n_samples": 8,
       "design": "~ dex",
-      "reps": 3,
-      "serial": {"median_ms": 25948.000, "values_ms": [26249.000, 25324.000, 25948.000]},
-      "parallel": {"median_ms": 12412.000, "values_ms": [13445.000, 12412.000, 11725.000]}
+      "reps": 5,
+      "serial": {"median_ms": 25968.000, "values_ms": [26427.000, 25940.000, 26055.000, 25914.000, 25968.000]},
+      "parallel": {"median_ms": 11856.000, "values_ms": [11856.000, 12430.000, 11663.000, 11724.000, 12298.000]}
     },
     "gtex_blood_muscle": {
       "n_samples": 300,
       "design": "~ tissue",
-      "reps": 1,
-      "serial": {"median_ms": 277686.000, "values_ms": [277686.000]},
-      "parallel": {"median_ms": 63471.000, "values_ms": [63471.000]}
+      "reps": 5,
+      "serial": {"median_ms": 276016.000, "values_ms": [277740.000, 275135.000, 275574.000, 276016.000, 276455.000]},
+      "parallel": {"median_ms": 63445.000, "values_ms": [63604.000, 63445.000, 62363.000, 63553.000, 63419.000]}
     },
     "pasilla": {
       "n_samples": 7,
       "design": "~ condition",
-      "reps": 3,
-      "serial": {"median_ms": 9493.000, "values_ms": [9527.000, 9456.000, 9493.000]},
-      "parallel": {"median_ms": 7172.000, "values_ms": [7313.000, 7172.000, 7002.000]}
+      "reps": 5,
+      "serial": {"median_ms": 9447.000, "values_ms": [9437.000, 9447.000, 9603.000, 9431.000, 9536.000]},
+      "parallel": {"median_ms": 7336.000, "values_ms": [7720.000, 7372.000, 7336.000, 7238.000, 7284.000]}
     },
     "pasilla_2fac": {
       "n_samples": 7,
       "design": "~ type + condition",
-      "reps": 3,
-      "serial": {"median_ms": 10120.000, "values_ms": [10120.000, 10118.000, 10157.000]},
-      "parallel": {"median_ms": 7423.000, "values_ms": [7423.000, 7421.000, 7933.000]}
+      "reps": 5,
+      "serial": {"median_ms": 10200.000, "values_ms": [10211.000, 10200.000, 10184.000, 10179.000, 10394.000]},
+      "parallel": {"median_ms": 7371.000, "values_ms": [8099.000, 7690.000, 7371.000, 7267.000, 7346.000]}
     }
   }
 }

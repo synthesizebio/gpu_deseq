@@ -41,12 +41,10 @@ RUN python3 -m pip install --break-system-packages \
     && python3 -m pip install --break-system-packages \
         --constraint /tmp/constraints.txt \
         formulaic \
-        gcsfs \
         matplotlib \
         numba \
         numpy \
         pandas \
-        pyarrow \
         pytest \
         scipy \
         statsmodels \

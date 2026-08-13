@@ -236,7 +236,7 @@ def main():
             r_time[c] = json.loads(rp.read_text())
         meta = json.loads((DATA / c / "meta.json").read_text())
         n = meta["n_samples"]
-        reps = int(3 if n > 100 else 5)
+        reps = 5
         print(f"[{c}] cuDESeq2 timing (reps={reps}) + capture ...", flush=True)
         cu_time[c] = {"_P": meta.get("P", "?"), "_n": n}
         caps = {}
@@ -245,7 +245,7 @@ def main():
             caps[m] = cu.capture_mode(c, m, args.device)
         pj_cap = None
         if run_pj:
-            pj_reps = int(1 if n > 100 else 3)  # PyDESeq2 is slow on large n; fewer reps
+            pj_reps = 5
             print(f"[{c}] PyDESeq2 competitor timing (reps={pj_reps}) + capture ...", flush=True)
             pj_time[c] = pj.time_pydeseq2(c, reps=pj_reps, n_cpus=os.cpu_count())
             pj_cap = pj.capture_pydeseq2(c, n_cpus=os.cpu_count())
@@ -257,6 +257,7 @@ def main():
         "cu": cu_time,
         "pydeseq2": pj_time,
     }
+    timing_output["provenance"]["timing_repetitions_per_case_mode"] = 5
     (RES / "timings.json").write_text(json.dumps(timing_output, indent=2))
     (RES / "parity.json").write_text(json.dumps(parity, indent=2))
     tables = render_tables(cases, r_time, cu_time, parity, pj_time)
