@@ -31,15 +31,25 @@ def main() -> None:
         for path in bench.DATA.iterdir()
         if (path / "meta.json").exists()
     )
+    destination = bench.RES / "reference_parity.json"
     if args.only:
         selected = set(args.only.split(","))
+        unknown = selected.difference(cases)
+        if unknown:
+            parser.error(f"unknown case(s): {', '.join(sorted(unknown))}")
         cases = [case for case in cases if case in selected]
 
-    output: dict[str, object] = {
-        "device": args.device,
-        "pipeline": "standard_wald_with_outlier_refit",
-        "cases": {},
-    }
+    if args.only and destination.exists():
+        output: dict[str, object] = json.loads(destination.read_text())
+        output.setdefault("cases", {})
+        output["device"] = args.device
+        output["pipeline"] = "standard_wald_with_outlier_refit"
+    else:
+        output = {
+            "device": args.device,
+            "pipeline": "standard_wald_with_outlier_refit",
+            "cases": {},
+        }
     for case in cases:
         print(f"[{case}] reference parity on {args.device}", flush=True)
         capture = run_cu.capture_mode(case, "eager", args.device)
@@ -88,7 +98,6 @@ def main() -> None:
             ],
         }
 
-    destination = bench.RES / "reference_parity.json"
     destination.write_text(json.dumps(output, indent=2) + "\n")
     print(f"wrote {destination}")
 

@@ -1,8 +1,8 @@
 """Check manuscript numbers against the committed benchmark artifacts.
 
 This audit is deliberately read-only.  It checks the current DESeq2 reference
-version, the two manuscript tables derived from the real-data run, the headline
-speedup and parity summaries, and the synthetic optimization claims.  It also
+version, the two manuscript tables derived from the real-data run, and the
+headline speedup and parity summaries.  It also
 requires every ``\fact{}`` marker to have a named source class.
 """
 from __future__ import annotations
@@ -24,14 +24,6 @@ TIMING = json.loads((ROOT / "bench/results/timings.json").read_text())
 PARALLEL_R = json.loads(
     (ROOT / "bench/results/r_parallel_a100_12worker.json").read_text()
 )
-ROOF = json.loads((ROOT / "benchmarks/results_roofline.json").read_text())
-GENE = json.loads((ROOT / "benchmarks/results_a100.json").read_text())["results"]
-SAMPLE = json.loads(
-    (ROOT / "benchmarks/results_a100_samplesweep.json").read_text()
-)["sample_sweep"]
-CHUNK = json.loads(
-    (ROOT / "benchmarks/results_a100_sweep.json").read_text()
-)["sweep"]
 MINMU = json.loads(
     (ROOT / "bench/results/minmu_counterfactual.json").read_text()
 )
@@ -270,108 +262,6 @@ check("minmu unfloored Jaccard",
 check("minmu floored exact called set", with_floor["jaccard_with_R"] == 1.0)
 
 
-# Synthetic optimization claims retained from the existing A100 artifacts.
-rf = {row["G"]: row for row in ROOF["cases"]}
-check("roofline sustained bandwidth", round(ROOF["sustained_gbs"]) == 1369)
-check("roofline percent of specification",
-      round(ROOF["sustained_pct_of_spec"]) == 88)
-check("roofline specified bandwidth", round(ROOF["provenance"]["peak_spec_gbs"]) == 1555)
-for key, shown in (("elementwise_pct_sustained", 21),
-                   ("lgamma_pct_sustained", 43),
-                   ("digamma_pct_sustained", 36)):
-    check(f"roofline 20k {key}", round(rf[20000][key]) == shown,
-          rf[20000][key])
-check("roofline special-function times",
-      round(rf[20000]["lp_and_dlp_us"]) == 1287
-      and round(rf[2000]["lp_and_dlp_us"]) == 1292)
-
-sample = {row["n_samples"]: row for row in SAMPLE}
-check("sample-axis graph endpoints",
-      round(sample[4]["fit_alpha_mle_speedup"], 1) == 7.6
-      and round(sample[2000]["fit_alpha_mle_speedup"], 2) == .96)
-check("sample-axis Triton endpoints",
-      round(sample[4]["fit_alpha_mle_triton_speedup"], 1) == 69.0
-      and round(sample[2000]["fit_alpha_mle_triton_speedup"], 1) == 7.7)
-check("sample-axis iteration cap",
-      sample[4]["eager_iters"] == sample[6]["eager_iters"] == 100)
-converged = [row["eager_iters"] for n, row in sample.items() if n >= 30]
-check("sample-axis converged range", (min(converged), max(converged)) == (13, 25))
-check("fixed-trip excess-iteration range",
-      round(100 / max(converged), 1) == 4.0
-      and round(100 / min(converged), 1) == 7.7)
-check("sample-axis Triton maximum dispersion difference",
-      max(row["triton_vs_eager_maxdiff"] for row in SAMPLE) <= 3.0e-8)
-sample4_remainder = (
-    sample[4]["fit_dispersions_triton_ms"] - sample[4]["fit_alpha_mle_triton_ms"]
-)
-check("sample-axis S=4 Triton full stage", round(sample[4]["fit_dispersions_triton_ms"], 1) == 486.6)
-check("sample-axis S=4 Triton loop", round(sample[4]["fit_alpha_mle_triton_ms"], 1) == 5.1)
-check("sample-axis S=4 non-loop remainder", round(sample4_remainder, 1) == 481.5)
-check("sample-axis S=4 rounded speedups",
-      round(sample[4]["fit_dispersions_triton_speedup"], 1) == 1.8
-      and round(sample[4]["fit_alpha_mle_triton_speedup"], 1) == 69.0)
-
-# Every displayed cell in the compact sample-axis table comes from the sample artifact.
-sample_table = table("tab:samplesweep")
-for n in (6, 60, 2000):
-    row = sample[n]
-    line = next(line for line in sample_table.splitlines()
-                if re.match(rf"\s*{n}\s+&", line))
-    shown = [float(value) for value in re.findall(r"(?<![\w.])(\d+(?:\.\d+)?)(?![\w.])", line)]
-    expected = [
-        float(n), float(row["eager_iters"]),
-        row["fit_dispersions_speedup"], row["fit_dispersions_triton_speedup"],
-    ]
-    decimals = [0, 0, 2, 2]
-    check(f"sample-axis table row S={n}",
-          all(round(a, d) == round(b, d) for a, b, d in zip(shown, expected, decimals)),
-          (shown, expected))
-
-gene = {(row["n_genes"], row["P"]): row for row in GENE}
-for p, lo_ms, hi_ms, growth in ((2, 127, 210, 1.7), (4, 193, 224, 1.2)):
-    lo, hi = gene[(2000, p)], gene[(20000, p)]
-    check(f"gene-axis P={p} times",
-          round(lo["fit_dispersions_eager_ms"]) == lo_ms
-          and round(hi["fit_dispersions_eager_ms"]) == hi_ms)
-    check(f"gene-axis P={p} growth",
-          round(hi["fit_dispersions_eager_ms"] /
-                lo["fit_dispersions_eager_ms"], 1) == growth)
-
-check("gene-axis graph speedups",
-      round(gene[(2000, 2)]["fit_dispersions_speedup"], 1) == 4.4
-      and round(gene[(20000, 2)]["fit_dispersions_speedup"], 1) == 1.7
-      and round(gene[(2000, 4)]["fit_dispersions_speedup"], 1) == 3.7
-      and round(gene[(20000, 4)]["fit_dispersions_speedup"], 1) == 2.2)
-cold = [row["fit_dispersions_graph_cold_ms"] for row in GENE]
-check("graph capture cost range", round(min(cold)) == 487 and round(max(cold)) == 796)
-
-for row in CHUNK:
-    for entry in row["sweep"]:
-        expected = math.ceil(row["eager_iters"] / entry["chunk"]) * entry["chunk"]
-        check(f"chunk padding {row['n_genes']}/{entry['chunk']}",
-              entry["graph_iters"] == expected)
-        check(f"chunk parity {row['n_genes']}/{entry['chunk']}",
-              entry["max_abs_diff"] == 0)
-
-chunk = {row["n_genes"]: {entry["chunk"]: entry for entry in row["sweep"]}
-         for row in CHUNK}
-check("chunk full-length speedups",
-      round(chunk[2000][100]["speedup"], 2) == 1.83
-      and round(chunk[20000][100]["speedup"], 2) == .99)
-check("chunk best speedups",
-      round(chunk[2000][2]["speedup"], 2) == 6.01
-      and round(chunk[20000][10]["speedup"], 2) == 2.42
-      and round(chunk[20000][20]["speedup"], 2) == 2.42)
-check("chunk equal-padding spreads",
-      round(100 * abs(chunk[2000][25]["graph_ms"] - chunk[2000][50]["graph_ms"])
-            / max(chunk[2000][25]["graph_ms"], chunk[2000][50]["graph_ms"]), 1) == .3
-      and round(100 * (max(chunk[20000][k]["graph_ms"] for k in (2, 5, 10, 20))
-                       - min(chunk[20000][k]["graph_ms"] for k in (2, 5, 10, 20)))
-                / min(chunk[20000][k]["graph_ms"] for k in (2, 5, 10, 20)), 1) == 1.7)
-
-# The current manuscript does not display the historical chunk-sweep table;
-# retain the artifact checks above without requiring absent table cells.
-
 # Eager--Triton real-data dispersion differences retained by the A100 run.
 mode_dispersion = {
     case: next(row for row in rows if row["substep"] == "dispersion")
@@ -382,10 +272,6 @@ check("GTEx eager-Triton maximum absolute dispersion difference",
 check("small-design eager-Triton maximum absolute dispersion difference",
       max(row["gpu_modes_maxdiff"] for case, row in mode_dispersion.items()
           if case != "gtex_blood_muscle") <= 3.2e-7)
-check("synthetic dispersion configuration count",
-      len(GENE) + len(SAMPLE) + sum(len(row["sweep"]) for row in CHUNK) == 25)
-
-
 # Every fact marker must correspond to one of the artifact computations above.
 # Parse balanced braces so values such as ``3{,}993`` are not truncated.
 def fact_values(source: str) -> set[str]:
@@ -411,8 +297,7 @@ artifact_checked = {
     "8.5e-4", "2.9--13.4$\\times$", "0.44\\%", "$8.1\\times10^{-5}$",
     "0.99722", "141", "3{,}993", "$\\ge$99.6\\%", "$\\ge$0.961",
     "0.99963", "0.99997", "4\\,ms", "8.7$\\times$", "2.7$\\times$",
-    "730", "83", "1586", "583", "6.2$\\times$", "1.08$\\times$",
-    "6.88$\\times$", "0.49--0.80\\,s", "0.2604", "$3.2 \\times 10^{-7}$",
+    "730", "83", "1586", "583", "0.2604", "$3.2 \\times 10^{-7}$",
 }
 check("every manuscript fact has an artifact-backed computation",
       fact_text == artifact_checked,

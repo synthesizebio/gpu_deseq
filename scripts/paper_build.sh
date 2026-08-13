@@ -17,6 +17,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PAPER_DIR="$REPO_ROOT/paper"
 JOB="main"
+if [ -x "$REPO_ROOT/.venv/bin/python" ]; then
+  PAPER_PYTHON="$REPO_ROOT/.venv/bin/python"
+else
+  PAPER_PYTHON="${PAPER_PYTHON:-python}"
+fi
 
 QUICK=0
 FIGURES=0
@@ -59,11 +64,23 @@ if [ "$CLEAN" = 1 ]; then
 fi
 
 if [ "$FIGURES" = 1 ]; then
-  for fig in make_schematic_figure.py make_optimizations_figure.py; do
-    [ -f "$fig" ] || continue
-    echo ">> figure: $fig"
-    python "$fig" >/dev/null 2>&1 || { echo "paper_build: $fig FAILED" >&2; exit 1; }
-  done
+  echo ">> figure: make_schematic_figure.py"
+  MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/gpu-deseq-matplotlib}" \
+    "$PAPER_PYTHON" make_schematic_figure.py || {
+    echo "paper_build: make_schematic_figure.py FAILED" >&2
+    exit 1
+  }
+
+  echo ">> figures: validation/make_paper_figures.py"
+  if ! (
+    cd "$REPO_ROOT"
+    MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/gpu-deseq-matplotlib}" \
+      PYTHONPATH="$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}" \
+      "$PAPER_PYTHON" validation/make_paper_figures.py
+  ); then
+    echo "paper_build: validation/make_paper_figures.py FAILED" >&2
+    exit 1
+  fi
 fi
 
 PDFLATEX=(pdflatex -interaction=nonstopmode -halt-on-error "$JOB")

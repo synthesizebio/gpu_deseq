@@ -1,37 +1,41 @@
-# Whitepaper — cuDESeq2 (gpu-deseq)
+# cuDESeq2 manuscript
 
-Draft outline for the gpu-deseq whitepaper.
+`main.tex` is the review-format manuscript and `main.pdf` is its tracked build.
 
 ## Build
 
+From the repository root:
+
 ```bash
-cd paper
-pdflatex main && bibtex main && pdflatex main && pdflatex main
-# -> main.pdf
+bash scripts/paper_build.sh
 ```
 
-Requires a TeX distribution (`pdflatex`, `bibtex`). `main.tex` compiles as-is;
-`\todo{}` (red) marks content still to write, `\note{}` (blue) marks section
-intent, `\fact{}` marks a measured claim to cite from `../benchmarks/RESULTS.md`.
+Use `bash scripts/paper_build.sh --figures` to regenerate the workflow schematic
+and the parity figures before compiling. The parity figure generator reads the
+committed/reference benchmark caches; it does not rerun the timing benchmarks.
 
-## Status (what's full vs thin)
+The build requires `pdflatex` and `bibtex`. Figure regeneration additionally
+requires the project Python environment and the validation data described in
+`validation/README.md`.
 
-| Section | State |
-|---|---|
-| Abstract, Contributions | drafted from committed work |
-| Background, Design (4 techniques) | outlined with real mechanisms |
-| Correctness / parity table | numbers stubbed from tests; **needs real-dataset validation** |
-| Performance (per-step table, roofline, scaling, ablations) | real A100 numbers in; **needs 2nd GPU + bigger-core R** |
-| Related work | **stub — needs literature search** |
-| Limitations | complete (from README/RESULTS) |
+## Manuscript evidence
 
-## Data sources
+- Real-data parity across six designs is recorded in
+  `bench/results/reference_parity.json` and summarized in Table 2.
+- A100 cuDESeq2 and one-worker R timings are recorded in
+  `bench/results/timings.json`.
+- Same-host one- and 12-worker R timings are recorded in
+  `bench/results/r_parallel_a100_12worker.json`.
+- GPU execution-mode agreement is recorded in `bench/results/parity.json`.
+- Human-readable derived tables are in `bench/results/TABLES.md`.
 
-All numbers trace to `../benchmarks/` (RESULTS.md + the `results_*.json` and the
-reproducible drivers). Parity from `../tests/test_r_step_parity.py`.
+Every reported timing is the median of five measured repetitions following an
+untimed warm-up. The manuscript's measured claims can be checked with:
 
-## Before submission (open items)
+```bash
+PYTHONPATH=src .venv/bin/python scripts/audit_paper_numbers.py
+```
 
-1. Real published RNA-seq dataset: identical significant-gene set + LFC correlation vs R.
-2. Second GPU (e.g. L4) and a 32–64-core R host for the multi-core baseline.
-3. Related-work / novelty positioning (verify all citations).
+The related-work discussion and bibliography are populated, and the real-data
+validation and same-host multicore R baseline are complete. The reported GPU
+measurements are from one NVIDIA A100; no second-GPU generalization is claimed.
