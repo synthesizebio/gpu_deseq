@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -v ':0$')",
+      "Bash(scripts/paper_build.sh:*)",
+      "Bash(pdftotext paper/main.pdf -)"
+    ]
+  }
+}

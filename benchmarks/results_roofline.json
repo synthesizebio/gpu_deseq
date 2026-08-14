@@ -1,0 +1,49 @@
+{
+  "provenance": {
+    "utc": "2026-07-29 19:30 UTC",
+    "gpu": "NVIDIA A100-SXM4-40GB",
+    "cuda": "12.4",
+    "torch": "2.6.0+cu124",
+    "python": "3.10.17",
+    "platform": "Linux-5.10.0-45-cloud-amd64-x86_64-with-glibc2.31",
+    "commit": "07de906",
+    "working_tree_dirty": true,
+    "peak_spec_gbs": 1555.0
+  },
+  "cases": [
+    {
+      "G": 20000,
+      "S": 60,
+      "elementwise_us": 66.0,
+      "elementwise_gbs": 291.0,
+      "elementwise_pct_sustained": 21.3,
+      "lgamma_us": 32.5,
+      "lgamma_gbs": 591.4,
+      "lgamma_pct_sustained": 43.2,
+      "digamma_us": 38.7,
+      "digamma_gbs": 496.1,
+      "digamma_pct_sustained": 36.2,
+      "lp_and_dlp_us": 1287.4,
+      "lp_and_dlp_essential_gbs": 14.9,
+      "lp_and_dlp_pct_sustained": 1.1
+    },
+    {
+      "G": 2000,
+      "S": 60,
+      "elementwise_us": 50.9,
+      "elementwise_gbs": 37.7,
+      "elementwise_pct_sustained": 2.8,
+      "lgamma_us": 18.7,
+      "lgamma_gbs": 102.7,
+      "lgamma_pct_sustained": 7.5,
+      "digamma_us": 18.5,
+      "digamma_gbs": 104.1,
+      "digamma_pct_sustained": 7.6,
+      "lp_and_dlp_us": 1291.5,
+      "lp_and_dlp_essential_gbs": 1.5,
+      "lp_and_dlp_pct_sustained": 0.1
+    }
+  ],
+  "sustained_gbs": 1369.1,
+  "sustained_pct_of_spec": 88.0
+}

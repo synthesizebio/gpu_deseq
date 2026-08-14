@@ -1,0 +1,56 @@
+{
+  "provenance": {
+    "pipeline": "DESeq() + results() + lfcShrink(type=apeglm), standard outlier replacement/refit enabled",
+    "r_version": "R version 4.6.0 (2026-04-24)",
+    "deseq2_version": "1.52.0",
+    "apeglm_version": "1.34.0",
+    "workers": 12,
+    "backend": "BiocParallel::MulticoreParam",
+    "blas_threads": "1",
+    "measured_utc": "2026-08-13 02:00:23 UTC"
+  },
+  "cases": {
+    "airway": {
+      "n_samples": 8,
+      "design": "~ cell + dex",
+      "reps": 5,
+      "serial": {"median_ms": 32130.000, "values_ms": [32497.000, 32045.000, 32130.000, 32713.000, 31654.000]},
+      "parallel": {"median_ms": 12099.000, "values_ms": [12279.000, 12053.000, 11526.000, 12099.000, 12102.000]}
+    },
+    "airway_cell": {
+      "n_samples": 8,
+      "design": "~ cell",
+      "reps": 5,
+      "serial": {"median_ms": 29341.000, "values_ms": [29588.000, 29055.000, 29903.000, 29112.000, 29341.000]},
+      "parallel": {"median_ms": 10421.000, "values_ms": [10421.000, 10348.000, 10312.000, 10961.000, 11004.000]}
+    },
+    "airway_dex": {
+      "n_samples": 8,
+      "design": "~ dex",
+      "reps": 5,
+      "serial": {"median_ms": 25968.000, "values_ms": [26427.000, 25940.000, 26055.000, 25914.000, 25968.000]},
+      "parallel": {"median_ms": 11856.000, "values_ms": [11856.000, 12430.000, 11663.000, 11724.000, 12298.000]}
+    },
+    "gtex_blood_muscle": {
+      "n_samples": 300,
+      "design": "~ tissue",
+      "reps": 5,
+      "serial": {"median_ms": 276016.000, "values_ms": [277740.000, 275135.000, 275574.000, 276016.000, 276455.000]},
+      "parallel": {"median_ms": 63445.000, "values_ms": [63604.000, 63445.000, 62363.000, 63553.000, 63419.000]}
+    },
+    "pasilla": {
+      "n_samples": 7,
+      "design": "~ condition",
+      "reps": 5,
+      "serial": {"median_ms": 9447.000, "values_ms": [9437.000, 9447.000, 9603.000, 9431.000, 9536.000]},
+      "parallel": {"median_ms": 7336.000, "values_ms": [7720.000, 7372.000, 7336.000, 7238.000, 7284.000]}
+    },
+    "pasilla_2fac": {
+      "n_samples": 7,
+      "design": "~ type + condition",
+      "reps": 5,
+      "serial": {"median_ms": 10200.000, "values_ms": [10211.000, 10200.000, 10184.000, 10179.000, 10394.000]},
+      "parallel": {"median_ms": 7371.000, "values_ms": [8099.000, 7690.000, 7371.000, 7267.000, 7346.000]}
+    }
+  }
+}

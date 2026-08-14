@@ -1,0 +1,27 @@
+{
+  "provenance": {
+    "case": "airway_cell",
+    "device": "cpu",
+    "design": "~ cell",
+    "contrast": "cell[T.N061011]",
+    "called_set_threshold": 0.05,
+    "results_independent_filter_alpha": 0.1,
+    "reference": "bench/cache/airway_cell/r_results.csv",
+    "method": "same fit; Wald covariance recomputed with and without mu >= 0.5"
+  },
+  "R_calls": 206,
+  "with_minmu_floor": {
+    "calls": 206,
+    "intersection_with_R": 206,
+    "R_only": 0,
+    "cuDESeq2_only": 0,
+    "jaccard_with_R": 1.0
+  },
+  "without_minmu_floor": {
+    "calls": 202,
+    "intersection_with_R": 201,
+    "R_only": 5,
+    "cuDESeq2_only": 1,
+    "jaccard_with_R": 0.9710144927536232
+  }
+}

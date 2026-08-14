@@ -1,0 +1,50 @@
+name: gpu-deseq
+
+x-gpu-deseq: &gpu-deseq
+  image: gpu-deseq:bioc3.23-cu124
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  working_dir: /workspace/gpu_deseq
+  user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+  volumes:
+    - ..:/workspace/gpu_deseq
+  environment:
+    HOME: /tmp
+    MPLCONFIGDIR: /tmp/matplotlib
+    NUMBA_CACHE_DIR: /tmp/numba
+    PYTHONPATH: /workspace/gpu_deseq/src
+
+services:
+  shell:
+    <<: *gpu-deseq
+    stdin_open: true
+    tty: true
+
+  check:
+    <<: *gpu-deseq
+    command: python3 docker/check_environment.py
+
+  test:
+    <<: *gpu-deseq
+    command:
+      - python3
+      - -m
+      - pytest
+      - -q
+
+  paper:
+    <<: *gpu-deseq
+    command: bash scripts/paper_build.sh
+
+  gpu:
+    <<: *gpu-deseq
+    profiles: ["gpu"]
+    command: python3 docker/check_environment.py
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

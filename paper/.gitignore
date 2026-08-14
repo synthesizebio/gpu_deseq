@@ -1,0 +1,12 @@
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# main.pdf is deliberately tracked: the built manuscript is a repo deliverable.
+figures/gpt_schematic.pdf

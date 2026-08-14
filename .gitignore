@@ -1,10 +1,19 @@
 .venv/
+.r46/
 .pytest_cache/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+texput.log
 .DS_Store
 dist/
 build/
 *.egg-info/
+bench/cache/
+bench/archive/
+# R library installed by bench/run_r_scaling.sh in --r-mode docker
+bench/.rlib-bioc312/
+
+# per-user Claude Code overrides; the shared .claude/ config is tracked
+.claude/settings.local.json

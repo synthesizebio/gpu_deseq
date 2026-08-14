@@ -1,0 +1,285 @@
+{
+  "provenance": {
+    "pipeline": "standard_wald_with_outlier_refit",
+    "measured_utc": "2026-08-13T03:23:23Z",
+    "device_argument": "cuda",
+    "python_version": "3.10.17",
+    "torch_version": "2.6.0+cu124",
+    "torch_cuda_version": "12.4",
+    "cuda_available": true,
+    "gpu_name": "NVIDIA A100-SXM4-40GB",
+    "gpu_memory_bytes": 42285268992,
+    "gpu_compute_capability": "8.0",
+    "nvidia_driver_version": "550.90.07",
+    "timing_repetitions_per_case_mode": 5
+  },
+  "r": {
+    "airway": {
+      "case": "airway",
+      "reps": 5,
+      "pipeline": "staged_standard_wald_no_duplicate_dispersion",
+      "glm_fit_scope": "nbinomWaldTest_plus_outlier_replacement_refit",
+      "output_equivalent_to_DESeq": true,
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "normalization": 188.838,
+      "dispersion": 7463.187,
+      "glm_fit": 4437.634,
+      "significance": 894.708,
+      "lfc_shrink": 19487.944,
+      "total": 32472.311
+    },
+    "airway_cell": {
+      "case": "airway_cell",
+      "reps": 5,
+      "pipeline": "staged_standard_wald_no_duplicate_dispersion",
+      "glm_fit_scope": "nbinomWaldTest_plus_outlier_replacement_refit",
+      "output_equivalent_to_DESeq": true,
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "normalization": 189.631,
+      "dispersion": 5667.805,
+      "glm_fit": 3850.241,
+      "significance": 863.302,
+      "lfc_shrink": 19754.734,
+      "total": 30325.713
+    },
+    "airway_dex": {
+      "case": "airway_dex",
+      "reps": 5,
+      "pipeline": "staged_standard_wald_no_duplicate_dispersion",
+      "glm_fit_scope": "nbinomWaldTest_plus_outlier_replacement_refit",
+      "output_equivalent_to_DESeq": true,
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "normalization": 182.005,
+      "dispersion": 4732.302,
+      "glm_fit": 5204.649,
+      "significance": 1391.19,
+      "lfc_shrink": 14810.048,
+      "total": 26320.195
+    },
+    "gtex_blood_muscle": {
+      "case": "gtex_blood_muscle",
+      "reps": 5,
+      "pipeline": "staged_standard_wald_no_duplicate_dispersion",
+      "glm_fit_scope": "nbinomWaldTest_plus_outlier_replacement_refit",
+      "output_equivalent_to_DESeq": true,
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "normalization": 3262.308,
+      "dispersion": 184599.016,
+      "glm_fit": 51133.62,
+      "significance": 491.944,
+      "lfc_shrink": 40117.473,
+      "total": 279604.361
+    },
+    "pasilla": {
+      "case": "pasilla",
+      "reps": 5,
+      "pipeline": "staged_standard_wald_no_duplicate_dispersion",
+      "glm_fit_scope": "nbinomWaldTest_plus_outlier_replacement_refit",
+      "output_equivalent_to_DESeq": true,
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "normalization": 152.817,
+      "dispersion": 1760.333,
+      "glm_fit": 2034.854,
+      "significance": 222.691,
+      "lfc_shrink": 5314.143,
+      "total": 9484.838
+    },
+    "pasilla_2fac": {
+      "case": "pasilla_2fac",
+      "reps": 5,
+      "pipeline": "staged_standard_wald_no_duplicate_dispersion",
+      "glm_fit_scope": "nbinomWaldTest_plus_outlier_replacement_refit",
+      "output_equivalent_to_DESeq": true,
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "normalization": 153.168,
+      "dispersion": 2133.502,
+      "glm_fit": 1464.846,
+      "significance": 204.454,
+      "lfc_shrink": 6042.552,
+      "total": 9998.522
+    }
+  },
+  "cu": {
+    "airway": {
+      "_P": 5,
+      "_n": 8,
+      "eager": {
+        "normalization": 1.0425869841128588,
+        "dispersion": 1585.6246749754064,
+        "glm_fit": 62.13930097874254,
+        "significance": 118.41775401262566,
+        "lfc_shrink": 811.0434369882569,
+        "total": 2578.2677539391443
+      },
+      "graph": {
+        "normalization": 1.0763920145109296,
+        "dispersion": 718.536268977914,
+        "glm_fit": 60.72676304029301,
+        "significance": 118.60936903394759,
+        "lfc_shrink": 808.4171040100046,
+        "total": 1707.36589707667
+      },
+      "triton": {
+        "normalization": 1.0264470474794507,
+        "dispersion": 582.6961029670201,
+        "glm_fit": 61.19799299631268,
+        "significance": 119.57295599859208,
+        "lfc_shrink": 766.9264160213061,
+        "total": 1531.4199150307104
+      }
+    },
+    "airway_cell": {
+      "_P": 4,
+      "_n": 8,
+      "eager": {
+        "normalization": 1.0017899912782013,
+        "dispersion": 753.1026210053824,
+        "glm_fit": 37.856343027669936,
+        "significance": 115.23305397713557,
+        "lfc_shrink": 3352.614759991411,
+        "total": 4259.808567992877
+      },
+      "graph": {
+        "normalization": 0.9999949834309518,
+        "dispersion": 185.32021896680817,
+        "glm_fit": 36.31710301851854,
+        "significance": 115.29902397887781,
+        "lfc_shrink": 3326.8772570299916,
+        "total": 3664.813597977627
+      },
+      "triton": {
+        "normalization": 1.0055250022560358,
+        "dispersion": 59.85009600408375,
+        "glm_fit": 37.398946995381266,
+        "significance": 118.50573198171332,
+        "lfc_shrink": 3412.212074967101,
+        "total": 3628.9723749505356
+      }
+    },
+    "airway_dex": {
+      "_P": 2,
+      "_n": 8,
+      "eager": {
+        "normalization": 0.9970359969884157,
+        "dispersion": 427.3101770086214,
+        "glm_fit": 56.974992970936,
+        "significance": 145.3585010021925,
+        "lfc_shrink": 699.377694982104,
+        "total": 1330.0184019608423
+      },
+      "graph": {
+        "normalization": 1.046045043040067,
+        "dispersion": 109.91207702318206,
+        "glm_fit": 56.33914901409298,
+        "significance": 126.41870405059308,
+        "lfc_shrink": 716.055425000377,
+        "total": 1009.7714001312852
+      },
+      "triton": {
+        "normalization": 1.0538200149312615,
+        "dispersion": 51.654882030561566,
+        "glm_fit": 55.83884904626757,
+        "significance": 123.95041703712195,
+        "lfc_shrink": 711.2973449984565,
+        "total": 943.7953131273389
+      }
+    },
+    "gtex_blood_muscle": {
+      "_P": 2,
+      "_n": 300,
+      "eager": {
+        "normalization": 3.706126008182764,
+        "dispersion": 3506.6866549896076,
+        "glm_fit": 3148.3706909930333,
+        "significance": 613.2358839968219,
+        "lfc_shrink": 1253.6368440487422,
+        "total": 8525.636200036388
+      },
+      "graph": {
+        "normalization": 3.711030993144959,
+        "dispersion": 3625.040140992496,
+        "glm_fit": 2793.68176398566,
+        "significance": 610.1866620010696,
+        "lfc_shrink": 1251.7651810194366,
+        "total": 8284.384778991807
+      },
+      "triton": {
+        "normalization": 3.6976939882151783,
+        "dispersion": 200.29417297337204,
+        "glm_fit": 2693.806270021014,
+        "significance": 609.2421659850515,
+        "lfc_shrink": 1237.4473860254511,
+        "total": 4744.487688993104
+      }
+    },
+    "pasilla": {
+      "_P": 2,
+      "_n": 7,
+      "eager": {
+        "normalization": 1.0017540189437568,
+        "dispersion": 416.66495002573356,
+        "glm_fit": 39.16924400255084,
+        "significance": 61.909260984975845,
+        "lfc_shrink": 503.64203000208363,
+        "total": 1022.3872390342876
+      },
+      "graph": {
+        "normalization": 1.0473310248926282,
+        "dispersion": 71.3432360207662,
+        "glm_fit": 38.811378995887935,
+        "significance": 60.870010987855494,
+        "lfc_shrink": 500.85741200018674,
+        "total": 672.929369029589
+      },
+      "triton": {
+        "normalization": 1.0464439983479679,
+        "dispersion": 20.412158977705985,
+        "glm_fit": 38.66462199948728,
+        "significance": 61.56057398766279,
+        "lfc_shrink": 629.7968350118026,
+        "total": 751.4806339750066
+      }
+    },
+    "pasilla_2fac": {
+      "_P": 3,
+      "_n": 7,
+      "eager": {
+        "normalization": 0.9811859927140176,
+        "dispersion": 729.8745070002042,
+        "glm_fit": 334.07992898719385,
+        "significance": 74.79976199101657,
+        "lfc_shrink": 396.2853470002301,
+        "total": 1536.0207309713587
+      },
+      "graph": {
+        "normalization": 0.9666350088082254,
+        "dispersion": 163.05375302908942,
+        "glm_fit": 338.29246199456975,
+        "significance": 59.61505096638575,
+        "lfc_shrink": 398.51746801286936,
+        "total": 960.4453690117225
+      },
+      "triton": {
+        "normalization": 0.973369984421879,
+        "dispersion": 83.47996498923749,
+        "glm_fit": 334.69751599477604,
+        "significance": 58.84925398277119,
+        "lfc_shrink": 397.92574499733746,
+        "total": 875.925849948544
+      }
+    }
+  },
+  "pydeseq2": {}
+}

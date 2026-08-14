@@ -1,25 +1,39 @@
 # gpu-deseq
 
-A GPU-accelerated re-implementation of Bioconductor DESeq2 in PyTorch, validated against R DESeq2 1.30.1 to **floating-point precision** at every pipeline step.
+A GPU-accelerated re-implementation of Bioconductor DESeq2 in PyTorch. The
+high-level `deseq()` entry point runs the standard Wald workflow, including
+Cook's-distance count replacement and refitting when a design cell has at least
+seven replicates.
 
-Same numerics as R; ~10–45× faster end-to-end on the workloads tested.
+The current reference suite uses R 4.6.0, DESeq2 1.52.0, and apeglm 1.34.0.
+
+## Reproducible environment
+
+The supported reproduction path is the pinned container in
+[`docker/`](docker/README.md). It combines the current R/Bioconductor reference,
+the PyTorch 2.6.0/CUDA 12.4 implementation environment, and the LaTeX toolchain:
+
+```bash
+make container-build
+make container-check
+make container-test
+make container-paper
+```
+
+On a host configured with the NVIDIA Container Toolkit,
+`make container-gpu-check` verifies GPU passthrough and
+`make container-gpu-benchmark` reruns the full A100 benchmark.
 
 ## Performance
 
-End-to-end timings (size factors → dispersions → Wald → results), median of multiple runs, single L4 GPU vs single-thread R DESeq2 1.30.1 on the same data:
-
-| matrix (samples × genes) | gpu-deseq (L4) | R DESeq2 | speedup |
-|---|---:|---:|---:|
-| 12 × 200    | 108 ms   | 1797 ms  | **17×** |
-| 30 × 500    | 118 ms   | 2261 ms  | **19×** |
-| 60 × 2000   | 132 ms   | 3940 ms  | **30×** |
-| 60 × 1500 (`~batch+condition`) | 172 ms | 4403 ms | **26×** |
-| 60 × 1000 (`~x` continuous)    | 137 ms | 2645 ms | **19×** |
-| **60 × 20000** (realistic) | **472 ms** | **21323 ms** | **45×** |
-
-CPU comparison on the realistic matrix: 472 ms (GPU) vs 3580 ms (our CPU torch path) — the dispersion fitter and IRLS are batched torch kernels, so all gene-wise work runs in parallel on GPU.
-
-Speedup grows with gene count because the per-gene work in R is sequential while ours is fully batched across genes.
+> **Authoritative, reproducible benchmarks live in [`bench/`](bench/).** Run
+> `make container-r-reference && make container-gpu-benchmark` to regenerate
+> the three tables in [`bench/results/TABLES.md`](bench/results/TABLES.md):
+> total-pipeline timing, per-substep timing, and output parity — for R DESeq2,
+> cuDESeq2 (eager / CUDA-graph / Triton), and a PyDESeq2 competitor, across six
+> real RNA-seq datasets (7–300 samples) on an A100. Across all six current
+> standard-pipeline measurements, the best GPU mode is 3.1–13.8× faster than
+> the faster of one-worker and 12-worker R DESeq2.
 
 ## What's tested vs R DESeq2
 
@@ -55,8 +69,12 @@ Validation lives in `tests/test_r_step_parity.py` (76 step-level tests across 5 
 
 ### Known divergences (bounded, documented)
 
-- **Independent filtering threshold** — pydeseq2's port uses statsmodels `lowess`; R uses base-R `lowess`. Threshold quantile can differ by one bin. Tests cap the lost-significant fraction at < 2% of R's significant set. Sig-call Jaccard ≥ 0.95 on the larger fixtures.
-- That's the only known per-step divergence.
+- **Floating-point boundary calls** — the independent-filter LOWESS path now
+  reproduces R's neighborhood and robustness-iteration conventions. In the
+  current real-data comparison, airway/dex and GTEx each differ from R by one
+  gene at `padj < 0.05`; the other four called sets are exact.
+- The lower-level `wald_test()` matches `nbinomWaldTest()` alone. The high-level
+  `deseq()` additionally performs the standard outlier replacement/refit.
 
 ## Gaps (untested, no R fixture yet)
 
@@ -68,7 +86,6 @@ These exist as code paths but aren't validated against R, or aren't implemented 
 - Edge cases: n < 6, all-zero genes mixed with normal genes, very sparse counts
 
 **Real porting work needed:**
-- `replaceOutliers` and the refit-after-Cook's flow (DESeq2 replaces flagged samples with trimmed-mean and refits the GLM)
 - `lfcShrink(type="normal")` — the older betaPrior=TRUE shrinkage
 - Weighted analyses (`useWeights=TRUE` in fitDisp). The C++ branch is mirrored in `_lp_and_dlp` but isn't wired through the public API and has no fixture.
 
@@ -77,13 +94,12 @@ These exist as code paths but aren't validated against R, or aren't implemented 
 - `type="glmGamPoi"` for dispersion estimation — a different optimizer from a different package
 - VST / rlog count transformations — orthogonal to the DE pipeline
 
-DESeq2 versions other than 1.30.1 are not tested.
-
 ## Quick start
 
 ```python
 from gpu_deseq import (
     DESeqDataset,
+    deseq,
     fit_dispersions,
     fit_size_factors,
     lfc_shrink,
@@ -93,10 +109,8 @@ from gpu_deseq import (
 )
 
 dds = DESeqDataset(counts, coldata, design="~ batch + condition")
-fit_size_factors(dds)
-fit_dispersions(dds)                         # parametric trend by default
-wald = wald_test(dds, contrast="condition[T.treated]")
-res  = results(wald)                         # adds Cook's filter + indep. filtering padj
+wald = deseq(dds, contrast="condition[T.treated]")
+res  = results(wald)
 shrunk = lfc_shrink(wald, coeff="condition[T.treated]")  # apeGLM
 ```
 
@@ -114,9 +128,10 @@ res = results(fit)
 The implementation is a faithful port, not an approximation:
 
 - **Dispersion estimation** is the analytical port of `DESeq2/src/DESeq2.cpp::fitDisp`: gradient ascent on the Cox-Reid log-posterior with Armijo line search, periodic kappa halving every 5 acceptances, [-30, 10] clamping in log α via kappa adjustment, and the same `noIncrease` revert + grid fallback that `estimateDispersionsGeneEst` applies. Used for both gene-wise MLE and MAP (with `usePrior=TRUE`).
-- **IRLS** is batched per gene with a CPU L-BFGS-B fallback for non-convergence (matches pydeseq2's behaviour).
-- **Cook's distance** uses pydeseq2's robust MoM dispersion estimator.
-- **apeGLM** is a batched Newton MAP with an empirical-Bayes Cauchy prior scale.
+- **IRLS** is batched per gene with a CPU L-BFGS-B fallback for non-convergence, matching DESeq2's per-gene GLM fit.
+- **Cook's distance** uses DESeq2's trimmed robust method-of-moments dispersion estimator.
+- **apeGLM** uses a batched port of the reference L-BFGS optimizer with an
+  empirical-Bayes Cauchy prior scale.
 
 Repo layout:
 
@@ -129,16 +144,20 @@ src/gpu_deseq/
 scripts/
   generate_r_fixtures.R  # produces all R intermediates for parity testing
 tests/
-  test_r_step_parity.py  # 76 per-step bit-exact tests against R DESeq2 1.30.1
+  test_r_step_parity.py  # 76 per-step tests against the current R DESeq2 reference
 fixtures/r_deseq2/    # 5 fixtures × all R intermediate CSVs
 ```
 
 ## Reproducing the benchmarks
 
 ```bash
-# Regenerate R fixtures (requires DESeq2 + apeglm in ~/R/library)
-Rscript scripts/generate_r_fixtures.R
+# Regenerate R fixtures in the pinned environment
+make container-r-fixtures
 
 # Run the full per-step parity suite
-.venv/bin/python -m pytest tests/test_r_step_parity.py -v
+make container-test
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).

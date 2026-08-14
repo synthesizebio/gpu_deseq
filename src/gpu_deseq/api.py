@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import torch
 from formulaic import model_matrix
-from scipy.stats import chi2, norm
+from scipy.stats import chi2, f as f_dist, norm, trim_mean
 
 from . import _deseq2_core as _core
 from . import _shrink as _shrink_core
@@ -62,7 +62,7 @@ class DeseqResult:
     hat_diagonals: torch.Tensor | None = None      # (G, S) IRLS H diag (Cook's)
     counts: torch.Tensor | None = None             # (G, S) raw counts
     normalized_counts: torch.Tensor | None = None  # (G, S) counts / size_factors
-    design_df: pd.DataFrame | None = None          # pandas frame (pydeseq2 uses value_counts)
+    design_df: pd.DataFrame | None = None          # pandas frame (used for cohort value_counts)
     contrast_vector: torch.Tensor | None = None
     reduced_log_likelihood: torch.Tensor | None = None
     log_likelihood: torch.Tensor | None = None  # for LRT only
@@ -71,6 +71,13 @@ class DeseqResult:
     non_zero_mask: torch.Tensor | None = None
     # Populated by lfc_shrink(): shrunk standard errors (natural log scale).
     shrunk_se: torch.Tensor | None = None
+    # Populated by deseq(): DESeq()'s count-outlier replacement/refit metadata.
+    replaced_genes: torch.Tensor | None = None
+    replaceable_samples: torch.Tensor | None = None
+    replacement_counts: torch.Tensor | None = None
+    # Original pre-refit Cook's distances, retained because DESeq2 records
+    # maxCooks from the first Wald fit rather than recomputing them after refit.
+    cooks: torch.Tensor | None = None
 
 
 class DESeqDataset:
@@ -116,6 +123,7 @@ class DESeqDataset:
         self.dispersions: torch.Tensor | None = None
         self.prior_disp_var: float | None = None
         self.squared_logres: float | None = None
+        self.dispersion_fit_type: str | None = None
 
     @property
     def n_genes(self) -> int:
@@ -169,7 +177,7 @@ def _bh_adjust(pvalues: np.ndarray) -> np.ndarray:
 
 
 def fit_size_factors(dataset: DESeqDataset, method: str = "median_ratio") -> DESeqDataset:
-    """Median-of-ratios size factors (pydeseq2 default, with poscounts fallback)."""
+    """Median-of-ratios size factors (DESeq2 default, with poscounts fallback)."""
     if method != "median_ratio":
         raise ValueError("only median_ratio is supported")
     sf, normed = _core.fit_size_factors(dataset.counts)
@@ -178,13 +186,38 @@ def fit_size_factors(dataset: DESeqDataset, method: str = "median_ratio") -> DES
     return dataset
 
 
-def fit_dispersions(dataset: DESeqDataset, fit_type: str = "parametric") -> DESeqDataset:
-    """Faithful port of pydeseq2's fit_genewise + trend + MAP + outlier rule.
+def fit_dispersions(
+    dataset: DESeqDataset,
+    fit_type: str = "parametric",
+    use_cuda_graph: bool = False,
+    use_triton: bool = False,
+) -> DESeqDataset:
+    """Faithful port of DESeq2's gene-wise fit + trend + MAP + outlier rule.
 
     fit_type matches R DESeq2's fitType argument: "parametric" (default),
     "local" (LOESS on log-dispersion vs log-mean), or "mean" (trimmed-mean
     trend — forces the fallback regardless of whether parametric would work).
+
+    The dispersion Newton-Raphson loops (gene-wise + MAP) can be accelerated on
+    CUDA without changing the R-parity result:
+
+    - ``use_cuda_graph``: replay the loops from a captured CUDA graph (removes
+      per-iteration launch overhead; bit-identical to eager).
+    - ``use_triton``: run each gene's whole loop fused in one Triton kernel with
+      per-gene early exit (fastest; matches R to ~1e-14 but not bit-identical to
+      eager). Falls back to eager for designs Triton doesn't cover (P > 6)
+      or on CPU.
+
+    Either can also be selected via the ``GPU_DESEQ_ACCEL`` env var
+    (``graph`` / ``triton``), which is convenient for benchmarking and running
+    the parity suite through an accelerated path.
     """
+    import os
+    _accel = os.environ.get("GPU_DESEQ_ACCEL", "").lower()
+    if _accel == "graph":
+        use_cuda_graph = True
+    elif _accel == "triton":
+        use_triton = True
     if fit_type not in ("parametric", "local", "mean"):
         raise ValueError(f"unknown fit_type: {fit_type!r} (choose parametric, local, mean)")
     if dataset.normalized_counts is None or dataset.size_factors is None:
@@ -195,7 +228,7 @@ def fit_dispersions(dataset: DESeqDataset, fit_type: str = "parametric") -> DESe
     design = dataset.design_matrix
     size_factors = dataset.size_factors
 
-    # non-zero genes: those not all-zero across samples (pydeseq2 dds.py:729).
+    # non-zero genes: those not all-zero across samples (DESeq2 drops these).
     non_zero_mask = ~torch.all(counts == 0, dim=1)
     dataset.non_zero_mask = non_zero_mask
 
@@ -221,7 +254,7 @@ def fit_dispersions(dataset: DESeqDataset, fit_type: str = "parametric") -> DESe
     # Initial MoM (clipped).
     alpha_init = _core.fit_initial_dispersions(normed_nz, size_factors, design)
 
-    # mu_hat initialization per pydeseq2 (dds.py:747-765).
+    # mu_hat initialization per DESeq2 (lin-reg for saturated designs, else IRLS).
     if _core.is_saturated_design(design):
         mu_hat = _core.lin_reg_mu(counts_nz, size_factors, design)
     else:
@@ -231,7 +264,8 @@ def fit_dispersions(dataset: DESeqDataset, fit_type: str = "parametric") -> DESe
     # Cox-Reid adjusted MLE at fixed mu_hat. Pass alpha_init so the NR loop
     # starts from R's exact rough/MoM init (otherwise NR would derive a
     # different init from μ̂ and we'd lose bit-parity on R's noIncrease check).
-    alpha_mle = _core.fit_alpha_mle(counts_nz, mu_hat, design, alpha_init=alpha_init)
+    alpha_mle = _core.fit_alpha_mle(counts_nz, mu_hat, design, alpha_init=alpha_init,
+                                    use_cuda_graph=use_cuda_graph, use_triton=use_triton)
     genewise_full[idx] = alpha_mle
 
     # Trend fit on CPU.
@@ -264,8 +298,13 @@ def fit_dispersions(dataset: DESeqDataset, fit_type: str = "parametric") -> DESe
         counts_nz, mu_hat, design,
         alpha_hat=trend_nz, prior_disp_var=prior_var,
         alpha_init=alpha_mle,
+        use_cuda_graph=use_cuda_graph, use_triton=use_triton,
     )
-    alpha_map = alpha_map.clamp(_core.MIN_DISP, _core.MAX_DISP)
+    # R: maxDisp <- max(10, ncol(object)); clamping to the constant MAX_DISP (10)
+    # truncates legitimate high dispersions once n_samples > 10 (surfaces on large
+    # cohorts, e.g. GTEx n=300 where R reports dispersions up to ~300).
+    max_disp_eff = max(_core.MAX_DISP, n_samples)
+    alpha_map = alpha_map.clamp(_core.MIN_DISP, max_disp_eff)
     map_full[idx] = alpha_map
 
     # Outlier rule: keep MLE for very-high genewise vs trend.
@@ -278,7 +317,127 @@ def fit_dispersions(dataset: DESeqDataset, fit_type: str = "parametric") -> DESe
     dataset.dispersions = disp_full
     dataset.prior_disp_var = float(prior_var)
     dataset.squared_logres = float(sq_logres)
+    dataset.dispersion_fit_type = trend_type
     return dataset
+
+
+def _evaluate_existing_dispersion_trend(
+    dataset: DESeqDataset,
+    normed_means: np.ndarray,
+) -> np.ndarray:
+    """Evaluate the fitted dispersion trend at new base means.
+
+    DESeq2's outlier-refit path does not refit the global trend. It evaluates the
+    existing dispersion function at the replacement-count base means. The public
+    dataset stores that function on the original genes as ``dispersion_trend``;
+    this helper reconstructs its parametric/mean representation, or interpolates
+    the local fit, and evaluates it at ``normed_means``.
+    """
+    if dataset.dispersion_trend is None or dataset.normalized_counts is None:
+        raise ValueError("the original dispersion trend is required for outlier refitting")
+    nz = dataset.non_zero_mask
+    if nz is None:
+        raise ValueError("the original non-zero mask is required for outlier refitting")
+    old_means = dataset.normalized_counts[nz].mean(dim=1).detach().cpu().numpy()
+    old_trend = dataset.dispersion_trend[nz].detach().cpu().numpy()
+    fit_type = dataset.dispersion_fit_type or "parametric"
+
+    if fit_type == "mean":
+        return np.full_like(normed_means, float(np.nanmedian(old_trend)))
+    if fit_type == "local":
+        order = np.argsort(old_means)
+        x = np.log(np.maximum(old_means[order], 1e-300))
+        y = np.log(np.maximum(old_trend[order], _core.MIN_DISP))
+        x_new = np.log(np.maximum(normed_means, 1e-300))
+        return np.exp(np.interp(x_new, x, y, left=y[0], right=y[-1]))
+
+    # Parametric trend: alpha(mu) = a0 + a1 / mu. Reconstructing the two
+    # coefficients from all fitted values is stable and exact up to roundoff.
+    x = np.column_stack([np.ones_like(old_means), 1.0 / old_means])
+    coefs, *_ = np.linalg.lstsq(x, old_trend, rcond=None)
+    return coefs[0] + coefs[1] / normed_means
+
+
+def _refit_replacement_dispersions(
+    replacement: DESeqDataset,
+    original: DESeqDataset,
+    *,
+    use_cuda_graph: bool = False,
+    use_triton: bool = False,
+) -> DESeqDataset:
+    """Refit affected genes with DESeq2's existing trend and prior variance."""
+    if original.prior_disp_var is None or original.squared_logres is None:
+        raise ValueError("the original dispersion prior is required for outlier refitting")
+    if replacement.size_factors is None or replacement.normalized_counts is None:
+        raise ValueError("replacement counts must carry the original size factors")
+
+    counts = replacement.counts
+    normed = replacement.normalized_counts
+    design = replacement.design_matrix
+    size_factors = replacement.size_factors
+    non_zero = ~torch.all(counts == 0, dim=1)
+    replacement.non_zero_mask = non_zero
+    n_genes = replacement.n_genes
+    nan = float("nan")
+    genewise = torch.full((n_genes,), nan, dtype=torch.float64, device=replacement.device)
+    trend = torch.full_like(genewise, nan)
+    mapped = torch.full_like(genewise, nan)
+    final = torch.full_like(genewise, nan)
+    idx = torch.nonzero(non_zero, as_tuple=False).squeeze(-1)
+    if idx.numel() == 0:
+        replacement.dispersions_gene_wise = genewise
+        replacement.dispersion_trend = trend
+        replacement.dispersions_map = mapped
+        replacement.dispersions = final
+        return replacement
+
+    counts_nz = counts[idx]
+    normed_nz = normed[idx]
+    alpha_init = _core.fit_initial_dispersions(normed_nz, size_factors, design)
+    if _core.is_saturated_design(design):
+        mu_hat = _core.lin_reg_mu(counts_nz, size_factors, design)
+    else:
+        _, mu_hat, _, _ = _core.irls_batched(
+            counts_nz, size_factors, design, alpha_init
+        )
+        mu_hat = mu_hat.clamp_min(_core.MIN_MU)
+    alpha_mle = _core.fit_alpha_mle(
+        counts_nz,
+        mu_hat,
+        design,
+        alpha_init=alpha_init,
+        use_cuda_graph=use_cuda_graph,
+        use_triton=use_triton,
+    )
+    means = normed_nz.mean(dim=1).detach().cpu().numpy()
+    trend_np = _evaluate_existing_dispersion_trend(original, means)
+    trend_nz = torch.as_tensor(trend_np, dtype=torch.float64, device=replacement.device)
+    alpha_map = _core.fit_alpha_map(
+        counts_nz,
+        mu_hat,
+        design,
+        alpha_hat=trend_nz,
+        prior_disp_var=original.prior_disp_var,
+        alpha_init=alpha_mle,
+        use_cuda_graph=use_cuda_graph,
+        use_triton=use_triton,
+    ).clamp(_core.MIN_DISP, max(_core.MAX_DISP, replacement.n_samples))
+    alpha_final = _core.apply_outlier_keep_mle(
+        alpha_map, alpha_mle, trend_nz, original.squared_logres
+    )
+
+    genewise[idx] = alpha_mle
+    trend[idx] = trend_nz
+    mapped[idx] = alpha_map
+    final[idx] = alpha_final
+    replacement.dispersions_gene_wise = genewise
+    replacement.dispersion_trend = trend
+    replacement.dispersions_map = mapped
+    replacement.dispersions = final
+    replacement.prior_disp_var = original.prior_disp_var
+    replacement.squared_logres = original.squared_logres
+    replacement.dispersion_fit_type = original.dispersion_fit_type
+    return replacement
 
 
 def _fit_glm(dataset: DESeqDataset, design_matrix: torch.Tensor | None = None) -> DeseqResult:
@@ -346,6 +505,174 @@ def _contrast_vector(result: DeseqResult, contrast: str | Iterable[float] | torc
     return vector
 
 
+def _replace_outliers_and_refit_wald(
+    dataset: DESeqDataset,
+    fit: DeseqResult,
+    *,
+    min_replicates: int = 7,
+    use_cuda_graph: bool = False,
+    use_triton: bool = False,
+) -> DeseqResult:
+    """Apply the count replacement and per-gene refit performed by ``DESeq()``."""
+    if min_replicates < 3:
+        raise ValueError("min_replicates must be at least 3")
+    if (
+        fit.mu is None
+        or fit.hat_diagonals is None
+        or fit.counts is None
+        or fit.normalized_counts is None
+        or fit.design_df is None
+        or fit.non_zero_mask is None
+    ):
+        raise ValueError("a complete Wald fit is required for outlier replacement")
+
+    from ._filters import cooks_distance, n_or_more_replicates
+
+    replaceable = n_or_more_replicates(fit.design_df, min_replicates).to_numpy()
+    replaceable_t = torch.as_tensor(replaceable, dtype=torch.bool, device=dataset.device)
+    fit.replaceable_samples = replaceable_t
+    if not replaceable.any():
+        fit.replaced_genes = torch.zeros(
+            dataset.n_genes, dtype=torch.bool, device=dataset.device
+        )
+        return fit
+    if dataset.n_samples <= fit.design_matrix.shape[1]:
+        fit.replaced_genes = torch.zeros(
+            dataset.n_genes, dtype=torch.bool, device=dataset.device
+        )
+        return fit
+
+    nz_idx = torch.nonzero(fit.non_zero_mask, as_tuple=False).squeeze(-1)
+    replaced_full = torch.zeros(dataset.n_genes, dtype=torch.bool, device=dataset.device)
+    if nz_idx.numel() == 0:
+        fit.replaced_genes = replaced_full
+        return fit
+
+    counts_sg = fit.counts[nz_idx].T.detach().cpu().numpy()
+    normed_sg = fit.normalized_counts[nz_idx].T.detach().cpu().numpy()
+    mu_sg = fit.mu[nz_idx].T.detach().cpu().numpy()
+    hat_sg = fit.hat_diagonals[nz_idx].T.detach().cpu().numpy()
+    cooks, _ = cooks_distance(
+        counts_sg, normed_sg, mu_sg, hat_sg, fit.design_df
+    )
+    cooks_full = torch.full(
+        (dataset.n_genes, dataset.n_samples),
+        float("nan"),
+        dtype=torch.float64,
+        device=dataset.device,
+    )
+    cooks_full[nz_idx] = torch.as_tensor(
+        cooks.T, dtype=torch.float64, device=dataset.device
+    )
+    fit.cooks = cooks_full
+    cutoff = f_dist.ppf(
+        0.99, fit.design_matrix.shape[1], dataset.n_samples - fit.design_matrix.shape[1]
+    )
+    high = cooks > cutoff
+    high_gs = high.T
+    assign = high_gs & replaceable[None, :]
+    # DESeq2 marks a gene for refitting when any sample exceeds the cutoff,
+    # even if that particular sample is in a cell too small for replacement.
+    # Replacement itself remains restricted to eligible samples below.
+    replace_nz = high.any(axis=0)
+    if not replace_nz.any():
+        fit.replaced_genes = replaced_full
+        return fit
+
+    # R replaceOutliers(trim=0.2): trimmed normalized-count mean, rescaled by
+    # each size factor, converted to integer by truncation.
+    trim_base_mean = trim_mean(normed_sg, proportiontocut=0.2, axis=0)
+    sf = dataset.size_factors.detach().cpu().numpy()
+    candidate = (trim_base_mean[:, None] * sf[None, :]).astype(np.int64)
+    replacement_counts = fit.counts.detach().cpu().numpy().copy()
+    replacement_nz = replacement_counts[nz_idx.detach().cpu().numpy()].copy()
+    replacement_nz[assign] = candidate[assign]
+    replacement_counts[nz_idx.detach().cpu().numpy()] = replacement_nz
+
+    full_replace_idx = nz_idx[
+        torch.as_tensor(replace_nz, dtype=torch.bool, device=dataset.device)
+    ]
+    replaced_full[full_replace_idx] = True
+    refit_counts = replacement_counts[full_replace_idx.detach().cpu().numpy()]
+    refit_gene_ids = [dataset.gene_ids[i] for i in full_replace_idx.detach().cpu().tolist()]
+    refit_dataset = DESeqDataset(
+        refit_counts,
+        dataset.coldata,
+        design=dataset.design,
+        gene_ids=refit_gene_ids,
+        sample_ids=dataset.sample_ids,
+        backend=dataset.backend,
+    ).to(dataset.device)
+    refit_dataset.size_factors = dataset.size_factors.clone()
+    refit_dataset.normalized_counts = (
+        refit_dataset.counts / refit_dataset.size_factors.unsqueeze(0)
+    )
+    _refit_replacement_dispersions(
+        refit_dataset,
+        dataset,
+        use_cuda_graph=use_cuda_graph,
+        use_triton=use_triton,
+    )
+    refit = _fit_glm(refit_dataset)
+
+    fit.coefficients = fit.coefficients.clone()
+    fit.mu = fit.mu.clone()
+    fit.hat_diagonals = fit.hat_diagonals.clone()
+    fit.dispersions = fit.dispersions.clone()
+    fit.base_mean = fit.base_mean.clone()
+    fit.non_zero_mask = fit.non_zero_mask.clone()
+    fit.coefficients[full_replace_idx] = refit.coefficients
+    fit.mu[full_replace_idx] = refit.mu
+    fit.hat_diagonals[full_replace_idx] = refit.hat_diagonals
+    fit.dispersions[full_replace_idx] = refit.dispersions
+    fit.base_mean[full_replace_idx] = refit.base_mean
+    fit.non_zero_mask[full_replace_idx] = refit.non_zero_mask
+    fit.replaced_genes = replaced_full
+    fit.replacement_counts = torch.as_tensor(
+        replacement_counts, dtype=torch.float64, device=dataset.device
+    )
+    return fit
+
+
+def deseq(
+    dataset: DESeqDataset,
+    contrast: str | Iterable[float] | torch.Tensor | None = None,
+    *,
+    fit_type: str = "parametric",
+    min_replicates_for_replace: int | None = 7,
+    use_cuda_graph: bool = False,
+    use_triton: bool = False,
+) -> DeseqResult:
+    """Run the standard DESeq2 Wald pipeline.
+
+    This high-level entry point mirrors ``DESeq(test="Wald")``: size-factor
+    estimation, dispersion estimation, Wald fitting, Cook's-distance count
+    replacement for eligible design cells, and per-gene refitting. Pass
+    ``min_replicates_for_replace=None`` to disable replacement, corresponding
+    to ``minReplicatesForReplace=Inf`` in R.
+    """
+    if dataset.size_factors is None:
+        fit_size_factors(dataset)
+    if dataset.dispersions is None:
+        fit_dispersions(
+            dataset,
+            fit_type=fit_type,
+            use_cuda_graph=use_cuda_graph,
+            use_triton=use_triton,
+        )
+    resolved_contrast = dataset.design_columns[-1] if contrast is None else contrast
+    fit = wald_test(dataset, contrast=resolved_contrast)
+    if min_replicates_for_replace is not None:
+        fit = _replace_outliers_and_refit_wald(
+            dataset,
+            fit,
+            min_replicates=min_replicates_for_replace,
+            use_cuda_graph=use_cuda_graph,
+            use_triton=use_triton,
+        )
+    return fit
+
+
 def lfc_shrink(
     fit: DeseqResult,
     coeff: str,
@@ -361,7 +688,7 @@ def lfc_shrink(
         method: only "apeglm" is supported for now.
         adapt: if True, estimate prior scale by empirical Bayes from MLE LFCs.
         prior_no_shrink_scale: prior SD for coefficients NOT being shrunk
-            (intercept, batch, etc.). DESeq2/pydeseq2 default = 15.
+            (intercept, batch, etc.). DESeq2 default = 15.
 
     Returns: a new DeseqResult with shrunk coefficients and SE replacing the
     MLE values on `fit`. p-values are left unchanged (per apeGLM convention).
@@ -378,14 +705,16 @@ def lfc_shrink(
         raise ValueError(f"unknown coefficient: {coeff}")
     shrink_index = fit.design_columns.index(coeff)
 
-    # Size factors: reconstruct from counts / normalized_counts (elementwise).
+    # Size factors per sample. counts[g,s]/normalized_counts[g,s] == sf[s] for
+    # EVERY gene with a nonzero count, so take the median over genes. Using a
+    # single gene (e.g. gene 0) is wrong: wherever that gene has a zero count the
+    # ratio is 0/0 and reads back as sf=1, corrupting the offset for that sample
+    # and mis-shrinking every gene (dataset-dependent, e.g. broke pasilla).
     assert fit.normalized_counts is not None
-    sf_col = torch.where(fit.normalized_counts[0] > 0,
-                         fit.counts[0] / fit.normalized_counts[0],
-                         torch.ones_like(fit.counts[0]))
-    # More robust: use any gene (pick the one with max minimum count).
-    # Since counts[g, s] / normed[g, s] == sf[s] by construction, any gene works.
-    size_factors = sf_col
+    ratio = torch.where(fit.normalized_counts > 0,
+                        fit.counts / fit.normalized_counts,
+                        torch.full_like(fit.counts, float("nan")))
+    size_factors = torch.nanmedian(ratio, dim=0).values
 
     # Estimate prior scale (empirical Bayes) using MLE LFCs at the shrink index.
     nz = torch.nonzero(fit.non_zero_mask, as_tuple=False).squeeze(-1)
@@ -442,6 +771,10 @@ def lfc_shrink(
         gene_ids=fit.gene_ids,
         non_zero_mask=fit.non_zero_mask,
         shrunk_se=se_new_full,
+        replaced_genes=fit.replaced_genes,
+        replaceable_samples=fit.replaceable_samples,
+        replacement_counts=fit.replacement_counts,
+        cooks=fit.cooks,
     )
 
 
@@ -514,12 +847,21 @@ def _wald_se_and_stat(
     contrast: torch.Tensor,        # (P,)
     ridge: float = _core.RIDGE,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """pydeseq2's wald_test sandwich SE + Wald statistic.
+    """DESeq2's Wald sandwich SE + Wald statistic.
 
     SE = sqrt( cᵀ (M + ridge)⁻¹ M (M + ridge)⁻¹ c ) where M = Xᵀ W X,
-    W = μ / (1 + α μ). Per pydeseq2/utils.py:770-776.
+    W = μ̃ / (1 + α μ̃)  and  μ̃ = max(μ, MIN_MU).
     Stat = cᵀ β / SE.
     Returns (stat, se) each of shape (G,).
+
+    The μ floor matters and is not cosmetic: R forms the weights for `sigma` from
+    a μ already thresholded at `minmu` (fitBeta.cpp), and `irls_batched` hands
+    back the *un*-thresholded μ because Cook's distance needs it raw. Without the
+    floor here, any sample with μ < MIN_MU contributes ~0 weight instead of
+    ~MIN_MU, XᵀWX loses that sample and the SE comes out too large -- by ~22% on
+    genes where one contrasted group is entirely zero, and ~7% on near-zero-count
+    genes whose dispersion is pinned at the ceiling. Genes with μ >= MIN_MU
+    throughout, i.e. almost all of them, are unaffected either way.
     """
     G = coefficients.shape[0]
     P = design.shape[1]
@@ -527,8 +869,9 @@ def _wald_se_and_stat(
     dtype = coefficients.dtype
     eye = ridge * torch.eye(P, dtype=dtype, device=device)
 
-    alpha = dispersions.unsqueeze(1)  # (G, 1)
-    W = mu / (1.0 + mu * alpha)       # (G, S)
+    alpha = dispersions.unsqueeze(1)          # (G, 1)
+    mu = mu.clamp_min(_core.MIN_MU)           # R: fitBeta.cpp thresholds at minmu
+    W = mu / (1.0 + mu * alpha)               # (G, S)
     M = torch.einsum("sp,gs,sq->gpq", design, W, design)  # (G, P, P)
     H = torch.linalg.inv(M + eye)     # (G, P, P)
     Hc = torch.einsum("gpq,q->gp", H, contrast)           # (G, P)
@@ -550,7 +893,7 @@ def results(
 ) -> pd.DataFrame:
     """Assemble the results DataFrame.
 
-    For Wald tests, SE uses pydeseq2's sandwich form; log2FoldChange and lfcSE
+    For Wald tests, SE uses DESeq2's sandwich form; log2FoldChange and lfcSE
     are in log₂ scale (natural-log divided by ln(2)).
     """
     if p_adjust != "bh":
@@ -628,12 +971,29 @@ def results(
         if cooks_filter and fit.hat_diagonals is not None and fit.counts is not None \
                 and fit.normalized_counts is not None and fit.design_df is not None:
             from ._filters import cooks_distance, cooks_outlier_mask
-            # pydeseq2 expects (samples, genes); our tensors are (genes, samples).
+            # the filter helpers expect (samples, genes); our tensors are (genes, samples).
             counts_sg = fit.counts[nz_idx].T.detach().cpu().numpy()
             normed_sg = fit.normalized_counts[nz_idx].T.detach().cpu().numpy()
             mu_sg = fit.mu[nz_idx].T.detach().cpu().numpy()
             hat_sg = fit.hat_diagonals[nz_idx].T.detach().cpu().numpy()
-            cooks, _ = cooks_distance(counts_sg, normed_sg, mu_sg, hat_sg, fit.design_df)
+            if fit.cooks is not None:
+                cooks = fit.cooks[nz_idx].T.detach().cpu().numpy().copy()
+            else:
+                cooks, _ = cooks_distance(
+                    counts_sg, normed_sg, mu_sg, hat_sg, fit.design_df
+                )
+            # DESeq2's standard DESeq() pipeline zeros Cook's distances from
+            # samples eligible for count replacement before recording the
+            # maximum Cook's distance.  Preserve that behavior after a refit;
+            # the original counts remain attached to the result for
+            # lfcShrink() and reporting.
+            if (
+                fit.replaceable_samples is not None
+                and fit.replaced_genes is not None
+                and bool(torch.any(fit.replaced_genes).item())
+            ):
+                replaceable = fit.replaceable_samples.detach().cpu().numpy().astype(bool)
+                cooks[replaceable, :] = 0.0
             outlier_nz = cooks_outlier_mask(
                 cooks, counts_sg, fit.design_df,
                 num_vars=fit.coefficients.shape[1],

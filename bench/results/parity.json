@@ -1,0 +1,440 @@
+{
+  "airway": [
+    {
+      "case": "airway",
+      "substep": "normalization",
+      "metric": "max rel",
+      "value": 4.1416183048968446e-15,
+      "tol": 1e-06,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.0,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.0
+      }
+    },
+    {
+      "case": "airway",
+      "substep": "dispersion",
+      "metric": "p95 rel",
+      "value": 0.0004488752584457424,
+      "tol": 0.1,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 3.114687423533269e-07,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 3.114687423533269e-07
+      }
+    },
+    {
+      "case": "airway",
+      "substep": "glm_fit",
+      "metric": "p95 |\u0394|",
+      "value": 3.0378423092081138e-05,
+      "tol": 0.01,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 9.6712367003704e-09,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 9.6712367003704e-09
+      }
+    },
+    {
+      "case": "airway",
+      "substep": "significance",
+      "metric": "Jaccard@.05",
+      "value": 1.0,
+      "tol": 0.95,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.5324969321328652e-06,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.5324969321328652e-06
+      }
+    },
+    {
+      "case": "airway",
+      "substep": "lfc_shrink",
+      "metric": "Pearson r",
+      "value": 0.9999981357435558,
+      "tol": 0.9,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 7.850840363681985e-05,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 7.850840363681985e-05
+      },
+      "aux": "\u03c1=1.000"
+    }
+  ],
+  "airway_cell": [
+    {
+      "case": "airway_cell",
+      "substep": "normalization",
+      "metric": "max rel",
+      "value": 4.1416183048968446e-15,
+      "tol": 1e-06,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.0,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.0
+      }
+    },
+    {
+      "case": "airway_cell",
+      "substep": "dispersion",
+      "metric": "p95 rel",
+      "value": 0.002835590907321941,
+      "tol": 0.1,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 6.109679898114173e-08,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 6.109679898114173e-08
+      }
+    },
+    {
+      "case": "airway_cell",
+      "substep": "glm_fit",
+      "metric": "p95 |\u0394|",
+      "value": 8.088202775407004e-05,
+      "tol": 0.01,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 2.8655296954727127e-09,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 2.8655296954727127e-09
+      }
+    },
+    {
+      "case": "airway_cell",
+      "substep": "significance",
+      "metric": "Jaccard@.05",
+      "value": 1.0,
+      "tol": 0.95,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.3035062577286885e-08,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.3035062577286885e-08
+      }
+    },
+    {
+      "case": "airway_cell",
+      "substep": "lfc_shrink",
+      "metric": "Pearson r",
+      "value": 0.9972238129366802,
+      "tol": 0.9,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 6.417939811334222e-05,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 6.417939811334222e-05
+      },
+      "aux": "\u03c1=0.996"
+    }
+  ],
+  "airway_dex": [
+    {
+      "case": "airway_dex",
+      "substep": "normalization",
+      "metric": "max rel",
+      "value": 4.1416183048968446e-15,
+      "tol": 1e-06,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.0,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.0
+      }
+    },
+    {
+      "case": "airway_dex",
+      "substep": "dispersion",
+      "metric": "p95 rel",
+      "value": 0.0010405662545795254,
+      "tol": 0.1,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 2.2860267456792371e-07,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 2.2860267456792371e-07
+      }
+    },
+    {
+      "case": "airway_dex",
+      "substep": "glm_fit",
+      "metric": "p95 |\u0394|",
+      "value": 2.5037063102703592e-05,
+      "tol": 0.01,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.753824863115483e-09,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.753824863115483e-09
+      }
+    },
+    {
+      "case": "airway_dex",
+      "substep": "significance",
+      "metric": "Jaccard@.05",
+      "value": 0.9996297667530544,
+      "tol": 0.95,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.520427176382455e-07,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.520427176382455e-07
+      }
+    },
+    {
+      "case": "airway_dex",
+      "substep": "lfc_shrink",
+      "metric": "Pearson r",
+      "value": 0.9985925562323493,
+      "tol": 0.9,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 9.143231526564932e-06,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 9.143231526564932e-06
+      },
+      "aux": "\u03c1=1.000"
+    }
+  ],
+  "gtex_blood_muscle": [
+    {
+      "case": "gtex_blood_muscle",
+      "substep": "normalization",
+      "metric": "max rel",
+      "value": 5.690190868151395e-15,
+      "tol": 1e-06,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.0,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.0
+      }
+    },
+    {
+      "case": "gtex_blood_muscle",
+      "substep": "dispersion",
+      "metric": "p95 rel",
+      "value": 0.004395942472197017,
+      "tol": 0.1,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.2603959758848937,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.2603959758848937
+      }
+    },
+    {
+      "case": "gtex_blood_muscle",
+      "substep": "glm_fit",
+      "metric": "p95 |\u0394|",
+      "value": 1.7970189517652056e-05,
+      "tol": 0.01,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.00012239744421860266,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.00012239744421860266
+      }
+    },
+    {
+      "case": "gtex_blood_muscle",
+      "substep": "significance",
+      "metric": "Jaccard@.05",
+      "value": 0.9999705388445335,
+      "tol": 0.95,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.001989146533250441,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.001989146533250441
+      }
+    },
+    {
+      "case": "gtex_blood_muscle",
+      "substep": "lfc_shrink",
+      "metric": "Pearson r",
+      "value": 0.9999982314059583,
+      "tol": 0.9,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.005701924792822943,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.005701924792822943
+      },
+      "aux": "\u03c1=1.000"
+    }
+  ],
+  "pasilla": [
+    {
+      "case": "pasilla",
+      "substep": "normalization",
+      "metric": "max rel",
+      "value": 2.926098047964346e-15,
+      "tol": 1e-06,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.0,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.0
+      }
+    },
+    {
+      "case": "pasilla",
+      "substep": "dispersion",
+      "metric": "p95 rel",
+      "value": 0.0006671983827313886,
+      "tol": 0.1,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.8968723691087375e-07,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.8968723691087375e-07
+      }
+    },
+    {
+      "case": "pasilla",
+      "substep": "glm_fit",
+      "metric": "p95 |\u0394|",
+      "value": 2.3421167925174998e-05,
+      "tol": 0.01,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.3443008650693145e-09,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.3443008650693145e-09
+      }
+    },
+    {
+      "case": "pasilla",
+      "substep": "significance",
+      "metric": "Jaccard@.05",
+      "value": 1.0,
+      "tol": 0.95,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.8289657843229001e-06,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.8289657843229001e-06
+      }
+    },
+    {
+      "case": "pasilla",
+      "substep": "lfc_shrink",
+      "metric": "Pearson r",
+      "value": 0.9999966667737589,
+      "tol": 0.9,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 5.432778247826953e-07,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 5.432778247826953e-07
+      },
+      "aux": "\u03c1=1.000"
+    }
+  ],
+  "pasilla_2fac": [
+    {
+      "case": "pasilla_2fac",
+      "substep": "normalization",
+      "metric": "max rel",
+      "value": 2.926098047964346e-15,
+      "tol": 1e-06,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 0.0,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 0.0
+      }
+    },
+    {
+      "case": "pasilla_2fac",
+      "substep": "dispersion",
+      "metric": "p95 rel",
+      "value": 0.0002353977466255918,
+      "tol": 0.1,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.0795106852867775e-07,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.0795106852867775e-07
+      }
+    },
+    {
+      "case": "pasilla_2fac",
+      "substep": "glm_fit",
+      "metric": "p95 |\u0394|",
+      "value": 1.4553944597373025e-05,
+      "tol": 0.01,
+      "higher_better": false,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.400971860743283e-08,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.400971860743283e-08
+      }
+    },
+    {
+      "case": "pasilla_2fac",
+      "substep": "significance",
+      "metric": "Jaccard@.05",
+      "value": 1.0,
+      "tol": 0.95,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.3978304509443262e-06,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.3978304509443262e-06
+      }
+    },
+    {
+      "case": "pasilla_2fac",
+      "substep": "lfc_shrink",
+      "metric": "Pearson r",
+      "value": 0.9999906699409427,
+      "tol": 0.9,
+      "higher_better": true,
+      "pass": true,
+      "gpu_modes_maxdiff": 1.5066337518895856e-07,
+      "maxdiff_vs_eager": {
+        "graph": 0.0,
+        "triton": 1.5066337518895856e-07
+      },
+      "aux": "\u03c1=1.000"
+    }
+  ]
+}

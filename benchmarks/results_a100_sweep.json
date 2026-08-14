@@ -1,0 +1,132 @@
+{
+  "provenance": {
+    "utc": "2026-08-09 22:11 UTC",
+    "gpu": "NVIDIA A100-SXM4-40GB",
+    "cuda": "12.4",
+    "torch": "2.6.0+cu124",
+    "python": "3.10.17",
+    "platform": "Linux-5.10.0-46-cloud-amd64-x86_64-with-glibc2.31",
+    "commit": "f8adde1",
+    "working_tree_dirty": true,
+    "n_timed": 15,
+    "default_chunk": 10
+  },
+  "sweep": [
+    {
+      "n_samples": 60,
+      "n_genes": 2000,
+      "design": "~ condition",
+      "eager_ms": 89.19,
+      "eager_iters": 26,
+      "sweep": [
+        {
+          "chunk": 2,
+          "graph_ms": 14.83,
+          "speedup": 6.01,
+          "graph_iters": 26,
+          "max_abs_diff": 0.0
+        },
+        {
+          "chunk": 5,
+          "graph_ms": 16.28,
+          "speedup": 5.48,
+          "graph_iters": 30,
+          "max_abs_diff": 0.0
+        },
+        {
+          "chunk": 10,
+          "graph_ms": 16.18,
+          "speedup": 5.51,
+          "graph_iters": 30,
+          "max_abs_diff": 0.0
+        },
+        {
+          "chunk": 20,
+          "graph_ms": 20.73,
+          "speedup": 4.3,
+          "graph_iters": 40,
+          "max_abs_diff": 0.0
+        },
+        {
+          "chunk": 25,
+          "graph_ms": 25.42,
+          "speedup": 3.51,
+          "graph_iters": 50,
+          "max_abs_diff": 0.0
+        },
+        {
+          "chunk": 50,
+          "graph_ms": 25.34,
+          "speedup": 3.52,
+          "graph_iters": 50,
+          "max_abs_diff": 0.0
+        },
+        {
+          "chunk": 100,
+          "graph_ms": 48.73,
+          "speedup": 1.83,
+          "graph_iters": 100,
+          "max_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "n_samples": 60,
+      "n_genes": 20000,
+      "design": "~ condition",
+      "eager_ms": 138.81,
+      "eager_iters": 40,
+      "sweep": [
+        {
+          "chunk": 2,
+          "graph_ms": 58.24,
+          "speedup": 2.38,
+          "graph_iters": 40,
+          "max_abs_diff": 0.0
+        },
+        {
+          "chunk": 5,
+          "graph_ms": 57.48,
+          "speedup": 2.41,
+          "graph_iters": 40,
+          "max_abs_diff": 0.0
+        },
+        {
+          "chunk": 10,
+          "graph_ms": 57.29,
+          "speedup": 2.42,
+          "graph_iters": 40,
+          "max_abs_diff": 0.0
+        },
+        {
+          "chunk": 20,
+          "graph_ms": 57.45,
+          "speedup": 2.42,
+          "graph_iters": 40,
+          "max_abs_diff": 0.0
+        },
+        {
+          "chunk": 25,
+          "graph_ms": 71.15,
+          "speedup": 1.95,
+          "graph_iters": 50,
+          "max_abs_diff": 0.0
+        },
+        {
+          "chunk": 50,
+          "graph_ms": 70.96,
+          "speedup": 1.96,
+          "graph_iters": 50,
+          "max_abs_diff": 0.0
+        },
+        {
+          "chunk": 100,
+          "graph_ms": 139.66,
+          "speedup": 0.99,
+          "graph_iters": 100,
+          "max_abs_diff": 0.0
+        }
+      ]
+    }
+  ]
+}

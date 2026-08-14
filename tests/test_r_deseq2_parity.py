@@ -49,7 +49,7 @@ def _run_gpu(counts: np.ndarray, coldata: pd.DataFrame, gene_ids):
                    cooks_filter=False, independent_filter=False), dds
 
 
-# Tolerances below were calibrated by running against R DESeq2 1.30.1 output.
+# Tolerances below were checked against the current R DESeq2 reference output.
 # Measured p95 relative errors (see fixtures/r_deseq2/plots/summary.csv):
 #   large_60x2000 → disp 0.22%, lfc 0.01%, lfcSE 0.10%
 #   medium_30x500 → disp 0.33%, lfc 1.36%, lfcSE 0.16%

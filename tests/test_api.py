@@ -1,14 +1,19 @@
 from __future__ import annotations
 
-import contextlib
-import io
-
 import numpy as np
 import pandas as pd
 import pytest
 import torch
 
-from gpu_deseq import DESeqDataset, fit_dispersions, fit_size_factors, lrt_test, results, wald_test
+from gpu_deseq import (
+    DESeqDataset,
+    deseq,
+    fit_dispersions,
+    fit_size_factors,
+    lrt_test,
+    results,
+    wald_test,
+)
 
 
 def _synthetic_dataset() -> tuple[np.ndarray, pd.DataFrame]:
@@ -30,48 +35,6 @@ def _synthetic_dataset() -> tuple[np.ndarray, pd.DataFrame]:
         }
     )
     return counts, coldata
-
-
-def _pydeseq2_wald_results(
-    counts: np.ndarray,
-    coldata: pd.DataFrame,
-    *,
-    design: str,
-    contrast: tuple[str, str, str] = ("condition", "treated", "control"),
-    include_all: bool = False,
-) -> pd.DataFrame:
-    pytest.importorskip("pydeseq2")
-    from pydeseq2.dds import DeseqDataSet
-    from pydeseq2.ds import DeseqStats
-
-    counts_df = pd.DataFrame(
-        counts.T.astype(np.int64),
-        columns=[f"gene_{idx}" for idx in range(counts.shape[0])],
-        index=[f"sample_{idx}" for idx in range(counts.shape[1])],
-    )
-    metadata = coldata.copy()
-    metadata.index = counts_df.index
-
-    stderr_buffer = io.StringIO()
-    with contextlib.redirect_stderr(stderr_buffer):
-        dds = DeseqDataSet(
-            counts=counts_df,
-            metadata=metadata,
-            design=design,
-            quiet=True,
-            n_cpus=1,
-            low_memory=True,
-        )
-        dds.deseq2()
-        stats = DeseqStats(
-            dds, contrast=list(contrast), quiet=True, n_cpus=1,
-            cooks_filter=False, independent_filter=False,
-        )
-        with contextlib.redirect_stdout(io.StringIO()):
-            stats.summary()
-
-    cols = ["log2FoldChange", "lfcSE", "stat", "pvalue", "padj"] if include_all else ["log2FoldChange", "pvalue", "padj"]
-    return stats.results_df[cols]
 
 
 def test_size_factor_estimation_centers_geometric_mean() -> None:
@@ -188,71 +151,39 @@ def test_wald_handles_extreme_count_ranges_without_non_finite_results() -> None:
     assert np.isfinite(res["padj"]).all()
 
 
-def test_wald_matches_pydeseq2_for_batched_design() -> None:
-    counts, coldata = _synthetic_dataset()
+def test_deseq_replaces_and_refits_eligible_count_outlier() -> None:
+    rng = np.random.default_rng(3)
+    counts = rng.negative_binomial(
+        20, 20 / (20 + 100), size=(100, 14)
+    ).astype(float)
+    counts[0, 0] = 100_000
+    coldata = pd.DataFrame({"condition": ["control"] * 7 + ["treated"] * 7})
 
-    ours = DESeqDataset(counts, coldata, design="~ batch + condition", backend="torch")
-    fit_size_factors(ours)
-    fit_dispersions(ours)
-    ours_res = results(wald_test(ours, contrast="condition[T.treated]"))
+    dds = DESeqDataset(counts, coldata, design="~ condition", backend="torch")
+    fit = deseq(dds, contrast="condition[T.treated]")
+    res = results(fit)
 
-    ref_res = _pydeseq2_wald_results(
-        counts,
-        coldata,
-        design="~ batch + condition",
-        include_all=True,
+    assert fit.replaced_genes is not None and bool(fit.replaced_genes[0])
+    assert fit.replaceable_samples is not None and bool(torch.all(fit.replaceable_samples))
+    assert fit.replacement_counts is not None
+    assert fit.replacement_counts[0, 0] < counts[0, 0]
+    assert np.isfinite(res.loc["gene_0", "pvalue"])
+
+
+def test_deseq_can_disable_count_outlier_replacement() -> None:
+    rng = np.random.default_rng(3)
+    counts = rng.negative_binomial(
+        20, 20 / (20 + 100), size=(100, 14)
+    ).astype(float)
+    counts[0, 0] = 100_000
+    coldata = pd.DataFrame({"condition": ["control"] * 7 + ["treated"] * 7})
+
+    dds = DESeqDataset(counts, coldata, design="~ condition", backend="torch")
+    fit = deseq(
+        dds,
+        contrast="condition[T.treated]",
+        min_replicates_for_replace=None,
     )
-    merged = ours_res.join(ref_res, rsuffix="_ref")
 
-    # Tight on this small fixture: n=6, p=3 → residual dof = 3. pydeseq2's
-    # trend fit falls back to mean-based and the dispersion prior is poorly
-    # estimated, so tiny grid-vs-LBFGSB differences are amplified. Looser than
-    # the real-data validation targets.
-    np.testing.assert_allclose(merged["log2FoldChange"], merged["log2FoldChange_ref"], atol=0.01, rtol=0.01)
-    np.testing.assert_allclose(merged["lfcSE"], merged["lfcSE_ref"], atol=0.02, rtol=0.15)
-    assert np.corrcoef(merged["pvalue"], merged["pvalue_ref"])[0, 1] > 0.99
-    assert set(merged.index[merged["padj"] <= 0.1]) == set(merged.index[merged["padj_ref"] <= 0.1])
-    assert np.array_equal(
-        np.sign(merged["log2FoldChange"].to_numpy()),
-        np.sign(merged["log2FoldChange_ref"].to_numpy()),
-    )
-
-
-def test_wald_matches_pydeseq2_on_clear_effect_genes() -> None:
-    counts = np.array(
-        [
-            [10, 12, 11, 45, 48, 50],
-            [200, 210, 205, 198, 202, 201],
-            [80, 85, 78, 22, 25, 20],
-            [30, 35, 33, 32, 36, 34],
-            [500, 520, 510, 800, 820, 810],
-            [5, 6, 4, 60, 70, 65],
-        ],
-        dtype=float,
-    )
-    coldata = pd.DataFrame({"condition": ["control", "control", "control", "treated", "treated", "treated"]})
-
-    ours = DESeqDataset(counts, coldata, design="~ condition", backend="torch")
-    fit_size_factors(ours)
-    fit_dispersions(ours)
-    ours_res = results(wald_test(ours, contrast="condition[T.treated]"))
-
-    ref_res = _pydeseq2_wald_results(
-        counts,
-        coldata,
-        design="~ condition",
-        include_all=True,
-    )
-    merged = ours_res.join(ref_res, rsuffix="_ref")
-
-    # Small fixture (n=6, p=2); tighter than the batched-design test because the
-    # trend fit converges here, but still not real-data tight.
-    np.testing.assert_allclose(merged["log2FoldChange"], merged["log2FoldChange_ref"], atol=5e-3, rtol=5e-3)
-    np.testing.assert_allclose(merged["lfcSE"], merged["lfcSE_ref"], atol=5e-3, rtol=5e-3)
-    assert np.corrcoef(merged["pvalue"], merged["pvalue_ref"])[0, 1] > 0.999
-    clear_effect_genes = {"gene_0", "gene_2", "gene_5"}
-    assert clear_effect_genes.issubset(set(merged.index[merged["padj"] <= 0.1]))
-    assert clear_effect_genes.issubset(set(merged.index[merged["padj_ref"] <= 0.1]))
-    assert list(merged["log2FoldChange"].abs().sort_values(ascending=False).index[:2]) == list(
-        merged["log2FoldChange_ref"].abs().sort_values(ascending=False).index[:2]
-    )
+    assert fit.replaced_genes is None
+    assert fit.replacement_counts is None

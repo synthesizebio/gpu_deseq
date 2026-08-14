@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "name": "gtex_blood_muscle",
+    "design": "~ tissue",
+    "factor": "tissue",
+    "ref": "blood",
+    "nonref": "muscle",
+    "coef": "tissue_muscle_vs_blood",
+    "P": 2,
+    "n_samples": 300,
+    "n_genes": 54922,
+    "r_full_ms": 471587.735
+  },
+  "n_genes_compared": 54922,
+  "lfc_pearson": 0.9999975249414854,
+  "lfc_spearman": 0.9999920496156971,
+  "lfc_p95_abs": 1.7970189517652056e-05,
+  "stat_pearson": 0.9999999540992607,
+  "pvalue_pearson": 0.999999218577087,
+  "padj_p95_abs": 0.00033937308929403166,
+  "dispersion_p95_rel": 0.004395942472197017,
+  "shrunk_lfc_pearson": 0.9999982314064358,
+  "shrunk_lfc_p95_abs": 0.0026135324515452834,
+  "shrunk_lfc_divergent_threshold": 0.1,
+  "shrunk_lfc_n_divergent": 14,
+  "shrunk_lfc_n_compared": 54922,
+  "shrunk_lfc_max_abs": 0.44384716377847777,
+  "sig_jaccard_0.05": 0.9999705388445335,
+  "sig_jaccard_0.10": 0.9999714758400365,
+  "n_sig_ours_0.05": 33943,
+  "n_sig_r_0.05": 33942,
+  "reference_versions": {
+    "r_version": "4.6.0",
+    "deseq2_version": "1.52.0",
+    "apeglm_version": "1.34.0"
+  }
+}

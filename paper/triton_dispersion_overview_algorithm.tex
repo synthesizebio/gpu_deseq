@@ -1,0 +1,67 @@
+% High-level companion to triton_dispersion_algorithm.tex.
+% Uses only packages already loaded by paper/main.tex.
+% Insert with: \input{triton_dispersion_overview_algorithm}
+
+\begingroup
+\newcounter{tritonoverviewline}
+\setcounter{tritonoverviewline}{0}
+\newcommand{\tritonOverviewLine}[2][0em]{%
+  \stepcounter{tritonoverviewline}%
+  \noindent
+  \makebox[2.1em][r]{\arabic{tritonoverviewline}:}%
+  \hspace{0.7em}\hspace*{#1}%
+  \begin{minipage}[t]{\dimexpr\linewidth-3.2em-#1\relax}%
+    #2
+  \end{minipage}\par
+}
+
+\begin{figure}[htbp]
+\small
+\noindent\rule{\linewidth}{0.8pt}\par
+\vspace{2pt}
+\noindent
+\refstepcounter{supalg}\label{alg:triton-overview}%
+\textbf{Supplementary Algorithm~\thesupalg}\quad
+\textsc{Fused Triton dispersion fit} (high-level)
+\par
+\vspace{2pt}
+\noindent\rule{\linewidth}{0.4pt}\par
+\vspace{4pt}
+
+\noindent
+\textbf{Require:}\;
+counts $\mathbf{Y}\in\mathbb{N}_0^{G\times S}$;
+fitted means $\boldsymbol{\mu}\in\mathbb{R}_{+}^{G\times S}$;
+design $\mathbf{X}\in\mathbb{R}^{S\times P}$;
+initial dispersions $\boldsymbol{\alpha}^{(0)}$;
+optional MAP prior.
+\par
+\noindent
+\textbf{Ensure:}\;
+optimized log dispersions $\mathbf{a}$.
+\par
+\vspace{4pt}
+
+\tritonOverviewLine{\textbf{Launch} one Triton program for every gene $g$ in parallel.}
+\tritonOverviewLine[1.2em]{Load $\mathbf{y}_g$, $\boldsymbol{\mu}_g$, and
+  $\mathbf{X}$ once into program-local state.}
+\tritonOverviewLine[1.2em]{Initialize
+  $a\leftarrow\operatorname{clip}(\log\alpha_g^{(0)},-30,10)$ and
+  step size $\kappa\leftarrow\kappa_0$.}
+\tritonOverviewLine[1.2em]{\textbf{repeat} inside the same fused program}
+\tritonOverviewLine[2.4em]{Compute the negative-binomial log-likelihood and
+  Cox--Reid adjustment.}
+\tritonOverviewLine[2.4em]{If fitting MAP dispersion, add the Gaussian prior
+  on $a=\log\alpha$.}
+\tritonOverviewLine[2.4em]{Compute the gradient $q\leftarrow\partial\ell/\partial a$.}
+\tritonOverviewLine[2.4em]{Propose the gradient-ascent step
+  $\widetilde a\leftarrow a+\kappa q$.}
+\tritonOverviewLine[2.4em]{Accept or reject $\widetilde a$ using the Armijo
+  condition; adapt $\kappa$.}
+\tritonOverviewLine[1.2em]{\textbf{until} converged or \textit{maxit} is reached.}
+\tritonOverviewLine[1.2em]{Store the final $a_g$ once in global memory.}
+
+\vspace{3pt}
+\noindent\rule{\linewidth}{0.8pt}
+\end{figure}
+\endgroup

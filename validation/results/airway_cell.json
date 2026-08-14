@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "name": "airway_cell",
+    "design": "~ cell",
+    "factor": "cell",
+    "ref": "N052611",
+    "nonref": "N061011",
+    "coef": "cell_N061011_vs_N052611",
+    "P": 4,
+    "n_samples": 8,
+    "n_genes": 33469,
+    "r_full_ms": 36079.716
+  },
+  "n_genes_compared": 33469,
+  "lfc_pearson": 0.9999999992755969,
+  "lfc_spearman": 0.9999988468474832,
+  "lfc_p95_abs": 8.088202775405338e-05,
+  "stat_pearson": 0.9999977017093887,
+  "pvalue_pearson": 0.9999935017593011,
+  "padj_p95_abs": 1.6781100363738588e-06,
+  "dispersion_p95_rel": 0.0028355909073196745,
+  "shrunk_lfc_pearson": 0.9972238129366804,
+  "shrunk_lfc_p95_abs": 0.00036746830025412026,
+  "shrunk_lfc_divergent_threshold": 0.1,
+  "shrunk_lfc_n_divergent": 21,
+  "shrunk_lfc_n_compared": 33469,
+  "shrunk_lfc_max_abs": 2.258230766899358,
+  "sig_jaccard_0.05": 1.0,
+  "sig_jaccard_0.10": 0.991869918699187,
+  "n_sig_ours_0.05": 206,
+  "n_sig_r_0.05": 206,
+  "reference_versions": {
+    "r_version": "4.6.0",
+    "deseq2_version": "1.52.0",
+    "apeglm_version": "1.34.0"
+  }
+}

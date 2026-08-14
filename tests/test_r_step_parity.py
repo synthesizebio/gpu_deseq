@@ -144,7 +144,7 @@ def test_step_size_factors(spec: FixtureSpec) -> None:
     "spec,p95_rel,med_rel",
     [
         # Calibrated 2026-04-29: bit-exact (within FP rounding) parity with
-        # R DESeq2 1.30.1 across all fixtures. Achieved by faithful port of
+        # R DESeq2 across all fixtures. Achieved by faithful port of
         # DESeq2 src/DESeq2.cpp::fitDisp (gradient ascent + Armijo line
         # search + periodic kappa halving + noIncrease revert + grid fallback).
         # Measured max rel-err: <1e-8 with median ~1e-15 across 5 fixtures.
@@ -575,8 +575,8 @@ def test_step_cooks_filter_applied(spec: FixtureSpec, sig_jaccard_min: float) ->
     r_nan = np.isnan(r_cf["pvalue_cf"].to_numpy())
     if our_nan.any() or r_nan.any():
         jacc = (our_nan & r_nan).sum() / max((our_nan | r_nan).sum(), 1)
-        # The outlier rule has discrete cutoffs and pydeseq2's robust dispersion
-        # is close-but-not-identical to R's; require >= 0.5 Jaccard.
+        # The outlier rule has discrete cutoffs and our robust dispersion is
+        # close-but-not-identical to R's; require >= 0.5 Jaccard.
         assert jacc >= 0.5, (
             f"{spec.label}: Cook's-NaN Jaccard {jacc:.3f} < 0.5 "
             f"(ours={our_nan.sum()}, R={r_nan.sum()})")
