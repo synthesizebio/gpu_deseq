@@ -2,12 +2,13 @@
 
 This is useful when the R reference version changes.  It runs one cuDESeq2
 capture per dataset on the selected device, compares it with the outputs from
-``run_r.R``, and writes a versioned artifact.  It does not alter the committed
-GPU timing or execution-mode comparison.
+``run_r.R``, and writes a versioned artifact. It captures every execution mode
+but does not alter the committed GPU timing artifact.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -44,15 +45,29 @@ def main() -> None:
         output.setdefault("cases", {})
         output["device"] = args.device
         output["pipeline"] = "standard_wald_with_outlier_refit"
+        output["reference_modes"] = list(bench.MODES)
     else:
         output = {
             "device": args.device,
             "pipeline": "standard_wald_with_outlier_refit",
+            "reference_modes": list(bench.MODES),
             "cases": {},
         }
+    output["input_manifests"] = {
+        key: hashlib.sha256(path.read_bytes()).hexdigest()
+        for key, path in (
+            ("source", Path("validation/data_sources.json")),
+            ("prepared", Path("validation/prepared_data_manifest.json")),
+        )
+        if path.exists()
+    }
     for case in cases:
         print(f"[{case}] reference parity on {args.device}", flush=True)
-        capture = run_cu.capture_mode(case, "eager", args.device)
+        captures = {
+            mode: run_cu.capture_mode(case, mode, args.device)
+            for mode in bench.MODES
+        }
+        capture = captures["eager"]
         pd.DataFrame(
             {
                 key: capture[key]
@@ -67,12 +82,7 @@ def main() -> None:
                 )
             }
         ).to_csv(bench.CACHE / case / "cu_reference_results.csv")
-        # parity_for_case also checks acceleration-mode agreement. Reusing the
-        # same capture here intentionally limits this artifact to R-reference
-        # parity; mode agreement remains in parity.json from an actual GPU run.
-        rows = bench.parity_for_case(
-            case, {"eager": capture, "graph": capture, "triton": capture}
-        )
+        rows = bench.parity_for_case(case, captures)
         timing_meta = json.loads(
             (bench.CACHE / case / "r_timings.json").read_text()
         )
@@ -90,6 +100,8 @@ def main() -> None:
                         "tol",
                         "higher_better",
                         "pass",
+                        "values_vs_r",
+                        "pass_by_mode",
                         "aux",
                     )
                     if key in row

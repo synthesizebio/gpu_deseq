@@ -1,15 +1,15 @@
-"""Render the current standard-pipeline benchmark and parity tables."""
+"""Render tables using only committed benchmark and validation artifacts."""
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
 
-RESULTS = Path("bench/results")
-DATA = Path("validation/data")
+ROOT = Path(__file__).resolve().parents[1]
+RESULTS = ROOT / "bench/results"
+VALIDATION_RESULTS = ROOT / "validation/results"
 MODES = ("eager", "graph", "triton")
 STEPS = ("normalization", "dispersion", "glm_fit", "significance", "lfc_shrink")
-PARALLEL_R = RESULTS / "r_parallel_a100_12worker.json"
 
 
 def number(value: float) -> str:
@@ -19,59 +19,74 @@ def number(value: float) -> str:
 def main() -> None:
     timings = json.loads((RESULTS / "timings.json").read_text())
     parity = json.loads((RESULTS / "reference_parity.json").read_text())
-    parallel = json.loads(PARALLEL_R.read_text()) if PARALLEL_R.exists() else None
+    parallel = json.loads(
+        (RESULTS / "r_parallel_a100_12worker.json").read_text()
+    )
     cases = sorted(parity["cases"])
-    workers = parallel["provenance"]["workers"] if parallel else None
+    metadata = {
+        case: json.loads((VALIDATION_RESULTS / f"{case}.json").read_text())["meta"]
+        for case in cases
+    }
+    workers = parallel["provenance"]["workers"]
     lines = [
         "# Current standard-pipeline results",
         "",
-        "R reference: R 4.6.0, DESeq2 1.52.0, apeglm 1.34.0. "
-        "GPU timings are from one A100-SXM4-40GB standard-pipeline run.",
-        ("End-to-end R timings use the same standard call path with one and %d "
-         "BiocParallel workers; the speedup column uses the faster R result." % workers)
-        if parallel else "",
+        "R reference: R 4.6.0, DESeq2 1.52.0, apeglm 1.34.0. GPU "
+        "measurements use one A100-SXM4-40GB.",
         "",
-        "## End-to-end wall time (ms)",
+        "## Matched sum of stage medians (ms)",
         "",
-        ("| dataset | P | n | R, 1 worker | R, %d workers | eager | graph | Triton | best cuDESeq2 vs. best R |" % workers)
-        if parallel else "| dataset | P | n | R | eager | graph | Triton | best measured speedup |",
-        ("|---|--:|--:|--:|--:|--:|--:|--:|--:|") if parallel else "|---|--:|--:|--:|--:|--:|--:|--:|",
+        "R and cuDESeq2 use the same five stage boundaries. These totals are sums "
+        "of independently measured stage medians, not direct end-to-end observations.",
+        "",
+        "| dataset | P | n | R, 1 worker | eager | graph | Triton | best cuDESeq2 vs. R |",
+        "|---|--:|--:|--:|--:|--:|--:|--:|",
     ]
     for case in cases:
-        meta = json.loads((DATA / case / "meta.json").read_text())
-        r_total = timings["r"][case]["total"]
-        gpu = {mode: timings["cu"][case][mode]["total"] for mode in MODES}
-        if parallel:
-            record = parallel["cases"][case]
-            r_one = record["serial"]["median_ms"]
-            r_many = record["parallel"]["median_ms"]
-            best_r = min(r_one, r_many)
-            speedup = f"{best_r / min(gpu.values()):.1f}×"
-            lines.append(
-                f"| {case} | {meta.get('P', '—')} | {meta['n_samples']} | {r_one:.0f} | {r_many:.0f} | "
-                + " | ".join(number(gpu[mode]) for mode in MODES)
-                + f" | {speedup} |"
+        meta = metadata[case]
+        r_total = timings["r"][case].get(
+            "stage_total", timings["r"][case]["total"]
+        )
+        gpu = {
+            mode: timings["cu"][case][mode].get(
+                "stage_total", timings["cu"][case][mode]["total"]
             )
-        else:
-            speedup = f"{r_total / min(gpu.values()):.1f}×"
-            lines.append(
-                f"| {case} | {meta.get('P', '—')} | {meta['n_samples']} | "
-                f"{r_total:.0f} | "
-                + " | ".join(number(gpu[mode]) for mode in MODES)
-                + f" | {speedup} |"
-            )
+            for mode in MODES
+        }
+        speedup = r_total / min(gpu.values())
+        lines.append(
+            f"| {case} | {meta.get('P', '—')} | {meta['n_samples']} | "
+            f"{r_total:.0f} | "
+            + " | ".join(number(gpu[mode]) for mode in MODES)
+            + f" | {speedup:.1f}× |"
+        )
 
-    lines += [line for line in [
+    lines += [
         "",
-        "## Per-substep wall time (ms)",
+        f"## Direct R end-to-end wall time: one vs. {workers} workers (ms)",
         "",
-        "These substep timings are one-worker measurements. DESeq2 parallelizes "
-        "some stages together, so they cannot be partitioned into comparable "
-        "12-worker substeps.",
+        "Each cell is the median of direct `DESeq() + results() + lfcShrink()` "
+        "observations. This separately collected table is not combined with the "
+        "stage-summed GPU measurements above.",
+        "",
+        f"| dataset | n | 1 worker | {workers} workers |",
+        "|---|--:|--:|--:|",
+    ]
+    for case in cases:
+        record = parallel["cases"][case]
+        lines.append(
+            f"| {case} | {metadata[case]['n_samples']} | "
+            f"{record['serial']['median_ms']:.0f} | "
+            f"{record['parallel']['median_ms']:.0f} |"
+        )
+
+    lines += [
+        "",
+        "## Per-stage wall time (ms)",
         "",
         "| dataset | substep | R | eager | graph | Triton |",
         "|---|---|--:|--:|--:|--:|",
-    ] if line]
+    ]
     for case in cases:
         for step in STEPS:
             values = [timings["cu"][case][mode][step] for mode in MODES]
@@ -85,7 +100,10 @@ def main() -> None:
         "",
         "## Output parity against DESeq2 1.52.0",
         "",
-        "| dataset | substep | metric | value | tolerance | verdict |",
+        "The retained reference-parity artifact scores eager mode; graph and Triton "
+        "differences are retained separately in `parity.json`.",
+        "",
+        "| dataset | substep | metric | eager vs. R | tolerance | verdict |",
         "|---|---|---|--:|--:|:--:|",
     ]
     for case in cases:

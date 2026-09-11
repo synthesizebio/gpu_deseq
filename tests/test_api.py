@@ -55,6 +55,57 @@ def test_size_factor_estimation_centers_geometric_mean() -> None:
     np.testing.assert_allclose(dds.size_factors.cpu().numpy(), expected, rtol=1e-6)
 
 
+def test_default_size_factors_require_explicit_poscounts_for_sparse_data() -> None:
+    counts = np.array(
+        [
+            [0, 4, 16],
+            [1, 0, 9],
+            [8, 2, 0],
+        ],
+        dtype=float,
+    )
+    coldata = pd.DataFrame({"condition": ["a", "a", "b"]})
+    dds = DESeqDataset(counts, coldata, design="~ condition", backend="torch")
+
+    with pytest.raises(ValueError, match="use method='poscounts'"):
+        fit_size_factors(dds)
+
+
+def test_poscounts_matches_deseq2_modified_geometric_means() -> None:
+    # The all-one row has modified geometric mean one and must remain eligible.
+    counts = np.array(
+        [
+            [0, 4, 16],
+            [1, 1, 1],
+            [8, 2, 0],
+            [0, 0, 0],
+        ],
+        dtype=float,
+    )
+    coldata = pd.DataFrame({"condition": ["a", "a", "b"]})
+    dds = DESeqDataset(counts, coldata, design="~ condition", backend="torch")
+    fit_size_factors(dds, method="poscounts")
+
+    positive = counts > 0
+    log_geomeans = np.where(positive, np.log(np.clip(counts, 1, None)), 0).mean(axis=1)
+    eligible = positive.any(axis=1)
+    expected = []
+    for sample in range(counts.shape[1]):
+        mask = eligible & positive[:, sample]
+        expected.append(np.exp(np.median(np.log(counts[mask, sample]) - log_geomeans[mask])))
+    expected = np.asarray(expected)
+    expected /= np.exp(np.log(expected).mean())
+
+    np.testing.assert_allclose(dds.size_factors.cpu().numpy(), expected, rtol=1e-12)
+
+
+def test_size_factor_method_is_validated() -> None:
+    counts, coldata = _synthetic_dataset()
+    dds = DESeqDataset(counts, coldata, design="~ condition", backend="torch")
+    with pytest.raises(ValueError, match="method must be"):
+        fit_size_factors(dds, method="automatic")
+
+
 def test_formula_parsing_and_dispersion_fit() -> None:
     counts, coldata = _synthetic_dataset()
     dds = DESeqDataset(counts, coldata, design="~ batch + condition", backend="torch")

@@ -1,6 +1,16 @@
 {
   "provenance": {
     "pipeline": "standard_wald_with_outlier_refit",
+    "cu_total_definition": "sum of independently measured stage medians; excludes DESeqDataset construction and host-to-device transfer",
+    "r_total_definition": "sum of independently measured stage medians; excludes DESeqDataSet construction",
+    "cross_implementation_total_comparable": true,
+    "direct_end_to_end": false,
+    "input_reconstruction": {
+      "source_manifest_sha256": "79f3a506bd6fd31586e3f7512872205b42f1b2bf58750536da4a77dc2e6174ed",
+      "prepared_manifest_sha256": "c5fd93872ab417d947b042334ad1643f037e17648bb3417d410ef80968dd74c8",
+      "verified_byte_deterministic": true,
+      "measurement_predates_manifest": true
+    },
     "measured_utc": "2026-08-13T03:23:23Z",
     "device_argument": "cuda",
     "python_version": "3.10.17",

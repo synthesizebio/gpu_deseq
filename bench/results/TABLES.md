@@ -1,20 +1,35 @@
 # Current standard-pipeline results
 
-R reference: R 4.6.0, DESeq2 1.52.0, apeglm 1.34.0. GPU timings are from one A100-SXM4-40GB standard-pipeline run.
-End-to-end R timings use the same standard call path with one and 12 BiocParallel workers; the speedup column uses the faster R result.
+R reference: R 4.6.0, DESeq2 1.52.0, apeglm 1.34.0. GPU measurements use one A100-SXM4-40GB.
 
-## End-to-end wall time (ms)
+## Matched sum of stage medians (ms)
 
-| dataset | P | n | R, 1 worker | R, 12 workers | eager | graph | Triton | best cuDESeq2 vs. best R |
-|---|--:|--:|--:|--:|--:|--:|--:|--:|
-| airway | 5 | 8 | 32130 | 12099 | 2578 | 1707 | 1531 | 7.9× |
-| airway_cell | 4 | 8 | 29341 | 10421 | 4260 | 3665 | 3629 | 2.9× |
-| airway_dex | 2 | 8 | 25968 | 11856 | 1330 | 1010 | 944 | 12.6× |
-| gtex_blood_muscle | 2 | 300 | 276016 | 63445 | 8526 | 8284 | 4744 | 13.4× |
-| pasilla | 2 | 7 | 9447 | 7336 | 1022 | 673 | 751 | 10.9× |
-| pasilla_2fac | 3 | 7 | 10200 | 7371 | 1536 | 960 | 876 | 8.4× |
-## Per-substep wall time (ms)
-These substep timings are one-worker measurements. DESeq2 parallelizes some stages together, so they cannot be partitioned into comparable 12-worker substeps.
+R and cuDESeq2 use the same five stage boundaries. These totals are sums of independently measured stage medians, not direct end-to-end observations.
+
+| dataset | P | n | R, 1 worker | eager | graph | Triton | best cuDESeq2 vs. R |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| airway | 5 | 8 | 32472 | 2578 | 1707 | 1531 | 21.2× |
+| airway_cell | 4 | 8 | 30326 | 4260 | 3665 | 3629 | 8.4× |
+| airway_dex | 2 | 8 | 26320 | 1330 | 1010 | 944 | 27.9× |
+| gtex_blood_muscle | 2 | 300 | 279604 | 8526 | 8284 | 4744 | 58.9× |
+| pasilla | 2 | 7 | 9485 | 1022 | 673 | 751 | 14.1× |
+| pasilla_2fac | 3 | 7 | 9999 | 1536 | 960 | 876 | 11.4× |
+
+## Direct R end-to-end wall time: one vs. 12 workers (ms)
+
+Each cell is the median of direct `DESeq() + results() + lfcShrink()` observations. This separately collected table is not combined with the stage-summed GPU measurements above.
+
+| dataset | n | 1 worker | 12 workers |
+|---|--:|--:|--:|
+| airway | 8 | 32130 | 12099 |
+| airway_cell | 8 | 29341 | 10421 |
+| airway_dex | 8 | 25968 | 11856 |
+| gtex_blood_muscle | 300 | 276016 | 63445 |
+| pasilla | 7 | 9447 | 7336 |
+| pasilla_2fac | 7 | 10200 | 7371 |
+
+## Per-stage wall time (ms)
+
 | dataset | substep | R | eager | graph | Triton |
 |---|---|--:|--:|--:|--:|
 | airway | normalization | 189 | 1 | 1 | 1 |
@@ -50,7 +65,9 @@ These substep timings are one-worker measurements. DESeq2 parallelizes some stag
 
 ## Output parity against DESeq2 1.52.0
 
-| dataset | substep | metric | value | tolerance | verdict |
+The retained reference-parity artifact scores eager mode; graph and Triton differences are retained separately in `parity.json`.
+
+| dataset | substep | metric | eager vs. R | tolerance | verdict |
 |---|---|---|--:|--:|:--:|
 | airway | normalization | max rel | 4.14162e-15 | ≤1e-06 | PASS |
 | airway | dispersion | p95 rel | 0.000448875 | ≤0.1 | PASS |

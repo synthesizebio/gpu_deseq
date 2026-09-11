@@ -96,20 +96,70 @@ def _run_substeps(dds, contrast, disp_kw, timed, device):
     }
 
 
+def _run_direct(dds, contrast, disp_kw):
+    """Run the complete workflow without stage timers or intermediate syncs."""
+    fit_size_factors(dds)
+    fit_dispersions(dds, **disp_kw)
+    fit = wald_test(dds, contrast=contrast)
+    fit = _replace_outliers_and_refit_wald(
+        dds,
+        fit,
+        use_cuda_graph=disp_kw.get("use_cuda_graph", False),
+        use_triton=disp_kw.get("use_triton", False),
+    )
+    results(fit)
+    results(
+        lfc_shrink(fit, coeff=contrast),
+        cooks_filter=False,
+        independent_filter=False,
+    )
+
+
 def time_mode(case, mode, device, reps):
+    """Time a mode with both direct and stage-level measurements.
+
+    ``total`` is the median of direct wall-clock measurements around dataset
+    construction, host-to-device transfer, and the complete five-stage
+    workflow. ``stage_total`` is the sum of the independently calculated stage
+    medians and is retained only for stage-attribution tables. Keeping the two
+    quantities distinct avoids presenting a sum of medians as an end-to-end
+    observation.
+    """
     meta, counts, coldata, contrast = _load(case)
     disp_kw = MODES[mode]
     _core._GRAPH_CACHE.clear()
     # warm-up (compile / capture / cache), not timed
-    _run_substeps(_build(counts, coldata, meta, device), contrast, disp_kw, timed=True, device=device)
+    _run_substeps(
+        _build(counts, coldata, meta, device),
+        contrast,
+        disp_kw,
+        timed=True,
+        device=device,
+    )
     acc = {k: [] for k in SUBSTEPS}
     for _ in range(reps):
         dds = _build(counts, coldata, meta, device)
         t = _run_substeps(dds, contrast, disp_kw, timed=True, device=device)
         for k in SUBSTEPS:
             acc[k].append(t[k])
+
+    total_samples = []
+    for _ in range(reps):
+        if device == "cuda":
+            torch.cuda.synchronize()
+        total_start = time.perf_counter()
+        _run_direct(
+            _build(counts, coldata, meta, device),
+            contrast,
+            disp_kw,
+        )
+        if device == "cuda":
+            torch.cuda.synchronize()
+        total_samples.append(time.perf_counter() - total_start)
     out = {k: float(np.median(v)) * 1e3 for k, v in acc.items()}
-    out["total"] = sum(out.values())
+    out["stage_total"] = sum(out.values())
+    out["total"] = float(np.median(total_samples)) * 1e3
+    out["total_values_ms"] = [value * 1e3 for value in total_samples]
     return out
 
 

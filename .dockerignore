@@ -12,6 +12,7 @@
 # Generated and machine-local artifacts.
 bench/cache
 validation/data
+validation/sources
 paper/main.pdf
 paper/*.aux
 paper/*.bbl

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import json
 import os
 import platform
@@ -45,6 +46,11 @@ def benchmark_provenance(device: str) -> dict[str, object]:
     """Record enough runtime context to interpret or reproduce a timing file."""
     provenance: dict[str, object] = {
         "pipeline": "standard_wald_with_outlier_refit",
+        "cu_total_definition": (
+            "median direct wall time including DESeqDataset construction and "
+            "host-to-device transfer"
+        ),
+        "cu_stage_total_definition": "sum of independently measured stage medians",
         "measured_utc": datetime.datetime.now(datetime.timezone.utc)
         .replace(microsecond=0)
         .isoformat()
@@ -55,6 +61,30 @@ def benchmark_provenance(device: str) -> dict[str, object]:
         "torch_cuda_version": torch.version.cuda,
         "cuda_available": torch.cuda.is_available(),
     }
+    try:
+        provenance["git_commit"] = subprocess.run(
+            ["git", "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+        ).stdout.strip()
+        provenance["working_tree_dirty"] = bool(
+            subprocess.run(
+                ["git", "status", "--porcelain"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        )
+    except (OSError, subprocess.SubprocessError):
+        provenance["git_commit"] = None
+        provenance["working_tree_dirty"] = None
+    for key, manifest in (
+        ("source_data_manifest_sha256", Path("validation/data_sources.json")),
+        (
+            "prepared_data_manifest_sha256",
+            Path("validation/prepared_data_manifest.json"),
+        ),
+    ):
+        if manifest.exists():
+            provenance[key] = hashlib.sha256(manifest.read_bytes()).hexdigest()
     if device == "cuda" and torch.cuda.is_available():
         props = torch.cuda.get_device_properties(0)
         provenance.update(
@@ -126,6 +156,7 @@ def parity_for_case(case, caps, pj_cap=None):
         e = caps["eager"][gkey]
         j = pd.concat({"o": e, "r": r}, axis=1).dropna(how="all")
         val = fn(j["o"].to_numpy(), j["r"].to_numpy())          # eager (representative) vs R
+        values_vs_r = {"eager": val}
         # GPU-mode agreement, recorded PER MODE. Taking only the max over
         # graph/triton would collapse the two into one number and make the claim
         # "graph replay is bit-identical to eager" underivable from this file.
@@ -136,10 +167,17 @@ def parity_for_case(case, caps, pj_cap=None):
             fin = np.isfinite(ev) & np.isfinite(mv)
             mode_diff[m] = (float(np.max(np.abs(ev[fin] - mv[fin])))
                             if fin.any() else 0.0)
+            jm = pd.concat({"o": caps[m][gkey], "r": r}, axis=1).dropna(how="all")
+            values_vs_r[m] = fn(jm["o"].to_numpy(), jm["r"].to_numpy())
         gpu_diff = max(mode_diff.values())
-        ok = (val >= tol) if higher else (val <= tol)
+        pass_by_mode = {
+            mode: bool(value >= tol) if higher else bool(value <= tol)
+            for mode, value in values_vs_r.items()
+        }
+        ok = all(pass_by_mode.values())
         row = {"case": case, "substep": step, "metric": label, "value": val,
                "tol": tol, "higher_better": higher, "pass": bool(ok),
+               "values_vs_r": values_vs_r, "pass_by_mode": pass_by_mode,
                "gpu_modes_maxdiff": gpu_diff,
                "maxdiff_vs_eager": mode_diff}
         # PyDESeq2 (competitor) scored vs the same R reference with the same metric.
@@ -179,21 +217,34 @@ def render_tables(cases, r_time, cu_time, parity, pj_time=None):
           "", "| dataset | substep | R | pydeseq2 | eager | graph | triton |",
           "|---|---|--:|--:|--:|--:|--:|"]
     for c in cases:
-        for step in cu.SUBSTEPS + ["total"]:
-            rt = r_time.get(c, {}).get(step)
+        for step in cu.SUBSTEPS + ["stage_total"]:
+            if step == "stage_total":
+                rt = r_time.get(c, {}).get(
+                    "stage_total", r_time.get(c, {}).get("total")
+                )
+            else:
+                rt = r_time.get(c, {}).get(step)
             rts = f"{rt:.0f}" if rt is not None else "—"
-            vals = " | ".join(f"{cu_time[c][m][step]:.0f}" for m in MODES)
-            bold = "**" if step == "total" else ""
-            L.append(f"| {c} | {bold}{step}{bold} | {rts} | {pjcell(c,step)} | {vals} |")
+            vals = " | ".join(
+                f"{cu_time[c][m].get(step, cu_time[c][m]['total']):.0f}"
+                for m in MODES
+            )
+            label = "stage_total" if step == "stage_total" else step
+            bold = "**" if step == "stage_total" else ""
+            competitor_step = "total" if step == "stage_total" else step
+            L.append(
+                f"| {c} | {bold}{label}{bold} | {rts} | "
+                f"{pjcell(c, competitor_step)} | {vals} |"
+            )
     # ---- Table 3: output parity ----
     L += ["", "## Table 3 — output parity",
           "",
-          "cuDESeq2 (eager, representative) and PyDESeq2 (competitor) each scored "
-          "against the same R~DESeq2 ground truth per substep. The PASS/FAIL verdict "
-          "and its tolerance apply to cuDESeq2 (our bit-exactness claim); the "
+          "Every cuDESeq2 mode and PyDESeq2 (competitor) is scored against the "
+          "same R~DESeq2 ground truth per substep. The displayed cuDESeq2 value is "
+          "eager; PASS requires all three cuDESeq2 modes to meet the tolerance. The "
           "PyDESeq2 column is shown for comparison. `GPU Δ` is the largest "
           "disagreement among the three cuDESeq2 GPU modes (0 ⇒ bit-identical).",
-          "", "| dataset | substep | metric | cuDESeq2 vs R | PyDESeq2 vs R | tol | cuDESeq2 verdict | GPU Δ |",
+          "", "| dataset | substep | metric | eager vs R | PyDESeq2 vs R | tol | all-mode verdict | GPU Δ |",
           "|---|---|---|--:|--:|--:|:--:|--:|"]
     for c in cases:
         for row in parity[c]:

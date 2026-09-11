@@ -6,6 +6,10 @@ Cook's-distance count replacement and refitting when a design cell has at least
 seven replicates.
 
 The current reference suite uses R 4.6.0, DESeq2 1.52.0, and apeglm 1.34.0.
+The real-data source URLs and checksums are tracked in
+[`validation/data_sources.json`](validation/data_sources.json); generated input
+hashes and the exact GTEx sample selection are in
+[`validation/prepared_data_manifest.json`](validation/prepared_data_manifest.json).
 
 ## Reproducible environment
 
@@ -16,6 +20,7 @@ the PyTorch 2.6.0/CUDA 12.4 implementation environment, and the LaTeX toolchain:
 ```bash
 make container-build
 make container-check
+make container-data
 make container-test
 make container-paper
 ```
@@ -27,13 +32,15 @@ On a host configured with the NVIDIA Container Toolkit,
 ## Performance
 
 > **Authoritative, reproducible benchmarks live in [`bench/`](bench/).** Run
-> `make container-r-reference && make container-gpu-benchmark` to regenerate
+> `make container-data && make container-r-reference && make
+> container-gpu-benchmark` to regenerate
 > the three tables in [`bench/results/TABLES.md`](bench/results/TABLES.md):
 > total-pipeline timing, per-substep timing, and output parity — for R DESeq2,
 > cuDESeq2 (eager / CUDA-graph / Triton), and a PyDESeq2 competitor, across six
-> real RNA-seq datasets (7–300 samples) on an A100. Across all six current
-> standard-pipeline measurements, the best GPU mode is 3.1–13.8× faster than
-> the faster of one-worker and 12-worker R DESeq2.
+> real RNA-seq datasets (7–300 samples) on an A100. Across all six retained
+> matched stage-summed measurements, the best GPU mode is 8.4–58.9× faster
+> than one-worker R DESeq2. These are sums of five stage medians, not direct
+> end-to-end observations; current benchmark code records both separately.
 
 ## What's tested vs R DESeq2
 
@@ -121,7 +128,7 @@ fit = lrt_test(dds, reduced_design="~ batch")
 res = results(fit)
 ```
 
-`counts` is genes × samples (non-negative integers). `coldata` is a pandas DataFrame indexed by samples. `design` is a formulaic-style string. Backend is `"torch"`; device is auto-selected (CUDA if available).
+`counts` is genes × samples (non-negative integers). `coldata` is a pandas DataFrame indexed by samples. `design` is a formulaic-style string. Backend is `"torch"`; device is auto-selected (CUDA if available). The default size-factor estimator matches DESeq2's `sfType="ratio"`. For sparse matrices in which every gene contains a zero, pass `sf_type="poscounts"` to `deseq()` explicitly.
 
 ## Implementation notes
 

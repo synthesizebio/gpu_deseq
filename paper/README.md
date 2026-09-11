@@ -26,14 +26,28 @@ requires the project Python environment and the validation data described in
   `bench/results/timings.json`.
 - Same-host one- and 12-worker R timings are recorded in
   `bench/results/r_parallel_a100_12worker.json`.
+- Exact download URLs/checksums and prepared-input checksums are recorded in
+  `validation/data_sources.json` and `validation/prepared_data_manifest.json`.
 - GPU execution-mode agreement is recorded in `bench/results/parity.json`.
 - Human-readable derived tables are in `bench/results/TABLES.md`.
 
-Every reported timing is the median of five measured repetitions following an
-untimed warm-up. The manuscript's measured claims can be checked with:
+Every real-data timing is the median of five measured repetitions following an
+untimed warm-up. The R worker table contains direct end-to-end observations;
+the retained matched R--GPU table contains explicitly labelled sums of stage
+medians. The manuscript's measured claims can be checked from a clean checkout,
+without ignored data or caches, with:
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/audit_paper_numbers.py
+```
+
+To reconstruct the real inputs and rerun the measurements:
+
+```bash
+make container-data
+make container-r-reference
+make container-r-parallel
+make container-gpu-benchmark
 ```
 
 The related-work discussion and bibliography are populated, and the real-data

@@ -35,14 +35,15 @@ r_versions = subprocess.run(
             'cat(as.character(getRversion()), '
             'as.character(packageVersion("DESeq2")), '
             'as.character(packageVersion("apeglm")), '
-            'as.character(packageVersion("BiocParallel")), sep="\\n")'
+            'as.character(packageVersion("BiocParallel")), '
+            'as.character(packageVersion("SummarizedExperiment")), sep="\\n")'
         ),
     ],
     check=True,
     capture_output=True,
     text=True,
 ).stdout.splitlines()
-expected_r = ["4.6.0", "1.52.0", "1.34.0", "1.46.0"]
+expected_r = ["4.6.0", "1.52.0", "1.34.0", "1.46.0", "1.42.0"]
 if r_versions != expected_r:
     raise SystemExit(
         f"R environment mismatch: expected {expected_r}, found {r_versions}"
@@ -53,6 +54,6 @@ import torch
 print("environment OK")
 print(f"Python packages: {actual}")
 print(
-    f"R/DESeq2/apeglm/BiocParallel: {'/'.join(r_versions)}\n"
+    f"R/DESeq2/apeglm/BiocParallel/SummarizedExperiment: {'/'.join(r_versions)}\n"
     f"CUDA build/runtime available: {torch.version.cuda}/{torch.cuda.is_available()}"
 )

@@ -1,0 +1,174 @@
+{
+    "provenance": {
+        "utc": "2026-09-11 14:43 UTC",
+        "gpu": "NVIDIA A100-SXM4-40GB",
+        "cuda": "12.6",
+        "torch": "2.7.1+cu126",
+        "python": "3.12.3",
+        "platform": "Linux-6.17.0-1013-gcp-x86_64-with-glibc2.39",
+        "commit": "a10620aab5b91b2353822e4cd3f8746bac493f4a",
+        "working_tree_dirty": false,
+        "n_timed": 7,
+        "n_warmup": 3,
+        "default_chunk": 10,
+        "command_at_source_commit": "PYTHONPATH=src python benchmarks/bench_cuda_graph.py --sample-sweep --json benchmarks/results_a100_samplesweep_2026-09-11.json",
+        "measurement": "CUDA-synchronized median wall time of fit_dispersions",
+        "simulation_seed_rule": "n_samples * 7919"
+    },
+    "sample_sweep": [
+        {
+            "n_samples": 4,
+            "n_genes": 2000,
+            "design": "~ condition",
+            "max_abs_diff": {
+                "final": 0.0,
+                "genewise": 0.0,
+                "map": 0.0
+            },
+            "eager_iters": 100,
+            "triton_vs_eager_maxdiff": 1.6754828517651088e-08,
+            "fit_alpha_mle_eager_ms": 517.04,
+            "fit_alpha_mle_graph_ms": 116.84,
+            "fit_alpha_mle_speedup": 4.43,
+            "fit_alpha_mle_triton_ms": 9.38,
+            "fit_alpha_mle_triton_speedup": 55.13,
+            "fit_dispersions_eager_ms": 1075.17,
+            "fit_dispersions_graph_ms": 636.39,
+            "fit_dispersions_speedup": 1.69,
+            "fit_dispersions_triton_ms": 498.48,
+            "fit_dispersions_triton_speedup": 2.16
+        },
+        {
+            "n_samples": 6,
+            "n_genes": 2000,
+            "design": "~ condition",
+            "max_abs_diff": {
+                "final": 0.0,
+                "genewise": 0.0,
+                "map": 0.0
+            },
+            "eager_iters": 100,
+            "triton_vs_eager_maxdiff": 6.328271240363392e-15,
+            "fit_alpha_mle_eager_ms": 516.38,
+            "fit_alpha_mle_graph_ms": 121.79,
+            "fit_alpha_mle_speedup": 4.24,
+            "fit_alpha_mle_triton_ms": 9.36,
+            "fit_alpha_mle_triton_speedup": 55.18,
+            "fit_dispersions_eager_ms": 627.31,
+            "fit_dispersions_graph_ms": 160.98,
+            "fit_dispersions_speedup": 3.9,
+            "fit_dispersions_triton_ms": 32.45,
+            "fit_dispersions_triton_speedup": 19.33
+        },
+        {
+            "n_samples": 30,
+            "n_genes": 2000,
+            "design": "~ condition",
+            "max_abs_diff": {
+                "final": 0.0,
+                "genewise": 0.0,
+                "map": 0.0
+            },
+            "eager_iters": 13,
+            "triton_vs_eager_maxdiff": 6.938893903907228e-15,
+            "fit_alpha_mle_eager_ms": 79.01,
+            "fit_alpha_mle_graph_ms": 30.13,
+            "fit_alpha_mle_speedup": 2.62,
+            "fit_alpha_mle_triton_ms": 6.2,
+            "fit_alpha_mle_triton_speedup": 12.74,
+            "fit_dispersions_eager_ms": 187.26,
+            "fit_dispersions_graph_ms": 68.01,
+            "fit_dispersions_speedup": 2.75,
+            "fit_dispersions_triton_ms": 28.48,
+            "fit_dispersions_triton_speedup": 6.58
+        },
+        {
+            "n_samples": 60,
+            "n_genes": 2000,
+            "design": "~ condition",
+            "max_abs_diff": {
+                "final": 0.0,
+                "genewise": 0.0,
+                "map": 0.0
+            },
+            "eager_iters": 15,
+            "triton_vs_eager_maxdiff": 6.994405055138486e-15,
+            "fit_alpha_mle_eager_ms": 82.94,
+            "fit_alpha_mle_graph_ms": 15.94,
+            "fit_alpha_mle_speedup": 5.2,
+            "fit_alpha_mle_triton_ms": 6.29,
+            "fit_alpha_mle_triton_speedup": 13.2,
+            "fit_dispersions_eager_ms": 238.46,
+            "fit_dispersions_graph_ms": 61.31,
+            "fit_dispersions_speedup": 3.89,
+            "fit_dispersions_triton_ms": 29.61,
+            "fit_dispersions_triton_speedup": 8.05
+        },
+        {
+            "n_samples": 200,
+            "n_genes": 2000,
+            "design": "~ condition",
+            "max_abs_diff": {
+                "final": 0.0,
+                "genewise": 0.0,
+                "map": 0.0
+            },
+            "eager_iters": 27,
+            "triton_vs_eager_maxdiff": 3.774758283725532e-15,
+            "fit_alpha_mle_eager_ms": 158.57,
+            "fit_alpha_mle_graph_ms": 55.36,
+            "fit_alpha_mle_speedup": 2.86,
+            "fit_alpha_mle_triton_ms": 9.63,
+            "fit_alpha_mle_triton_speedup": 16.47,
+            "fit_dispersions_eager_ms": 238.78,
+            "fit_dispersions_graph_ms": 113.24,
+            "fit_dispersions_speedup": 2.11,
+            "fit_dispersions_triton_ms": 33.84,
+            "fit_dispersions_triton_speedup": 7.06
+        },
+        {
+            "n_samples": 1000,
+            "n_genes": 2000,
+            "design": "~ condition",
+            "max_abs_diff": {
+                "final": 0.0,
+                "genewise": 0.0,
+                "map": 0.0
+            },
+            "eager_iters": 18,
+            "triton_vs_eager_maxdiff": 3.552713678800501e-15,
+            "fit_alpha_mle_eager_ms": 133.92,
+            "fit_alpha_mle_graph_ms": 94.4,
+            "fit_alpha_mle_speedup": 1.42,
+            "fit_alpha_mle_triton_ms": 9.5,
+            "fit_alpha_mle_triton_speedup": 14.09,
+            "fit_dispersions_eager_ms": 336.82,
+            "fit_dispersions_graph_ms": 281.85,
+            "fit_dispersions_speedup": 1.2,
+            "fit_dispersions_triton_ms": 23.48,
+            "fit_dispersions_triton_speedup": 14.34
+        },
+        {
+            "n_samples": 2000,
+            "n_genes": 2000,
+            "design": "~ condition",
+            "max_abs_diff": {
+                "final": 0.0,
+                "genewise": 0.0,
+                "map": 0.0
+            },
+            "eager_iters": 19,
+            "triton_vs_eager_maxdiff": 1.0508528380803739e-08,
+            "fit_alpha_mle_eager_ms": 188.05,
+            "fit_alpha_mle_graph_ms": 189.61,
+            "fit_alpha_mle_speedup": 0.99,
+            "fit_alpha_mle_triton_ms": 22.43,
+            "fit_alpha_mle_triton_speedup": 8.38,
+            "fit_dispersions_eager_ms": 474.47,
+            "fit_dispersions_graph_ms": 402.12,
+            "fit_dispersions_speedup": 1.18,
+            "fit_dispersions_triton_ms": 90.2,
+            "fit_dispersions_triton_speedup": 5.26
+        }
+    ]
+}

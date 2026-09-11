@@ -219,7 +219,7 @@ def run_sweep(cases, chunks, device):
     return out
 
 
-def run_sample_sweep(n_genes, samples_list, design, device, n_timed=7):
+def run_sample_sweep(n_genes, samples_list, design, device, n_timed=N_TIMED):
     """Fix genes, vary n_samples. Measures how the graph payoff shifts as more
     samples make each NR iteration more compute-bound (less launch-bound)."""
     out = []
@@ -299,6 +299,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sweep", action="store_true", help="sweep GRAPH_CHUNK")
     ap.add_argument("--sample-sweep", action="store_true", help="sweep n_samples")
+    ap.add_argument(
+        "--n-timed",
+        type=int,
+        default=N_TIMED,
+        help=f"measured repetitions per case (default: {N_TIMED})",
+    )
     ap.add_argument("--json", type=str, default=None)
     args = ap.parse_args()
     if not torch.cuda.is_available():
@@ -323,7 +329,14 @@ def main():
                 print(f"    {r['chunk']:>6} {r['graph_ms']:>9.2f} {r['speedup']:>7.2f}x "
                       f"{r['graph_iters']:>6}  {r['max_abs_diff']:.1e}")
     elif args.sample_sweep:
-        ss = run_sample_sweep(SAMPLE_SWEEP_GENES, SAMPLE_SWEEP_N, "~ condition", "cuda")
+        ss = run_sample_sweep(
+            SAMPLE_SWEEP_GENES,
+            SAMPLE_SWEEP_N,
+            "~ condition",
+            "cuda",
+            n_timed=args.n_timed,
+        )
+        payload["provenance"]["n_timed"] = args.n_timed
         payload["sample_sweep"] = ss
         print(f"\nSample-count sweep (n_genes={SAMPLE_SWEEP_GENES}, ~condition):")
         print(f"  {'samples':>7} {'iters':>5}  {'mle eager':>9} {'mle graph':>9} {'mle x':>6} "

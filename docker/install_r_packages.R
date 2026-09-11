@@ -14,9 +14,7 @@ packages <- c(
   "DESeq2",
   "apeglm",
   "BiocParallel",
-  "SummarizedExperiment",
-  "pasilla",
-  "airway"
+  "SummarizedExperiment"
 )
 BiocManager::install(packages, ask = FALSE, update = FALSE)
 

@@ -27,8 +27,8 @@ Cook's-outlier replacement/refit where eligible),
 ## Run
 
 ```bash
-# inputs must exist under validation/data/<case>/ (counts.csv, coldata.csv,
-# meta.json) — produced once by validation/fetch_and_reference.R + prepare_gtex.R
+# Download checksum-pinned sources and reconstruct validation/data/<case>/.
+make container-data
 Rscript bench/run_r.R                      # R timings + intermediates -> bench/cache/
 PYTHONPATH=src python bench/bench.py       # cuDESeq2 timings + parity -> bench/results/
 ```
@@ -102,12 +102,14 @@ historical synthetic and CPU-only-host experiments.
   is exact). Both are shown so nothing is hidden.
 
 - **Timing method.** cuDESeq2 substeps are timed with `cuda.synchronize()` around
-  each, median of 5 reps (3 on the 300-sample cohort). R substeps call the five
-  DESeq2 stages as `estimateSizeFactors → estimateDispersions → DESeq → results
-  → lfcShrink`; because size factors and dispersions already exist, `DESeq`
-  times the Wald and replacement/refit work. R uses three reps (one on the
-  300-sample cohort) and is single-threaded. The separate end-to-end worker
-  comparison uses `DESeq() + results() + lfcShrink()` at one and 12
+  each, with five measured repetitions after an untimed warm-up. R substeps call
+  `estimateSizeFactors → estimateDispersions → nbinomWaldTest` plus eligible
+  outlier refitting `→ results → lfcShrink`. R also uses five measured
+  repetitions and one worker for the matched stage comparison. Current harness
+  output keeps `stage_total` (the sum of independently measured stage medians)
+  separate from `total` (the median of direct observations including dataset
+  construction and, for CUDA, host-to-device transfer). The separate R worker
+  comparison uses direct `DESeq() + results() + lfcShrink()` observations at one and 12
   `MulticoreParam` workers, with standard count-outlier replacement/refitting;
   its record is `bench/results/r_parallel_a100_12worker.json`.
 

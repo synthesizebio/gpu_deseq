@@ -1,6 +1,13 @@
 {
   "device": "cuda",
   "pipeline": "standard_wald_with_outlier_refit",
+  "reference_mode": "eager",
+  "input_reconstruction": {
+    "source_manifest_sha256": "79f3a506bd6fd31586e3f7512872205b42f1b2bf58750536da4a77dc2e6174ed",
+    "prepared_manifest_sha256": "c5fd93872ab417d947b042334ad1643f037e17648bb3417d410ef80968dd74c8",
+    "verified_byte_deterministic": true,
+    "measurement_predates_manifest": true
+  },
   "cases": {
     "airway": {
       "r_version": "4.6.0",

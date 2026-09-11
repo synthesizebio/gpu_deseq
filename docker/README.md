@@ -7,9 +7,11 @@ The image combines the two environments needed by the paper:
   the exact direct dependency versions in `constraints.txt`;
 - the LaTeX and PDF tools needed to build `paper/main.pdf`.
 
-The base tag is the official Bioconductor R-4.6.0 release image. PyTorch uses
-the official `cu124` wheel index. `check_environment.py` fails if any
-manuscript-critical package version changes.
+The default base is the official Bioconductor R-4.6.0 release image pinned to
+OCI index digest
+`sha256:b10002b39efa30c3779ad839549806ebdbb29b3266f0d2428478b04426e55929`.
+PyTorch uses the official `cu124` wheel index. `check_environment.py` fails if
+any manuscript-critical package version changes.
 
 ## Build and check
 
@@ -26,16 +28,18 @@ the host user.
 
 ## Regenerate the R reference
 
-Prepared real-data inputs must exist in `validation/data/`; that directory is
-intentionally excluded from the image because the GTEx input is large. With the
-inputs present on the host:
+Download the three checksum-pinned public sources (approximately 1.4 GB) and
+derive the six prepared input matrices with:
 
 ```bash
+make container-data
 make container-r-fixtures
 make container-r-reference
 ```
 
-Both commands write through the bind mount.
+`container-data` verifies the SHA-256 and byte length of every download against
+`validation/data_sources.json` before running `validation/prepare_inputs.R`.
+All generated data and reference files write through the bind mount.
 
 ## GPU check and benchmark
 

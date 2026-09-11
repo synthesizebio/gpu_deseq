@@ -16,7 +16,8 @@ custom_lib <- Sys.getenv("R_DESEQ2_LIB", unset = "")
 if (nzchar(custom_lib)) .libPaths(c(custom_lib, .libPaths()))
 suppressMessages({library(DESeq2); library(apeglm)})
 
-DATA <- "validation/data"; CACHE <- "bench/cache"
+DATA <- Sys.getenv("BENCH_DATA", unset = "validation/data")
+CACHE <- Sys.getenv("BENCH_CACHE", unset = "bench/cache")
 args <- commandArgs(trailingOnly = TRUE)
 cases <- if (length(args)) args else list.dirs(DATA, recursive = FALSE, full.names = FALSE)
 cases <- Filter(function(c) file.exists(file.path(DATA, c, "meta.json")), cases)
@@ -86,7 +87,8 @@ for (case in cases) {
   rm(warm, warm_res)
 
   # Per-substep timing: each rep runs the full chain, timing each stage.
-  tt <- list(normalization = c(), dispersion = c(), glm_fit = c(), significance = c(), lfc_shrink = c())
+  tt <- list(normalization = c(), dispersion = c(), glm_fit = c(),
+             significance = c(), lfc_shrink = c())
   for (i in seq_len(reps)) {
     dds <- mk()
     t0 <- Sys.time(); dds <- estimateSizeFactors(dds);                 tt$normalization <- c(tt$normalization, as.numeric(Sys.time()-t0, units="secs"))
@@ -96,7 +98,24 @@ for (case in cases) {
     t0 <- Sys.time(); sh  <- lfcShrink(dds, coef = meta$coef, type = "apeglm", quiet = TRUE); tt$lfc_shrink <- c(tt$lfc_shrink, as.numeric(Sys.time()-t0, units="secs"))
   }
   timings <- lapply(tt, function(x) median(x) * 1000)
-  timings$total <- Reduce(`+`, timings)
+  timings$stage_total <- Reduce(
+    `+`, timings[c("normalization", "dispersion", "glm_fit", "significance", "lfc_shrink")]
+  )
+  direct_pipeline <- function() {
+    direct_dds <- mk()
+    direct_dds <- estimateSizeFactors(direct_dds)
+    direct_dds <- estimateDispersions(direct_dds, quiet = TRUE)
+    direct_dds <- wald_and_outlier_refit(direct_dds)
+    invisible(results(direct_dds, name = meta$coef))
+    invisible(lfcShrink(direct_dds, coef = meta$coef, type = "apeglm", quiet = TRUE))
+  }
+  direct_values <- numeric(reps)
+  for (i in seq_len(reps)) {
+    direct_start <- proc.time()[["elapsed"]]
+    direct_pipeline()
+    direct_values[[i]] <- proc.time()[["elapsed"]] - direct_start
+  }
+  timings$total <- median(direct_values) * 1000
 
   # Untimed correctness gate: explicit staging must reproduce an ordinary
   # DESeq() call exactly before this case's measurements are accepted. For the
@@ -151,12 +170,15 @@ for (case in cases) {
   sdf <- as.data.frame(sh); sdf$gene <- rownames(sh)
   write.csv(sdf[, c("gene","log2FoldChange","lfcSE")], file.path(out, "r_shrink.csv"), row.names = FALSE)
 
-  writeLines(sprintf('{"case":"%s","reps":%d,"pipeline":"staged_standard_wald_no_duplicate_dispersion","glm_fit_scope":"nbinomWaldTest_plus_outlier_replacement_refit","output_equivalent_to_DESeq":true,"r_version":"%s","deseq2_version":"%s","apeglm_version":"%s","normalization":%.3f,"dispersion":%.3f,"glm_fit":%.3f,"significance":%.3f,"lfc_shrink":%.3f,"total":%.3f}',
+  total_values_json <- paste(sprintf("%.3f", direct_values * 1000), collapse = ",")
+  writeLines(sprintf('{"case":"%s","reps":%d,"pipeline":"staged_standard_wald_no_duplicate_dispersion","glm_fit_scope":"nbinomWaldTest_plus_outlier_replacement_refit","output_equivalent_to_DESeq":true,"total_definition":"median direct wall time including DESeqDataSet construction","stage_total_definition":"sum of independently measured stage medians","r_version":"%s","deseq2_version":"%s","apeglm_version":"%s","normalization":%.3f,"dispersion":%.3f,"glm_fit":%.3f,"significance":%.3f,"lfc_shrink":%.3f,"stage_total":%.3f,"total":%.3f,"total_values_ms":[%s]}',
     case, reps, as.character(getRversion()), as.character(packageVersion("DESeq2")),
     as.character(packageVersion("apeglm")), timings$normalization, timings$dispersion,
-    timings$glm_fit, timings$significance, timings$lfc_shrink, timings$total),
+    timings$glm_fit, timings$significance, timings$lfc_shrink,
+    timings$stage_total, timings$total, total_values_json),
     file.path(out, "r_timings.json"))
-  cat(sprintf("  %-18s reps=%d  norm=%.0f disp=%.0f glm=%.0f sig=%.0f shrink=%.0f  total=%.0f ms\n",
-    case, reps, timings$normalization, timings$dispersion, timings$glm_fit, timings$significance, timings$lfc_shrink, timings$total))
+  cat(sprintf("  %-18s reps=%d  norm=%.0f disp=%.0f glm=%.0f sig=%.0f shrink=%.0f  direct=%.0f ms\n",
+    case, reps, timings$normalization, timings$dispersion, timings$glm_fit,
+    timings$significance, timings$lfc_shrink, timings$total))
 }
 cat("R side done ->", CACHE, "\n")

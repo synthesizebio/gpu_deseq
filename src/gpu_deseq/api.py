@@ -262,11 +262,20 @@ def _bh_adjust(pvalues: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 
-def fit_size_factors(dataset: DESeqDataset, method: str = "median_ratio") -> DESeqDataset:
-    """Median-of-ratios size factors (DESeq2 default, with poscounts fallback)."""
-    if method != "median_ratio":
-        raise ValueError("only median_ratio is supported")
-    sf, normed = _core.fit_size_factors(dataset.counts)
+def fit_size_factors(dataset: DESeqDataset, method: str = "ratio") -> DESeqDataset:
+    """Estimate size factors with a DESeq2 normalization method.
+
+    ``method="ratio"`` (or the backward-compatible alias ``"median_ratio"``)
+    selects DESeq2's default median-of-ratios estimator. Sparse matrices for
+    which every gene contains a zero require the explicit
+    ``method="poscounts"`` alternative, matching DESeq2's ``sfType`` choice.
+    """
+    normalized_method = "ratio" if method == "median_ratio" else method
+    if normalized_method not in ("ratio", "poscounts"):
+        raise ValueError("method must be 'ratio', 'median_ratio', or 'poscounts'")
+    sf, normed = _core.fit_size_factors(
+        dataset.counts, method=normalized_method
+    )
     dataset.size_factors = sf.to(dataset.device)
     dataset.normalized_counts = normed.to(dataset.device)
     return dataset
@@ -726,6 +735,7 @@ def deseq(
     contrast: str | Iterable[float] | torch.Tensor | None = None,
     *,
     fit_type: str = "parametric",
+    sf_type: str = "ratio",
     min_replicates_for_replace: int | None = 7,
     use_cuda_graph: bool = False,
     use_triton: bool = False,
@@ -736,10 +746,11 @@ def deseq(
     estimation, dispersion estimation, Wald fitting, Cook's-distance count
     replacement for eligible design cells, and per-gene refitting. Pass
     ``min_replicates_for_replace=None`` to disable replacement, corresponding
-    to ``minReplicatesForReplace=Inf`` in R.
+    to ``minReplicatesForReplace=Inf`` in R. ``sf_type`` accepts DESeq2's
+    ``"ratio"`` default or its explicit ``"poscounts"`` alternative.
     """
     if dataset.size_factors is None:
-        fit_size_factors(dataset)
+        fit_size_factors(dataset, method=sf_type)
     if dataset.dispersions is None:
         fit_dispersions(
             dataset,
