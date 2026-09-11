@@ -120,3 +120,50 @@ historical synthetic and CPU-only-host experiments.
   (importable; also runnable standalone for one case/mode).
 - `bench.py` — orchestrator: runs both sides, verifies parity, renders the three
   tables to `bench/results/`.
+
+## Real-GTEx sample, design-width, and memory scaling
+
+The main six-case suite deliberately fixes GTEx at 300 samples. The separate
+scaling harness uses all 9,662 samples in the same checksum-pinned recount2
+source while holding the gene axis fixed at the paper's 54,922 genes. It tests
+nested two-tissue cohorts, balanced P=3--6 designs, all-sample designs, and the
+A100 OOM boundary.
+
+Materialize the source matrix once (the 2.1 GB output remains under ignored
+`bench/cache/`):
+
+```bash
+Rscript bench/extract_gtex_scaling.R \
+  validation/sources/SRP012682_rse_gene.Rdata \
+  validation/data/gtex_blood_muscle/counts.csv \
+  bench/cache/gtex_scaling/matrix
+
+PYTHONPATH=src python bench/gtex_scaling.py --list
+```
+
+Run one case per clean process. Paper-grade timing uses one warm-up, five
+stage-timed repetitions, and five independent direct repetitions. Feasibility
+probes use no warm-up, one staged repetition, and no separate direct run:
+
+```bash
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True PYTHONPATH=src \
+  python bench/gtex_scaling.py --case p6_all --mode triton \
+  --warmups 1 --reps 5 --direct-reps 5 --verify-matrix \
+  --capture /tmp/p6_all_gpu.npz --output /tmp/p6_all_gpu.json
+
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True PYTHONPATH=src \
+  python bench/gtex_scaling.py --case p10_all --mode triton \
+  --warmups 0 --reps 1 --direct-reps 0 --output /tmp/p10_all_probe.json
+```
+
+The JSON records the exact one-based source columns, their sample-ID hash,
+matrix hashes, software/commit provenance, every raw timing, and peak CUDA
+allocated/reserved memory. Designs wider than P=6 explicitly report the eager
+fallback. Use the exact GPU case JSON for the one-worker R reference:
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+Rscript bench/run_gtex_scaling_r.R \
+  validation/sources/SRP012682_rse_gene.Rdata \
+  bench/cache/gtex_scaling/matrix /tmp/p6_all_gpu.json /tmp/p6_all_r
+```

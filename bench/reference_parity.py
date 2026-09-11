@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import platform
 from pathlib import Path
@@ -17,8 +18,19 @@ import subprocess
 import pandas as pd
 import torch
 
-import bench
 import run_cu
+
+
+# Load the sibling orchestrator by path. ``bench`` is also a valid namespace
+# package name once other benchmark helpers are imported as ``bench.*``; a
+# plain ``import bench`` can therefore resolve to the package instead of this
+# directory's ``bench.py`` in long-lived test or notebook processes.
+_BENCH_SPEC = importlib.util.spec_from_file_location(
+    "_gpu_deseq_benchmark_orchestrator", Path(__file__).with_name("bench.py")
+)
+assert _BENCH_SPEC is not None and _BENCH_SPEC.loader is not None
+bench = importlib.util.module_from_spec(_BENCH_SPEC)
+_BENCH_SPEC.loader.exec_module(bench)
 
 
 def _input_reconstruction() -> dict[str, str]:
