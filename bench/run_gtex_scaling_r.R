@@ -110,6 +110,16 @@ if (identical(Sys.getenv("GTEX_R_DISPERSION_ONLY", unset = "0"), "1")) {
       "{",
       '  "status": "pass",',
       '  "scope": "normalization_and_dispersion_only",',
+      sprintf('  "git_commit": "%s",', git_commit),
+      sprintf(
+        '  "working_tree_dirty_at_start": %s,',
+        ifelse(git_dirty, "true", "false")
+      ),
+      sprintf('  "r_version": "%s",', as.character(getRversion())),
+      sprintf(
+        '  "deseq2_version": "%s",',
+        as.character(packageVersion("DESeq2"))
+      ),
       sprintf('  "normalization_ms": %.6f,', normalization_ms),
       sprintf('  "dispersion_ms": %.6f,', dispersion_ms),
       sprintf(
