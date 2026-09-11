@@ -195,12 +195,16 @@ def cooks_outlier_mask(
     counts: np.ndarray,             # (n_samples, n_genes_nz)
     design_df: pd.DataFrame,
     num_vars: int,
+    *,
+    apply_low_count_heuristic: bool = False,
 ) -> np.ndarray:
     """Return per-gene bool outlier mask, matching DESeq2's Cook's outlier rule.
 
-    A gene is flagged when: (a) max Cooks across samples belonging to cohorts
-    with ≥3 replicates exceeds F(0.99, p, n-p), AND (b) fewer than 3 samples
-    have more counts than the sample holding that max.
+    A gene is flagged when its max Cook's distance across samples belonging to
+    cohorts with ≥3 replicates exceeds F(0.99, p, n-p). DESeq2's additional
+    low-count exemption (three samples have more counts than the max-Cook's
+    sample) is restricted to one-factor, two-level categorical designs and is
+    enabled by ``apply_low_count_heuristic``.
     """
     n_samples = cooks.shape[0]
     cutoff = _f_dist.ppf(0.99, num_vars, n_samples - num_vars)
@@ -211,7 +215,7 @@ def cooks_outlier_mask(
         use_for_max = np.ones(n_samples, dtype=bool)
 
     cooks_exceeds = (cooks[use_for_max, :] > cutoff).any(axis=0)  # (n_genes,)
-    if not cooks_exceeds.any():
+    if not cooks_exceeds.any() or not apply_low_count_heuristic:
         return cooks_exceeds
 
     # For flagged genes: require fewer than 3 other samples exceed the max-Cooks sample.

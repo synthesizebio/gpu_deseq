@@ -26,20 +26,61 @@ def _to_tensor(counts: object) -> torch.Tensor:
         tensor = torch.as_tensor(np.asarray(counts))
     if tensor.ndim != 2:
         raise ValueError("counts must be a 2D matrix of genes x samples")
+    if tensor.is_complex():
+        raise ValueError("counts must be real-valued")
+    tensor = tensor.to(dtype=torch.float64)
+    if not bool(torch.all(torch.isfinite(tensor)).item()):
+        raise ValueError("counts must contain only finite values")
     if torch.any(tensor < 0):
         raise ValueError("counts must be non-negative")
-    return tensor.to(dtype=torch.float64)
+    if not bool(torch.all(tensor == torch.round(tensor)).item()):
+        raise ValueError("counts must contain integer values")
+    return tensor
+
+
+def _is_default_range_index(index: pd.Index, length: int) -> bool:
+    return (
+        isinstance(index, pd.RangeIndex)
+        and index.start == 0
+        and index.stop == length
+        and index.step == 1
+    )
 
 
 def _as_dataframe(coldata: object, sample_ids: Iterable[str]) -> pd.DataFrame:
+    expected_index = list(sample_ids)
     if isinstance(coldata, pd.DataFrame):
         frame = coldata.copy()
     else:
         frame = pd.DataFrame(coldata)
-    frame = frame.reset_index(drop=True)
-    if len(frame) != len(list(sample_ids)):
+    if len(frame) != len(expected_index):
         raise ValueError("coldata rows must match the number of samples")
+    if isinstance(coldata, pd.DataFrame) and not _is_default_range_index(frame.index, len(frame)):
+        if list(frame.index) != expected_index:
+            raise ValueError(
+                "coldata index must exactly match sample_ids/count columns in the same order"
+            )
+    frame.index = pd.Index(expected_index, name=frame.index.name)
     return frame
+
+
+def _is_binary_factor_design(design_frame: pd.DataFrame, coldata: pd.DataFrame) -> bool:
+    """Whether DESeq2's two-group low-count Cook's heuristic applies."""
+    model_spec = getattr(design_frame, "model_spec", None)
+    formula = getattr(model_spec, "formula", None)
+    required = getattr(formula, "required_variables", set())
+    if len(required) != 1:
+        return False
+    variable = next(iter(required))
+    if variable not in coldata:
+        return False
+    values = coldata[variable]
+    is_factor = (
+        isinstance(values.dtype, pd.CategoricalDtype)
+        or pd.api.types.is_object_dtype(values.dtype)
+        or pd.api.types.is_string_dtype(values.dtype)
+    )
+    return bool(is_factor and values.nunique(dropna=False) == 2)
 
 
 def _resolve_device(backend: str) -> torch.device:
@@ -78,6 +119,12 @@ class DeseqResult:
     # Original pre-refit Cook's distances, retained because DESeq2 records
     # maxCooks from the first Wald fit rather than recomputing them after refit.
     cooks: torch.Tensor | None = None
+    # Preserve the MLE coefficients when `coefficients` contains apeGLM MAP
+    # estimates. Wald statistics and p-values must continue to use the MLE.
+    mle_coefficients: torch.Tensor | None = None
+    # DESeq2 applies its low-count Cook's exemption only to one-factor,
+    # two-level categorical designs.
+    cooks_low_count_heuristic: bool = False
 
 
 class DESeqDataset:
@@ -90,27 +137,66 @@ class DESeqDataset:
         sample_ids: Iterable[str] | None = None,
         backend: str = "torch",
     ) -> None:
+        counts_frame = counts if isinstance(counts, pd.DataFrame) else None
         counts_tensor = _to_tensor(counts)
         n_genes, n_samples = counts_tensor.shape
         if sample_ids is None:
-            sample_ids = [f"sample_{idx}" for idx in range(n_samples)]
+            if counts_frame is not None:
+                sample_ids = list(counts_frame.columns)
+            elif (
+                isinstance(coldata, pd.DataFrame)
+                and not _is_default_range_index(coldata.index, len(coldata))
+            ):
+                sample_ids = list(coldata.index)
+            else:
+                sample_ids = [f"sample_{idx}" for idx in range(n_samples)]
         if gene_ids is None:
-            gene_ids = [f"gene_{idx}" for idx in range(n_genes)]
+            gene_ids = (
+                list(counts_frame.index)
+                if counts_frame is not None
+                else [f"gene_{idx}" for idx in range(n_genes)]
+            )
         self.sample_ids = list(sample_ids)
         self.gene_ids = list(gene_ids)
         if len(self.sample_ids) != n_samples:
             raise ValueError("sample_ids length must match sample count")
         if len(self.gene_ids) != n_genes:
             raise ValueError("gene_ids length must match gene count")
+        if len(set(self.sample_ids)) != len(self.sample_ids):
+            raise ValueError("sample_ids must be unique")
+        if len(set(self.gene_ids)) != len(self.gene_ids):
+            raise ValueError("gene_ids must be unique")
+        if counts_frame is not None:
+            if list(counts_frame.columns) != self.sample_ids:
+                raise ValueError(
+                    "sample_ids must exactly match count DataFrame columns in the same order"
+                )
+            if list(counts_frame.index) != self.gene_ids:
+                raise ValueError(
+                    "gene_ids must exactly match count DataFrame index in the same order"
+                )
         self.design = design
         self.coldata = _as_dataframe(coldata, self.sample_ids)
         self._design_cpu = model_matrix(design, self.coldata, output="pandas")
+        if len(self._design_cpu) != n_samples:
+            raise ValueError("design variables must not contain missing values")
         self.design_columns = list(self._design_cpu.columns)
+        design_np = self._design_cpu.to_numpy(dtype=np.float64)
+        if not np.isfinite(design_np).all():
+            raise ValueError("design matrix must contain only finite values")
+        design_rank = int(np.linalg.matrix_rank(design_np))
+        if design_rank < design_np.shape[1]:
+            raise ValueError(
+                "design matrix is not full rank; remove confounded or redundant terms"
+            )
+        self.cooks_low_count_heuristic = _is_binary_factor_design(
+            self._design_cpu, self.coldata
+        )
         self.backend = backend
         self.device = _resolve_device(backend)
         self.counts = counts_tensor.to(self.device)
         self.design_matrix = torch.as_tensor(
-            self._design_cpu.to_numpy(dtype=np.float64),
+            design_np,
             device=self.device,
             dtype=torch.float64,
         )
@@ -484,6 +570,7 @@ def _fit_glm(dataset: DESeqDataset, design_matrix: torch.Tensor | None = None) -
         gene_ids=dataset.gene_ids,
         non_zero_mask=non_zero_mask,
         log_likelihood=None,
+        cooks_low_count_heuristic=dataset.cooks_low_count_heuristic,
     )
 
 
@@ -775,6 +862,8 @@ def lfc_shrink(
         replaceable_samples=fit.replaceable_samples,
         replacement_counts=fit.replacement_counts,
         cooks=fit.cooks,
+        mle_coefficients=fit.coefficients,
+        cooks_low_count_heuristic=fit.cooks_low_count_heuristic,
     )
 
 
@@ -796,20 +885,33 @@ def wald_test(dataset: DESeqDataset, contrast: str | Iterable[float] | torch.Ten
         contrast_vector=contrast_vector,
         gene_ids=dataset.gene_ids,
         non_zero_mask=fitted.non_zero_mask,
+        cooks_low_count_heuristic=fitted.cooks_low_count_heuristic,
     )
 
 
 def lrt_test(dataset: DESeqDataset, reduced_design: str) -> DeseqResult:
     full = _fit_glm(dataset)
     reduced_frame = model_matrix(reduced_design, dataset.coldata, output="pandas")
+    if len(reduced_frame) != dataset.n_samples:
+        raise ValueError("reduced design variables must not contain missing values")
+    full_np = dataset.design_matrix.detach().cpu().numpy()
+    reduced_np = reduced_frame.to_numpy(dtype=np.float64)
+    if not np.isfinite(reduced_np).all():
+        raise ValueError("reduced design matrix must contain only finite values")
+    reduced_rank = int(np.linalg.matrix_rank(reduced_np))
+    if reduced_rank < reduced_np.shape[1]:
+        raise ValueError("reduced design matrix is not full rank")
+    if full_np.shape[1] <= reduced_np.shape[1]:
+        raise ValueError("reduced design must have fewer columns than the full design")
+    combined_rank = int(np.linalg.matrix_rank(np.column_stack([full_np, reduced_np])))
+    if combined_rank > full_np.shape[1]:
+        raise ValueError("reduced design must be nested within the full design")
     reduced_design_matrix = torch.as_tensor(
-        reduced_frame.to_numpy(dtype=np.float64),
+        reduced_np,
         device=dataset.device,
         dtype=torch.float64,
     )
     reduced = _fit_glm(dataset, reduced_design_matrix)
-    if full.coefficients.shape[1] <= reduced.coefficients.shape[1]:
-        raise ValueError("reduced design must have fewer columns than the full design")
 
     # Per-gene log-likelihoods for LRT: sum NB log-prob over samples.
     assert dataset.dispersions is not None and dataset.non_zero_mask is not None
@@ -823,6 +925,11 @@ def lrt_test(dataset: DESeqDataset, reduced_design: str) -> DeseqResult:
         ll_full[idx] = ll_full_nz
         ll_red[idx] = ll_red_nz
 
+    contrast_vector = torch.zeros(
+        full.coefficients.shape[1], dtype=torch.float64, device=dataset.device
+    )
+    contrast_vector[-1] = 1.0
+
     return DeseqResult(
         test_type="lrt",
         design_columns=full.design_columns,
@@ -831,11 +938,17 @@ def lrt_test(dataset: DESeqDataset, reduced_design: str) -> DeseqResult:
         dispersions=dataset.dispersions,
         base_mean=full.base_mean,
         design_matrix=full.design_matrix,
+        hat_diagonals=full.hat_diagonals,
+        counts=full.counts,
+        normalized_counts=full.normalized_counts,
+        design_df=full.design_df,
+        contrast_vector=contrast_vector,
         log_likelihood=ll_full,
         reduced_log_likelihood=ll_red,
         degrees_of_freedom=full.coefficients.shape[1] - reduced.coefficients.shape[1],
         gene_ids=dataset.gene_ids,
         non_zero_mask=full.non_zero_mask,
+        cooks_low_count_heuristic=full.cooks_low_count_heuristic,
     )
 
 
@@ -883,6 +996,54 @@ def _wald_se_and_stat(
     return stat, se
 
 
+def _apply_cooks_filter(fit: DeseqResult, pvalue: np.ndarray) -> np.ndarray:
+    """Apply DESeq2's Cook's-distance p-value filtering to a result vector."""
+    if (
+        fit.mu is None
+        or fit.hat_diagonals is None
+        or fit.counts is None
+        or fit.normalized_counts is None
+        or fit.design_df is None
+        or fit.non_zero_mask is None
+    ):
+        return pvalue
+
+    from ._filters import cooks_distance, cooks_outlier_mask
+
+    nz_idx = torch.nonzero(fit.non_zero_mask, as_tuple=False).squeeze(-1)
+    if nz_idx.numel() == 0:
+        return pvalue
+    counts_sg = fit.counts[nz_idx].T.detach().cpu().numpy()
+    normed_sg = fit.normalized_counts[nz_idx].T.detach().cpu().numpy()
+    mu_sg = fit.mu[nz_idx].T.detach().cpu().numpy()
+    hat_sg = fit.hat_diagonals[nz_idx].T.detach().cpu().numpy()
+    if fit.cooks is not None:
+        cooks = fit.cooks[nz_idx].T.detach().cpu().numpy().copy()
+    else:
+        cooks, _ = cooks_distance(
+            counts_sg, normed_sg, mu_sg, hat_sg, fit.design_df
+        )
+    # DESeq2 zeros Cook's distances from samples eligible for replacement
+    # before recording maxCooks after an outlier refit.
+    if (
+        fit.replaceable_samples is not None
+        and fit.replaced_genes is not None
+        and bool(torch.any(fit.replaced_genes).item())
+    ):
+        replaceable = fit.replaceable_samples.detach().cpu().numpy().astype(bool)
+        cooks[replaceable, :] = 0.0
+    outlier_nz = cooks_outlier_mask(
+        cooks,
+        counts_sg,
+        fit.design_df,
+        num_vars=fit.coefficients.shape[1],
+        apply_low_count_heuristic=fit.cooks_low_count_heuristic,
+    )
+    outlier_full = np.zeros(fit.coefficients.shape[0], dtype=bool)
+    outlier_full[nz_idx.detach().cpu().numpy()] = outlier_nz
+    return np.where(outlier_full, np.nan, pvalue)
+
+
 def results(
     fit: DeseqResult,
     contrast: str | Iterable[float] | torch.Tensor | None = None,
@@ -904,14 +1065,47 @@ def results(
     if fit.test_type == "lrt":
         assert fit.reduced_log_likelihood is not None and fit.log_likelihood is not None
         assert fit.degrees_of_freedom is not None
+        assert fit.mu is not None and fit.dispersions is not None
+        assert fit.design_matrix is not None and fit.non_zero_mask is not None
+        resolved_contrast = fit.contrast_vector
+        if contrast is not None:
+            resolved_contrast = _contrast_vector(fit, contrast)
+        if resolved_contrast is None:
+            raise ValueError("a contrast is required to report the LRT fold change")
+
         stat = 2.0 * (fit.log_likelihood - fit.reduced_log_likelihood).detach().cpu().numpy()
         pvalue = chi2.sf(stat, fit.degrees_of_freedom)
-        padj = _bh_adjust(pvalue)
+        n_genes = fit.coefficients.shape[0]
+        lfc = np.full(n_genes, np.nan, dtype=np.float64)
+        se = np.full(n_genes, np.nan, dtype=np.float64)
+        nz_idx = torch.nonzero(fit.non_zero_mask, as_tuple=False).squeeze(-1)
+        if nz_idx.numel() > 0:
+            _, se_nz = _wald_se_and_stat(
+                fit.coefficients[nz_idx],
+                fit.mu[nz_idx],
+                fit.dispersions[nz_idx],
+                fit.design_matrix,
+                resolved_contrast,
+            )
+            effects_nz = torch.einsum(
+                "gp,p->g", fit.coefficients[nz_idx], resolved_contrast
+            )
+            idx_np = nz_idx.detach().cpu().numpy()
+            lfc[idx_np] = effects_nz.detach().cpu().numpy() / np.log(2.0)
+            se[idx_np] = se_nz.detach().cpu().numpy() / np.log(2.0)
+        if cooks_filter:
+            pvalue = _apply_cooks_filter(fit, pvalue)
+        if independent_filter and np.isfinite(pvalue).any():
+            from ._filters import independent_filtering
+
+            padj = independent_filtering(pvalue, base_mean, alpha)
+        else:
+            padj = _bh_adjust(pvalue)
         frame = pd.DataFrame(
             {
                 "baseMean": base_mean,
-                "log2FoldChange": np.nan,
-                "lfcSE": np.nan,
+                "log2FoldChange": lfc,
+                "lfcSE": se,
                 "stat": stat,
                 "pvalue": pvalue,
                 "padj": padj,
@@ -926,6 +1120,13 @@ def results(
         resolved_contrast = _contrast_vector(fit, contrast)
     if resolved_contrast is None:
         raise ValueError("a contrast is required for Wald results")
+    if (
+        fit.test_type == "wald_shrunk"
+        and contrast is not None
+        and fit.contrast_vector is not None
+        and not torch.allclose(resolved_contrast, fit.contrast_vector)
+    ):
+        raise ValueError("a shrunk result can only report the coefficient that was shrunk")
 
     assert fit.mu is not None and fit.dispersions is not None and fit.non_zero_mask is not None
     assert fit.design_matrix is not None, "Wald result must carry design_matrix"
@@ -939,8 +1140,13 @@ def results(
 
     nz_idx = torch.nonzero(fit.non_zero_mask, as_tuple=False).squeeze(-1)
     if nz_idx.numel() > 0:
+        inference_coefficients = (
+            fit.mle_coefficients
+            if fit.test_type == "wald_shrunk" and fit.mle_coefficients is not None
+            else fit.coefficients
+        )
         stat_nz, se_nz = _wald_se_and_stat(
-            fit.coefficients[nz_idx],
+            inference_coefficients[nz_idx],
             fit.mu[nz_idx],
             fit.dispersions[nz_idx],
             fit.design_matrix,
@@ -958,49 +1164,14 @@ def results(
         stat[idx_np] = stat_np
         pvalue[idx_np] = pval_np
 
-        # For shrunk Wald results, replace LFC + lfcSE with the shrunk MAP values
-        # (natural log in `coefficients`, stored SE in natural log). p-value stays
-        # at the MLE Wald p-value per DESeq2 lfcShrink convention.
+        # For shrunk Wald results, replace only lfcSE with the posterior SD. LFC
+        # already came from the MAP coefficients, while stat/pvalue above came
+        # from the preserved MLE coefficients, matching DESeq2 lfcShrink.
         if fit.test_type == "wald_shrunk" and fit.shrunk_se is not None:
-            shrunk_effects = torch.einsum("gp,p->g",
-                                          fit.coefficients[nz_idx], resolved_contrast)
-            lfc[idx_np] = shrunk_effects.detach().cpu().numpy() / np.log(2.0)
             se[idx_np] = fit.shrunk_se[nz_idx].detach().cpu().numpy() / np.log(2.0)
 
-        # Cook's distance filter: set pvalue = NaN for flagged genes.
-        if cooks_filter and fit.hat_diagonals is not None and fit.counts is not None \
-                and fit.normalized_counts is not None and fit.design_df is not None:
-            from ._filters import cooks_distance, cooks_outlier_mask
-            # the filter helpers expect (samples, genes); our tensors are (genes, samples).
-            counts_sg = fit.counts[nz_idx].T.detach().cpu().numpy()
-            normed_sg = fit.normalized_counts[nz_idx].T.detach().cpu().numpy()
-            mu_sg = fit.mu[nz_idx].T.detach().cpu().numpy()
-            hat_sg = fit.hat_diagonals[nz_idx].T.detach().cpu().numpy()
-            if fit.cooks is not None:
-                cooks = fit.cooks[nz_idx].T.detach().cpu().numpy().copy()
-            else:
-                cooks, _ = cooks_distance(
-                    counts_sg, normed_sg, mu_sg, hat_sg, fit.design_df
-                )
-            # DESeq2's standard DESeq() pipeline zeros Cook's distances from
-            # samples eligible for count replacement before recording the
-            # maximum Cook's distance.  Preserve that behavior after a refit;
-            # the original counts remain attached to the result for
-            # lfcShrink() and reporting.
-            if (
-                fit.replaceable_samples is not None
-                and fit.replaced_genes is not None
-                and bool(torch.any(fit.replaced_genes).item())
-            ):
-                replaceable = fit.replaceable_samples.detach().cpu().numpy().astype(bool)
-                cooks[replaceable, :] = 0.0
-            outlier_nz = cooks_outlier_mask(
-                cooks, counts_sg, fit.design_df,
-                num_vars=fit.coefficients.shape[1],
-            )
-            outlier_full = np.zeros(n_genes, dtype=bool)
-            outlier_full[idx_np] = outlier_nz
-            pvalue = np.where(outlier_full, np.nan, pvalue)
+    if cooks_filter:
+        pvalue = _apply_cooks_filter(fit, pvalue)
 
     if independent_filter and np.isfinite(pvalue).any():
         from ._filters import independent_filtering

@@ -10,10 +10,12 @@ from gpu_deseq import (
     deseq,
     fit_dispersions,
     fit_size_factors,
+    lfc_shrink,
     lrt_test,
     results,
     wald_test,
 )
+from gpu_deseq._filters import cooks_outlier_mask
 
 
 def _synthetic_dataset() -> tuple[np.ndarray, pd.DataFrame]:
@@ -187,3 +189,132 @@ def test_deseq_can_disable_count_outlier_replacement() -> None:
 
     assert fit.replaced_genes is None
     assert fit.replacement_counts is None
+
+
+@pytest.mark.parametrize(
+    "bad_value,error",
+    [
+        (np.nan, "finite"),
+        (np.inf, "finite"),
+        (1.5, "integer"),
+    ],
+)
+def test_dataset_rejects_non_finite_and_fractional_counts(
+    bad_value: float, error: str
+) -> None:
+    counts = np.array([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]])
+    counts[0, 0] = bad_value
+    coldata = pd.DataFrame({"condition": ["a", "a", "b", "b"]})
+
+    with pytest.raises(ValueError, match=error):
+        DESeqDataset(counts, coldata, design="~ condition")
+
+
+def test_dataset_preserves_and_validates_dataframe_sample_labels() -> None:
+    counts = pd.DataFrame(
+        [[10, 11, 20, 21], [30, 31, 40, 41]],
+        index=["gene_a", "gene_b"],
+        columns=["sample_1", "sample_2", "sample_3", "sample_4"],
+    )
+    aligned = pd.DataFrame(
+        {"condition": ["a", "a", "b", "b"]}, index=counts.columns
+    )
+    dds = DESeqDataset(counts, aligned, design="~ condition")
+    assert dds.sample_ids == list(counts.columns)
+    assert dds.gene_ids == list(counts.index)
+    assert list(dds.coldata.index) == list(counts.columns)
+
+    reversed_coldata = aligned.iloc[::-1]
+    with pytest.raises(ValueError, match="same order"):
+        DESeqDataset(counts, reversed_coldata, design="~ condition")
+
+
+def test_dataset_rejects_rank_deficient_design() -> None:
+    counts = np.arange(1, 161, dtype=float).reshape(20, 8)
+    coldata = pd.DataFrame(
+        {
+            "condition": ["a"] * 4 + ["b"] * 4,
+            "batch": ["x"] * 4 + ["y"] * 4,
+        }
+    )
+
+    with pytest.raises(ValueError, match="not full rank"):
+        DESeqDataset(counts, coldata, design="~ condition + batch")
+
+
+def test_lrt_rejects_non_nested_reduced_design() -> None:
+    counts, coldata = _synthetic_dataset()
+    coldata = coldata.assign(x=np.linspace(-1.0, 1.0, len(coldata)))
+    dds = DESeqDataset(counts, coldata, design="~ batch + condition").to("cpu")
+    fit_size_factors(dds)
+    fit_dispersions(dds)
+
+    with pytest.raises(ValueError, match="nested"):
+        lrt_test(dds, reduced_design="~ x")
+
+
+def test_lrt_results_apply_independent_filtering_and_report_full_model_lfc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    counts, coldata = _synthetic_dataset()
+    dds = DESeqDataset(counts, coldata, design="~ batch + condition").to("cpu")
+    fit_size_factors(dds)
+    fit_dispersions(dds)
+    fit = lrt_test(dds, reduced_design="~ batch")
+
+    sentinel = np.linspace(0.01, 0.06, dds.n_genes)
+    calls: list[tuple[np.ndarray, np.ndarray, float]] = []
+
+    def fake_filter(pvalue: np.ndarray, base_mean: np.ndarray, alpha: float) -> np.ndarray:
+        calls.append((pvalue, base_mean, alpha))
+        return sentinel
+
+    monkeypatch.setattr("gpu_deseq._filters.independent_filtering", fake_filter)
+    frame = results(fit, cooks_filter=False, independent_filter=True, alpha=0.05)
+
+    assert len(calls) == 1
+    np.testing.assert_allclose(frame["padj"], sentinel)
+    assert np.isfinite(frame["log2FoldChange"]).all()
+    assert np.isfinite(frame["lfcSE"]).all()
+
+
+def test_apeglm_preserves_mle_inference_and_rejects_other_contrasts() -> None:
+    counts, coldata = _synthetic_dataset()
+    dds = DESeqDataset(counts, coldata, design="~ batch + condition").to("cpu")
+    fit_size_factors(dds)
+    fit_dispersions(dds)
+    fit = wald_test(dds, contrast="condition[T.treated]")
+    raw = results(fit, cooks_filter=False, independent_filter=False)
+    shrunk_fit = lfc_shrink(fit, coeff="condition[T.treated]")
+    shrunk = results(shrunk_fit, cooks_filter=False, independent_filter=False)
+
+    np.testing.assert_allclose(shrunk["stat"], raw["stat"])
+    np.testing.assert_allclose(shrunk["pvalue"], raw["pvalue"])
+    np.testing.assert_allclose(shrunk["padj"], raw["padj"])
+    assert not np.allclose(shrunk["log2FoldChange"], raw["log2FoldChange"])
+
+    with pytest.raises(ValueError, match="coefficient that was shrunk"):
+        results(shrunk_fit, contrast="batch[T.b]")
+
+
+def test_cooks_low_count_heuristic_is_explicitly_scoped() -> None:
+    design = pd.DataFrame({"Intercept": np.ones(6), "x": np.arange(6)})
+    cooks = np.zeros((6, 1))
+    cooks[0, 0] = 1_000.0
+    counts = np.array([[1.0], [10.0], [11.0], [12.0], [0.0], [0.0]])
+
+    unscoped = cooks_outlier_mask(
+        cooks, counts, design, num_vars=2, apply_low_count_heuristic=False
+    )
+    binary_factor_only = cooks_outlier_mask(
+        cooks, counts, design, num_vars=2, apply_low_count_heuristic=True
+    )
+
+    assert bool(unscoped[0])
+    assert not bool(binary_factor_only[0])
+
+    binary_coldata = pd.DataFrame({"condition": ["a"] * 3 + ["b"] * 3})
+    continuous_coldata = pd.DataFrame({"x": np.arange(6, dtype=float)})
+    base_counts = np.arange(1, 61, dtype=float).reshape(10, 6)
+    assert DESeqDataset(base_counts, binary_coldata, "~ condition").cooks_low_count_heuristic
+    assert not DESeqDataset(base_counts, continuous_coldata, "~ x").cooks_low_count_heuristic
