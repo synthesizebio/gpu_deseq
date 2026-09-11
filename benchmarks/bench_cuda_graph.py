@@ -58,6 +58,7 @@ SAMPLE_SWEEP_GENES = 2000
 SAMPLE_SWEEP_N = [4, 6, 30, 60, 200, 1000, 2000]
 N_TIMED = 15
 N_WARMUP = 3
+SAMPLE_SWEEP_N_TIMED = 7
 
 
 def simulate(n_samples, n_genes, design, seed):
@@ -279,7 +280,7 @@ def run_sample_sweep(n_genes, samples_list, design, device, n_timed=N_TIMED):
     return out
 
 
-def provenance():
+def provenance(n_timed=N_TIMED, n_warmup=N_WARMUP):
     try:
         commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode().strip()
         dirty = bool(subprocess.check_output(["git", "status", "--porcelain"]).decode().strip())
@@ -291,7 +292,7 @@ def provenance():
         cuda=torch.version.cuda, torch=torch.__version__,
         python=sys.version.split()[0], platform=platform.platform(),
         commit=commit, working_tree_dirty=dirty,
-        n_timed=N_TIMED, default_chunk=core.GRAPH_CHUNK,
+        n_timed=n_timed, n_warmup=n_warmup, default_chunk=core.GRAPH_CHUNK,
     )
 
 
@@ -302,15 +303,21 @@ def main():
     ap.add_argument(
         "--n-timed",
         type=int,
-        default=N_TIMED,
-        help=f"measured repetitions per case (default: {N_TIMED})",
+        default=SAMPLE_SWEEP_N_TIMED,
+        help=(
+            "measured repetitions per sample-sweep case "
+            f"(default: {SAMPLE_SWEEP_N_TIMED})"
+        ),
     )
     ap.add_argument("--json", type=str, default=None)
     args = ap.parse_args()
     if not torch.cuda.is_available():
         sys.exit("CUDA required for this benchmark.")
 
-    prov = provenance()
+    prov = provenance(
+        n_timed=args.n_timed if args.sample_sweep else N_TIMED,
+        n_warmup=N_WARMUP,
+    )
     print("provenance:")
     for k, v in prov.items():
         print(f"  {k:20s}: {v}")

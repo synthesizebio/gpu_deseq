@@ -1135,7 +1135,7 @@ def results(
         fit.test_type == "wald_shrunk"
         and contrast is not None
         and fit.contrast_vector is not None
-        and not torch.allclose(resolved_contrast, fit.contrast_vector)
+        and not torch.equal(resolved_contrast, fit.contrast_vector)
     ):
         raise ValueError("a shrunk result can only report the coefficient that was shrunk")
 

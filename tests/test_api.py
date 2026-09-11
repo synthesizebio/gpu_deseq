@@ -347,6 +347,11 @@ def test_apeglm_preserves_mle_inference_and_rejects_other_contrasts() -> None:
     with pytest.raises(ValueError, match="coefficient that was shrunk"):
         results(shrunk_fit, contrast="batch[T.b]")
 
+    # A merely close vector is still a different contrast: accepting it would
+    # rescale the reported LFC while leaving the stored shrunk SE unchanged.
+    with pytest.raises(ValueError, match="coefficient that was shrunk"):
+        results(shrunk_fit, contrast=[0.0, 0.0, 1.0 + 1e-8])
+
 
 def test_cooks_low_count_heuristic_is_explicitly_scoped() -> None:
     design = pd.DataFrame({"Intercept": np.ones(6), "x": np.arange(6)})

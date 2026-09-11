@@ -76,15 +76,15 @@ def benchmark_provenance(device: str) -> dict[str, object]:
     except (OSError, subprocess.SubprocessError):
         provenance["git_commit"] = None
         provenance["working_tree_dirty"] = None
+    reconstruction = {}
     for key, manifest in (
-        ("source_data_manifest_sha256", Path("validation/data_sources.json")),
-        (
-            "prepared_data_manifest_sha256",
-            Path("validation/prepared_data_manifest.json"),
-        ),
+        ("source_manifest_sha256", Path("validation/data_sources.json")),
+        ("prepared_manifest_sha256", Path("validation/prepared_data_manifest.json")),
     ):
         if manifest.exists():
-            provenance[key] = hashlib.sha256(manifest.read_bytes()).hexdigest()
+            reconstruction[key] = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    if reconstruction:
+        provenance["input_reconstruction"] = reconstruction
     if device == "cuda" and torch.cuda.is_available():
         props = torch.cuda.get_device_properties(0)
         provenance.update(

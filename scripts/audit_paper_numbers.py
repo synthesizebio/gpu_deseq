@@ -8,12 +8,15 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 import statistics
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(
+    os.environ.get("GPU_DESEQ_AUDIT_ROOT", Path(__file__).resolve().parents[1])
+).resolve()
 TEX = (ROOT / "paper/main.tex").read_text()
 TEX_NORMALIZED = re.sub(r"\s+", " ", TEX)
 RESULTS = ROOT / "bench/results"
@@ -64,6 +67,36 @@ def digest(path: Path) -> str:
         while chunk := handle.read(8 * 1024 * 1024):
             value.update(chunk)
     return value.hexdigest()
+
+
+def input_reconstruction(artifact: dict[str, object]) -> dict[str, object]:
+    """Read the current schema plus the two historical manifest layouts."""
+    provenance = artifact.get("provenance", {})
+    if not isinstance(provenance, dict):
+        provenance = {}
+    reconstruction = provenance.get("input_reconstruction")
+    if not isinstance(reconstruction, dict):
+        reconstruction = artifact.get("input_reconstruction")
+    if isinstance(reconstruction, dict):
+        return reconstruction
+
+    # Transitional writers used either flat provenance fields or
+    # ``input_manifests: {source, prepared}``.
+    source = provenance.get("source_data_manifest_sha256")
+    prepared = provenance.get("prepared_data_manifest_sha256")
+    manifests = provenance.get("input_manifests", artifact.get("input_manifests"))
+    if isinstance(manifests, dict):
+        source = source or manifests.get("source")
+        prepared = prepared or manifests.get("prepared")
+    return {
+        "source_manifest_sha256": source,
+        "prepared_manifest_sha256": prepared,
+    }
+
+
+def stage_total(record: dict[str, object]) -> float:
+    """Prefer the revised explicit stage sum; legacy artifacts stored it as total."""
+    return float(record.get("stage_total", record["total"]))
 
 
 def table(label: str) -> str:
@@ -136,26 +169,51 @@ for artifact_name, artifact in (
     ("parallel R", PARALLEL_R),
     ("reference parity", PARITY),
 ):
-    reconstruction = artifact.get("provenance", {}).get(
-        "input_reconstruction", artifact.get("input_reconstruction")
-    )
+    reconstruction = input_reconstruction(artifact)
     check(
         f"{artifact_name}: source manifest link",
-        reconstruction["source_manifest_sha256"] == source_manifest_digest,
+        reconstruction.get("source_manifest_sha256") == source_manifest_digest,
     )
     check(
         f"{artifact_name}: prepared manifest link",
-        reconstruction["prepared_manifest_sha256"] == prepared_manifest_digest,
+        reconstruction.get("prepared_manifest_sha256") == prepared_manifest_digest,
     )
 
 
-# Reference provenance and parity thresholds.
-check("legacy timing is labelled non-direct", TIMING["provenance"]["direct_end_to_end"] is False)
-check(
-    "legacy GPU total definition",
-    "sum of independently measured stage medians"
-    in TIMING["provenance"]["cu_total_definition"],
-)
+# Reference provenance and parity thresholds. Retained legacy timing artifacts
+# stored the stage sum in ``total``; newly generated artifacts store a direct
+# observation in ``total`` and the matched sum in ``stage_total``.
+timing_provenance = TIMING["provenance"]
+legacy_stage_total = timing_provenance.get("direct_end_to_end") is False
+if legacy_stage_total:
+    check("legacy timing is labelled non-direct", True)
+    check(
+        "legacy GPU total definition",
+        "sum of independently measured stage medians"
+        in timing_provenance["cu_total_definition"],
+    )
+else:
+    check(
+        "current GPU total is direct",
+        "median direct wall time" in timing_provenance.get("cu_total_definition", ""),
+    )
+    check(
+        "current GPU stage-total definition",
+        "sum of independently measured stage medians"
+        in timing_provenance.get("cu_stage_total_definition", ""),
+    )
+    for case, record in TIMING["r"].items():
+        check(f"{case}: current R stage total present", "stage_total" in record)
+        check(f"{case}: current R direct samples present", bool(record.get("total_values_ms")))
+    for case, modes in TIMING["cu"].items():
+        for mode in MODES:
+            record = modes[mode]
+            check(f"{case}/{mode}: current GPU stage total present", "stage_total" in record)
+            check(f"{case}/{mode}: current GPU direct samples present", bool(record.get("total_values_ms")))
+            check(
+                f"{case}/{mode}: current GPU stage total is stage sum",
+                close(stage_total(record), sum(float(record[step]) for step in STEPS), 1e-9),
+            )
 check(
     "direct R worker total definition",
     "median direct wall time"
@@ -240,8 +298,8 @@ for case, label in CASES:
         )
     sum_row = next(line for line in block.splitlines() if "stage sum" in line)
     shown_sum = [numeric_cell(cell) for cell in sum_row.split("&")[2:]]
-    actual_sum = [TIMING["r"][case]["total"]] + [
-        TIMING["cu"][case][mode]["total"] for mode in MODES
+    actual_sum = [stage_total(TIMING["r"][case])] + [
+        stage_total(TIMING["cu"][case][mode]) for mode in MODES
     ]
     check(
         f"stage table {case}/sum",
