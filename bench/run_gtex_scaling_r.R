@@ -91,6 +91,39 @@ wald_and_outlier_refit <- function(dds) {
   dds
 }
 
+if (identical(Sys.getenv("GTEX_R_DISPERSION_ONLY", unset = "0"), "1")) {
+  stage_start <- proc.time()[["elapsed"]]
+  dds <- mk()
+  normalization_start <- proc.time()[["elapsed"]]
+  dds <- estimateSizeFactors(dds)
+  normalization_ms <- (proc.time()[["elapsed"]] - normalization_start) * 1000
+  dispersion_start <- proc.time()[["elapsed"]]
+  dds <- estimateDispersions(dds, quiet = TRUE)
+  dispersion_ms <- (proc.time()[["elapsed"]] - dispersion_start) * 1000
+  write.csv(
+    data.frame(gene = rownames(dds), dispersion = dispersions(dds)),
+    file.path(output_dir, "r_dispersions.csv"),
+    row.names = FALSE
+  )
+  writeLines(
+    c(
+      "{",
+      '  "status": "pass",',
+      '  "scope": "normalization_and_dispersion_only",',
+      sprintf('  "normalization_ms": %.6f,', normalization_ms),
+      sprintf('  "dispersion_ms": %.6f,', dispersion_ms),
+      sprintf(
+        '  "elapsed_s": %.6f',
+        proc.time()[["elapsed"]] - stage_start
+      ),
+      "}"
+    ),
+    file.path(output_dir, "r_dispersion_stage.json")
+  )
+  cat("dispersion-only reference complete\n")
+  quit(save = "no", status = 0)
+}
+
 run_workflow <- function(timed = FALSE) {
   values <- list()
   measure <- function(name, expression) {
@@ -102,6 +135,7 @@ run_workflow <- function(timed = FALSE) {
   dds <- mk()
   dds <- measure("normalization", estimateSizeFactors(dds))
   dds <- measure("dispersion", estimateDispersions(dds, quiet = TRUE))
+  stage_dispersion <- dispersions(dds)
   dds <- measure("glm_fit", wald_and_outlier_refit(dds))
   coefficient <- resultsNames(dds)[[2]]
   result <- measure("significance", results(dds, name = coefficient))
@@ -111,6 +145,7 @@ run_workflow <- function(timed = FALSE) {
   )
   list(
     timings = values,
+    stage_dispersion = stage_dispersion,
     dds = dds,
     result = result,
     shrunk = shrunk,
@@ -159,8 +194,13 @@ write.csv(
   row.names = FALSE
 )
 write.csv(
-  data.frame(gene = rownames(last$dds), dispersion = dispersions(last$dds)),
+  data.frame(gene = rownames(last$dds), dispersion = last$stage_dispersion),
   file.path(output_dir, "r_dispersions.csv"),
+  row.names = FALSE
+)
+write.csv(
+  data.frame(gene = rownames(last$dds), dispersion = dispersions(last$dds)),
+  file.path(output_dir, "r_refit_dispersions.csv"),
   row.names = FALSE
 )
 result_frame <- as.data.frame(last$result)

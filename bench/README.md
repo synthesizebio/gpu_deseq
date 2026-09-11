@@ -170,3 +170,13 @@ Rscript bench/run_gtex_scaling_r.R \
 PYTHONPATH=src python bench/score_gtex_scaling.py \
   /tmp/p6_all_gpu.npz /tmp/p6_all_r --output /tmp/p6_all_parity.json
 ```
+
+For a reference directory produced by an older run of this script, regenerate
+only the pre-Wald dispersion-stage capture without repeating Wald fitting or
+shrinkage:
+
+```bash
+GTEX_R_DISPERSION_ONLY=1 Rscript bench/run_gtex_scaling_r.R \
+  validation/sources/SRP012682_rse_gene.Rdata \
+  bench/cache/gtex_scaling/matrix /tmp/p6_all_gpu.json /tmp/p6_all_r
+```
