@@ -166,4 +166,7 @@ OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
 Rscript bench/run_gtex_scaling_r.R \
   validation/sources/SRP012682_rse_gene.Rdata \
   bench/cache/gtex_scaling/matrix /tmp/p6_all_gpu.json /tmp/p6_all_r
+
+PYTHONPATH=src python bench/score_gtex_scaling.py \
+  /tmp/p6_all_gpu.npz /tmp/p6_all_r --output /tmp/p6_all_parity.json
 ```
