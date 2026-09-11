@@ -15,7 +15,14 @@ from gpu_deseq import (
     results,
     wald_test,
 )
-from gpu_deseq._filters import cooks_outlier_mask
+from gpu_deseq._filters import (
+    cooks_distance,
+    cooks_distance_tensor,
+    cooks_outlier_mask,
+    robust_method_of_moments_disp,
+    robust_method_of_moments_disp_tensor,
+)
+from gpu_deseq.api import _cooks_outlier_mask_tensor
 
 
 def _synthetic_dataset() -> tuple[np.ndarray, pd.DataFrame]:
@@ -351,6 +358,166 @@ def test_apeglm_preserves_mle_inference_and_rejects_other_contrasts() -> None:
     # rescale the reported LFC while leaving the stored shrunk SE unchanged.
     with pytest.raises(ValueError, match="coefficient that was shrunk"):
         results(shrunk_fit, contrast=[0.0, 0.0, 1.0 + 1e-8])
+
+
+def test_lfc_shrink_reuses_preserved_size_factors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    counts, coldata = _synthetic_dataset()
+    dds = DESeqDataset(counts, coldata, design="~ batch + condition").to("cpu")
+    fit_size_factors(dds)
+    fit_dispersions(dds)
+    fit = wald_test(dds, contrast="condition[T.treated]")
+
+    assert fit.size_factors is dds.size_factors
+
+    def unexpected_reconstruction(*args: object, **kwargs: object) -> None:
+        raise AssertionError("size factors should not be reconstructed")
+
+    monkeypatch.setattr(torch, "nanmedian", unexpected_reconstruction)
+    shrunk = lfc_shrink(fit, coeff="condition[T.treated]")
+
+    assert shrunk.size_factors is dds.size_factors
+    assert torch.isfinite(shrunk.coefficients[fit.non_zero_mask]).all()
+
+
+def test_wald_inference_is_reused_by_shrinkage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    counts, coldata = _synthetic_dataset()
+    dds = DESeqDataset(counts, coldata, design="~ batch + condition").to("cpu")
+    fit_size_factors(dds)
+    fit_dispersions(dds)
+    fit = wald_test(dds, contrast="condition[T.treated]")
+
+    from gpu_deseq import api as api_module
+
+    original = api_module._wald_se_and_stat
+    calls = 0
+
+    def counted(*args: object, **kwargs: object) -> tuple[torch.Tensor, torch.Tensor]:
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(api_module, "_wald_se_and_stat", counted)
+    raw = results(fit, cooks_filter=False, independent_filter=False)
+    shrunk_fit = lfc_shrink(fit, coeff="condition[T.treated]")
+    shrunk = results(shrunk_fit, cooks_filter=False, independent_filter=False)
+
+    assert calls == 1
+    np.testing.assert_allclose(shrunk["stat"], raw["stat"])
+    np.testing.assert_allclose(shrunk["pvalue"], raw["pvalue"])
+
+
+@pytest.mark.parametrize("apply_low_count_heuristic", [False, True])
+def test_tensor_cooks_outlier_mask_matches_numpy(
+    apply_low_count_heuristic: bool,
+) -> None:
+    design = pd.DataFrame(
+        {
+            "Intercept": np.ones(8),
+            "condition[T.b]": [0.0] * 4 + [1.0] * 4,
+        }
+    )
+    cooks = np.array(
+        [
+            [100.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+            [0.1, 100.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+            [0.1] * 8,
+        ]
+    )
+    counts = np.array(
+        [
+            [1.0, 10.0, 11.0, 12.0, 0.0, 0.0, 0.0, 0.0],
+            [12.0, 10.0, 11.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+            [5.0] * 8,
+        ]
+    )
+
+    expected = cooks_outlier_mask(
+        cooks.T,
+        counts.T,
+        design,
+        num_vars=2,
+        apply_low_count_heuristic=apply_low_count_heuristic,
+    )
+    actual = _cooks_outlier_mask_tensor(
+        torch.as_tensor(cooks),
+        torch.as_tensor(counts),
+        design,
+        num_vars=2,
+        apply_low_count_heuristic=apply_low_count_heuristic,
+    )
+
+    np.testing.assert_array_equal(actual.numpy(), expected)
+
+
+def test_combined_apeglm_loss_gradient_matches_separate_evaluations() -> None:
+    from gpu_deseq import _shrink
+
+    generator = torch.Generator().manual_seed(7)
+    beta = torch.randn(11, 3, generator=generator, dtype=torch.float64)
+    counts = torch.randint(
+        0, 500, (11, 8), generator=generator, dtype=torch.int64
+    ).to(torch.float64)
+    size = torch.rand(11, generator=generator, dtype=torch.float64) * 20.0 + 0.1
+    offset = torch.randn(8, generator=generator, dtype=torch.float64) * 0.2
+    design = torch.randn(8, 3, generator=generator, dtype=torch.float64)
+    args = (beta, counts, size, offset, design, 15.0, 0.7, 2)
+
+    expected_loss = _shrink._nbinom_apeglm_loss(*args)
+    expected_grad = _shrink._nbinom_apeglm_grad(*args)
+    actual_loss, actual_grad = _shrink._nbinom_apeglm_loss_grad(*args)
+
+    torch.testing.assert_close(actual_loss, expected_loss, rtol=1e-14, atol=1e-12)
+    torch.testing.assert_close(actual_grad, expected_grad, rtol=1e-14, atol=1e-12)
+
+
+@pytest.mark.parametrize("replicated_cells", [False, True])
+def test_tensor_cooks_distance_matches_numpy(replicated_cells: bool) -> None:
+    generator = np.random.default_rng(19)
+    n_samples = 8
+    n_genes = 23
+    if replicated_cells:
+        design = pd.DataFrame(
+            {
+                "Intercept": np.ones(n_samples),
+                "condition[T.b]": [0.0] * 4 + [1.0] * 4,
+            }
+        )
+    else:
+        # Every row is its own cell, exercising the plain trimmed-variance path.
+        design = pd.DataFrame(
+            {
+                "Intercept": np.ones(n_samples),
+                "sample": np.arange(n_samples, dtype=float),
+            }
+        )
+    counts = generator.integers(1, 500, size=(n_genes, n_samples)).astype(float)
+    size_factors = np.exp(generator.normal(0.0, 0.2, size=n_samples))
+    normed = counts / size_factors[None, :]
+    mu = np.maximum(counts * generator.lognormal(0.0, 0.1, counts.shape), 0.5)
+    hat = generator.uniform(0.01, 0.25, size=counts.shape)
+
+    expected_alpha = robust_method_of_moments_disp(normed.T, design)
+    expected_cooks, _ = cooks_distance(
+        counts.T, normed.T, mu.T, hat.T, design
+    )
+    actual_cooks, actual_alpha = cooks_distance_tensor(
+        torch.as_tensor(counts),
+        torch.as_tensor(normed),
+        torch.as_tensor(mu),
+        torch.as_tensor(hat),
+        design,
+    )
+    direct_alpha = robust_method_of_moments_disp_tensor(
+        torch.as_tensor(normed), design
+    )
+
+    np.testing.assert_allclose(actual_alpha.numpy(), expected_alpha, rtol=1e-13)
+    np.testing.assert_allclose(direct_alpha.numpy(), expected_alpha, rtol=1e-13)
+    np.testing.assert_allclose(actual_cooks.numpy().T, expected_cooks, rtol=1e-13)
 
 
 def test_cooks_low_count_heuristic_is_explicitly_scoped() -> None:

@@ -135,10 +135,12 @@ res = results(fit)
 The implementation is a faithful port, not an approximation:
 
 - **Dispersion estimation** is the analytical port of `DESeq2/src/DESeq2.cpp::fitDisp`: gradient ascent on the Cox-Reid log-posterior with Armijo line search, periodic kappa halving every 5 acceptances, [-30, 10] clamping in log α via kappa adjustment, and the same `noIncrease` revert + grid fallback that `estimateDispersionsGeneEst` applies. Used for both gene-wise MLE and MAP (with `usePrior=TRUE`).
-- **IRLS** is batched per gene with a CPU L-BFGS-B fallback for non-convergence, matching DESeq2's per-gene GLM fit.
-- **Cook's distance** uses DESeq2's trimmed robust method-of-moments dispersion estimator.
+- **IRLS** is batched per gene with a CPU L-BFGS-B fallback for non-convergence, matching DESeq2's per-gene GLM fit. Only exceptional genes are transferred for fallback.
+- **Cook's distance** uses DESeq2's trimmed robust method-of-moments dispersion estimator and keeps its large matrices and count-replacement path on the GPU for CUDA workflows.
+- **Independent filtering** evaluates DESeq2's 50 candidate thresholds from one p-value ordering, then performs BH adjustment once at the selected threshold.
 - **apeGLM** uses a batched port of the reference L-BFGS optimizer with an
-  empirical-Bayes Cauchy prior scale.
+  empirical-Bayes Cauchy prior scale; loss and gradient share their large
+  linear-predictor evaluation.
 
 Repo layout:
 
@@ -146,7 +148,7 @@ Repo layout:
 src/gpu_deseq/
   api.py              # public DESeqDataset, fit_*, wald_test, lrt_test, lfc_shrink, results
   _deseq2_core.py     # batched dispersion + IRLS kernels (the bit-exact-with-R port)
-  _shrink.py          # apeGLM batched Newton
+  _shrink.py          # apeGLM batched reference-compatible L-BFGS
   _filters.py         # Cook's distance, independent filtering
 scripts/
   generate_r_fixtures.R  # produces all R intermediates for parity testing

@@ -1314,31 +1314,37 @@ def irls_batched(
 
     # CPU fallback for non-converged genes (should be rare)
     if (~converged).any():
-        bad_idx = torch.nonzero(~converged, as_tuple=False).squeeze(-1).cpu().numpy()
-        beta_np = beta.detach().cpu().numpy()
-        counts_np = counts.detach().cpu().numpy()
-        dispersions_np = dispersions.detach().cpu().numpy()
+        bad_idx_t = torch.nonzero(~converged, as_tuple=False).squeeze(-1)
+        bad_idx = bad_idx_t.cpu().numpy()
+        # Transfer only the exceptional rows.  The previous fallback copied the
+        # complete G x S count matrix to the host when even one gene failed to
+        # converge, which made rare fallbacks disproportionately expensive.
+        beta_np = beta[bad_idx_t].detach().cpu().numpy()
+        beta_init_np = beta_init[bad_idx_t].detach().cpu().numpy()
+        counts_np = counts[bad_idx_t].detach().cpu().numpy()
+        dispersions_np = dispersions[bad_idx_t].detach().cpu().numpy()
         design_np = design.detach().cpu().numpy()
         size_factors_np = size_factors.detach().cpu().numpy()
         ridge_mat = RIDGE * np.eye(P)
-        for g in bad_idx:
-            b_init = beta_init[g].detach().cpu().numpy()
-            def f(b, g=g):
+        for local_idx, gene_idx in enumerate(bad_idx):
+            b_init = beta_init_np[local_idx]
+            def f(b, local_idx=local_idx):
                 mu_ = np.maximum(size_factors_np * np.exp(design_np @ b), min_mu)
-                return _nb_nll_np(counts_np[g], mu_, dispersions_np[g]) + 0.5 * (ridge_mat @ b**2).sum()
-            def df(b, g=g):
+                return _nb_nll_np(counts_np[local_idx], mu_, dispersions_np[local_idx]) + 0.5 * (ridge_mat @ b**2).sum()
+            def df(b, local_idx=local_idx):
                 mu_ = np.maximum(size_factors_np * np.exp(design_np @ b), min_mu)
                 return (
-                    -design_np.T @ counts_np[g]
-                    + ((1.0 / dispersions_np[g] + counts_np[g]) * mu_ / (1.0 / dispersions_np[g] + mu_)) @ design_np
+                    -design_np.T @ counts_np[local_idx]
+                    + ((1.0 / dispersions_np[local_idx] + counts_np[local_idx]) * mu_ / (1.0 / dispersions_np[local_idx] + mu_)) @ design_np
                     + ridge_mat @ b
                 )
             res = minimize(f, b_init, jac=df, method="L-BFGS-B",
                            bounds=[(min_beta, max_beta)] * P)
-            beta_np[g] = res.x
+            beta_np[local_idx] = res.x
             if res.success:
-                converged[g] = True
-        beta = torch.from_numpy(beta_np).to(device=device, dtype=dtype)
+                converged[gene_idx] = True
+        beta = beta.clone()
+        beta[bad_idx_t] = torch.from_numpy(beta_np).to(device=device, dtype=dtype)
 
     # Recompute H diagonal on final beta using UN-thresholded mu, per
     # irls_solver lines 427-438.

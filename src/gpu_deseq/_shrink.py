@@ -121,6 +121,57 @@ def _nbinom_apeglm_grad(
     return (d_prior_noshrink + d_prior_shrink) - d_nll
 
 
+def _nbinom_apeglm_loss_grad(
+    beta: torch.Tensor,
+    counts: torch.Tensor,
+    size: torch.Tensor,
+    offset: torch.Tensor,
+    design: torch.Tensor,
+    prior_no_shrink_scale: float,
+    prior_scale: float,
+    shrink_index: int,
+    *,
+    counts_plus_size: torch.Tensor | None = None,
+    log_size: torch.Tensor | None = None,
+    design_t: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return apeGLM loss and gradient while sharing their linear predictor.
+
+    L-BFGS always requests these together.  Computing them through the two
+    public helpers separately duplicated ``beta @ design.T`` and construction
+    of its G x S result at every line-search trial.
+    """
+    if design_t is None:
+        design_t = design.T
+    xbeta = beta @ design_t
+    xbeta_off = xbeta + offset.unsqueeze(0)
+    size_col = size.unsqueeze(1)
+    if counts_plus_size is None:
+        counts_plus_size = counts + size_col
+    if log_size is None:
+        log_size = torch.log(size).unsqueeze(1)
+
+    lae = torch.logaddexp(xbeta_off, log_size.expand_as(xbeta_off))
+    nll = (counts * xbeta - counts_plus_size * lae).sum(dim=1)
+
+    inv = 1.0 / (1.0 + size_col * torch.exp(-xbeta_off))
+    resid = counts - counts_plus_size * inv
+    d_nll = resid @ design
+
+    beta_s = beta[:, shrink_index]
+    no_shrink_sq = beta.square().sum(dim=1) - beta_s.square()
+    prior = (
+        no_shrink_sq / (2.0 * prior_no_shrink_scale ** 2)
+        + torch.log1p((beta_s / prior_scale) ** 2)
+    )
+
+    d_prior = beta / (prior_no_shrink_scale ** 2)
+    d_prior[:, shrink_index] = (
+        2.0 * beta_s / (prior_scale ** 2 + beta_s ** 2)
+    )
+    return prior - nll, d_prior - d_nll
+
+
 def _nbinom_apeglm_hess(
     beta: torch.Tensor,
     counts: torch.Tensor,
@@ -187,12 +238,24 @@ def _batched_lbfgs(x0, counts, size, offset, design, shrink_index,
     G, P = x0.shape
     dev, dt = x0.device, x0.dtype
     zeroG = torch.zeros(G, device=dev, dtype=dt)
+    counts_plus_size = counts + size.unsqueeze(1)
+    log_size = torch.log(size).unsqueeze(1)
+    design_t = design.T
 
     def _fg(b):
-        return (_nbinom_apeglm_loss(b, counts, size, offset, design,
-                                    prior_no_shrink_scale, prior_scale, shrink_index),
-                _nbinom_apeglm_grad(b, counts, size, offset, design,
-                                    prior_no_shrink_scale, prior_scale, shrink_index))
+        return _nbinom_apeglm_loss_grad(
+            b,
+            counts,
+            size,
+            offset,
+            design,
+            prior_no_shrink_scale,
+            prior_scale,
+            shrink_index,
+            counts_plus_size=counts_plus_size,
+            log_size=log_size,
+            design_t=design_t,
+        )
 
     x = x0.clone()
     fx, grad = _fg(x)

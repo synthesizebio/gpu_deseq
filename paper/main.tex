@@ -203,8 +203,13 @@ genes; the implementation details are given in Sec.~\ref{sec:glm}.
 \subsubsection{Significance filtering and result assembly}
 \label{sec:significance}
 Cook's filtering, independent filtering, and multiple-testing adjustment are
-implemented as vectorized array operations. The standard wrapper also performs
-count replacement and refitting when DESeq2's eligibility conditions are met.
+implemented as vectorized array operations. For CUDA analyses, the robust
+Cook's-distance calculation, thresholding, and count replacement operate on
+the resident GPU matrices. Independent filtering obtains the rejection counts
+for its 50 nested thresholds from one p-value ordering and performs the full
+Benjamini--Hochberg adjustment only at the selected threshold. The standard
+wrapper performs replacement and refitting when DESeq2's eligibility
+conditions are met.
 
 \subsubsection{LFC shrinkage}
 \label{sec:apeglm-overview}
@@ -328,7 +333,9 @@ diverge on real data.
 The GLM is implemented as a batched negative-binomial IRLS solve on the GPU,
 using one batched factorization across genes at each iteration. Genes that
 diverge or reach the DESeq2 iteration cap use the same host-side fallback as the
-reference. Wald standard errors retain the $\mu\ge0.5$ floor in
+reference; only those exceptional gene rows are transferred. Cook's robust
+dispersion, distance, count replacement, and the affected-gene refit remain on
+the GPU in CUDA workflows. Wald standard errors retain the $\mu\ge0.5$ floor in
 \texttt{fitBeta.cpp}; LRTs use the full--reduced deviance difference.
 
 \subsection{LFC shrinkage acceleration}
@@ -338,7 +345,10 @@ line search, and convergence flags are batched on the GPU. We match the
 reference optimizer's initialization and stopping rules because extreme,
 low-count genes can have competing posterior modes. As in \texttt{lfcShrink},
 only the shrunken coefficient and its standard error are replaced; p-values
-remain those from the Wald fit.
+remain those from the Wald fit. Loss and gradient share the same large
+gene--sample linear predictor, invariant count/dispersion terms are hoisted out
+of the optimizer loop, and fitted size factors and Wald inference are reused
+rather than reconstructed downstream.
 
 \subsection{Validation methodology}
 \label{sec:parity-method}

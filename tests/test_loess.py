@@ -20,9 +20,10 @@ Reference values generated with R 4.x / stats::loess:
 from __future__ import annotations
 
 import numpy as np
+from scipy.stats import false_discovery_control
 
 from gpu_deseq import _deseq2_core as core
-from gpu_deseq._filters import _lowess
+from gpu_deseq._filters import _lowess, independent_filtering
 
 _XOUT = np.array([0.0, 0.37, 1.25, 2.5, 3.9, 5.05, 6.4, 7.2, 7.83, 8.0])
 _R_LOESS_INTERPOLATE = np.array([
@@ -107,3 +108,39 @@ def test_independent_filter_lowess_matches_r() -> None:
     residual = num_rej[num_rej > 0] - got[num_rej > 0]
     threshold = got.max() - np.sqrt(np.mean(residual**2))
     assert np.flatnonzero(num_rej > threshold)[0] == 10
+
+
+def test_vectorized_independent_filter_matches_brute_force() -> None:
+    rng = np.random.default_rng(31)
+    pvalues = rng.uniform(size=2_000)
+    pvalues[rng.choice(len(pvalues), 137, replace=False)] = np.nan
+    base_mean = rng.lognormal(mean=2.0, sigma=1.5, size=len(pvalues))
+    base_mean[rng.choice(len(base_mean), 211, replace=False)] = 0.0
+    alpha = 0.1
+
+    lower_q = float(np.mean(base_mean == 0))
+    upper_q = 0.95 if lower_q < 0.95 else 1.0
+    theta = np.linspace(lower_q, upper_q, 50)
+    cutoffs = np.quantile(base_mean, theta)
+    brute_table = np.full((len(pvalues), len(theta)), np.nan)
+    valid = ~np.isnan(pvalues)
+    for index, cutoff in enumerate(cutoffs):
+        use = (base_mean >= cutoff) & valid
+        if use.any():
+            brute_table[use, index] = false_discovery_control(
+                pvalues[use], method="bh"
+            )
+    num_rej = (brute_table < alpha).sum(axis=0).astype(int)
+    lowess = _lowess(theta, num_rej, frac=1 / 5)
+    if num_rej.max() <= 10:
+        selected = 0
+    else:
+        nonzero = num_rej > 0
+        residual = num_rej[nonzero] - lowess[nonzero]
+        threshold = lowess.max() - np.sqrt(np.mean(residual**2))
+        above = np.where(num_rej > threshold)[0]
+        selected = int(above[0]) if len(above) > 0 else 0
+
+    expected = brute_table[:, selected]
+    actual = independent_filtering(pvalues, base_mean, alpha)
+    np.testing.assert_allclose(actual, expected, rtol=0, atol=0, equal_nan=True)
