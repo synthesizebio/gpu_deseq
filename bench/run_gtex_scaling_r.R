@@ -121,6 +121,10 @@ run_workflow <- function(timed = FALSE) {
 warmups <- as.integer(Sys.getenv("GTEX_R_WARMUPS", unset = "1"))
 reps <- as.integer(Sys.getenv("GTEX_R_REPS", unset = "5"))
 direct_reps <- as.integer(Sys.getenv("GTEX_R_DIRECT_REPS", unset = "5"))
+if (warmups < 0 || reps < 1 || direct_reps < 0) {
+  stop("require warmups >= 0, reps >= 1, and direct_reps >= 0")
+}
+benchmark_start <- proc.time()[["elapsed"]]
 for (i in seq_len(warmups)) {
   invisible(run_workflow(FALSE))
   gc()
@@ -187,6 +191,11 @@ json_stage_medians <- paste(
   sprintf('"%s":%.6f', names(medians), medians),
   collapse = ","
 )
+direct_median_json <- if (length(direct_values)) {
+  sprintf("%.6f", median(direct_values))
+} else {
+  "null"
+}
 output <- c(
   "{",
   sprintf('  "status": "pass",'),
@@ -206,7 +215,8 @@ output <- c(
   sprintf('  "stage_medians_ms": {%s},', json_stage_medians),
   sprintf('  "stage_total_ms": %.6f,', sum(medians)),
   sprintf('  "direct_values_ms": [%s],', json_numbers(direct_values)),
-  sprintf('  "direct_median_ms": %.6f', median(direct_values)),
+  sprintf('  "direct_median_ms": %s,', direct_median_json),
+  sprintf('  "elapsed_s": %.6f', proc.time()[["elapsed"]] - benchmark_start),
   "}"
 )
 writeLines(output, file.path(output_dir, "r_timings.json"))
