@@ -15,7 +15,8 @@ hashes and the exact GTEx sample selection are in
 
 The supported reproduction path is the pinned container in
 [`docker/`](docker/README.md). It combines the current R/Bioconductor reference,
-the PyTorch 2.6.0/CUDA 12.4 implementation environment, and the LaTeX toolchain:
+the PyTorch 2.7.1/CUDA 12.6 implementation environment used by the current
+timing artifact, and the LaTeX toolchain:
 
 ```bash
 make container-build
@@ -38,9 +39,9 @@ On a host configured with the NVIDIA Container Toolkit,
 > total-pipeline timing, per-substep timing, and output parity — for R DESeq2,
 > cuDESeq2 (eager / CUDA-graph / Triton), and a PyDESeq2 competitor, across six
 > real RNA-seq datasets (7–300 samples) on an A100. Across all six retained
-> matched stage-summed measurements, the best GPU mode is 8.4–58.9× faster
+> matched stage-summed measurements, the best GPU mode is 10.6–171.2× faster
 > than one-worker R DESeq2. These are sums of five stage medians, not direct
-> end-to-end observations; current benchmark code records both separately.
+> end-to-end observations; direct workflow medians are reported separately.
 
 ## What's tested vs R DESeq2
 

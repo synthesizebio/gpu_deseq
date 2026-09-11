@@ -33,11 +33,11 @@ COPY docker/install_r_packages.R /tmp/install_r_packages.R
 RUN Rscript /tmp/install_r_packages.R \
     && rm /tmp/install_r_packages.R
 
-ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu126
 COPY docker/constraints.txt /tmp/constraints.txt
 RUN python3 -m pip install --break-system-packages \
         --index-url "${TORCH_INDEX_URL}" \
-        torch==2.6.0 \
+        torch==2.7.1 \
     && python3 -m pip install --break-system-packages \
         --constraint /tmp/constraints.txt \
         formulaic \

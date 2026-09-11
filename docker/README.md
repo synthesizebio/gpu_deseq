@@ -3,14 +3,14 @@
 The image combines the two environments needed by the paper:
 
 - R 4.6.0, Bioconductor 3.23, DESeq2 1.52.0, apeglm 1.34.0;
-- Python 3.11 or newer, PyTorch 2.6.0 with CUDA 12.4, Triton 3.2.0, and
+- Python 3.11 or newer, PyTorch 2.7.1 with CUDA 12.6, Triton 3.3.1, and
   the exact direct dependency versions in `constraints.txt`;
 - the LaTeX and PDF tools needed to build `paper/main.pdf`.
 
 The default base is the official Bioconductor R-4.6.0 release image pinned to
 OCI index digest
 `sha256:b10002b39efa30c3779ad839549806ebdbb29b3266f0d2428478b04426e55929`.
-PyTorch uses the official `cu124` wheel index. `check_environment.py` fails if
+PyTorch uses the official `cu126` wheel index. `check_environment.py` fails if
 any manuscript-critical package version changes.
 
 ## Build and check
@@ -71,5 +71,5 @@ To use an image mirror or an immutable digest, override `BIOC_IMAGE`:
 ```bash
 docker build \
   --build-arg BIOC_IMAGE='bioconductor/bioconductor:RELEASE_3_23-r-4.6.0@sha256:…' \
-  -f docker/Dockerfile -t gpu-deseq:bioc3.23-cu124 .
+  -f docker/Dockerfile -t gpu-deseq:bioc3.23-cu126 .
 ```

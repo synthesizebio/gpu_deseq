@@ -63,6 +63,29 @@ def main() -> None:
 
     lines += [
         "",
+        "## Direct end-to-end wall time (ms)",
+        "",
+        "Each cell is the median of five complete workflow observations, including "
+        "dataset construction and host-to-device transfer. These values are kept "
+        "separate from the matched sums of stage medians above.",
+        "",
+        "| dataset | n | R, 1 worker | eager | graph | Triton | best cuDESeq2 vs. R |",
+        "|---|--:|--:|--:|--:|--:|--:|",
+    ]
+    for case in cases:
+        direct_gpu = {
+            mode: timings["cu"][case][mode]["total"] for mode in MODES
+        }
+        direct_r = timings["r"][case]["total"]
+        speedup = direct_r / min(direct_gpu.values())
+        lines.append(
+            f"| {case} | {metadata[case]['n_samples']} | {direct_r:.0f} | "
+            + " | ".join(number(direct_gpu[mode]) for mode in MODES)
+            + f" | {speedup:.1f}× |"
+        )
+
+    lines += [
+        "",
         f"## Direct R end-to-end wall time: one vs. {workers} workers (ms)",
         "",
         "Each cell is the median of direct `DESeq() + results() + lfcShrink()` "

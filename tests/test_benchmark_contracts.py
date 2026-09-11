@@ -132,12 +132,12 @@ def test_regenerated_timing_schema_passes_paper_audit(tmp_path: Path) -> None:
         "sum of independently measured stage medians"
     )
     for record in timing["r"].values():
-        record["stage_total"] = record["total"]
+        assert "stage_total" in record
         record["total_values_ms"] = [record["total"]]
     for modes in timing["cu"].values():
         for mode in ("eager", "graph", "triton"):
             record = modes[mode]
-            record["stage_total"] = record["total"]
+            assert "stage_total" in record
             record["total_values_ms"] = [record["total"]]
     timing_path.write_text(json.dumps(timing))
 

@@ -86,7 +86,7 @@ samples, $P=2$--$5$), final dispersion has a median p95 relative error of
 \fact{0.99963}, and shrunken LFCs have Pearson correlation of at least
 \fact{0.99722}. The standard
 Wald path includes count-outlier replacement and refitting. On one A100,
-the fastest \cudeseq{} mode is \fact{8.4--58.9$\times$} faster than one-worker
+the fastest \cudeseq{} mode is \fact{10.6--171.2$\times$} faster than one-worker
 R when the same five stage medians are summed.\\[3pt]
 \textbf{Availability and implementation:} Open source under the MIT license at
 \url{https://github.com/synthesizebio/gpu_deseq}; PyTorch and a CUDA GPU are
@@ -382,8 +382,8 @@ to pass the same thresholds.
 \section{Results}
 
 \subsection{Experimental setup}
-All GPU measurements are taken on one NVIDIA A100-SXM4-40GB under PyTorch~2.6
-with CUDA~12.4 and NVIDIA driver~550.90.07. The reference CPU baseline
+All GPU measurements are taken on one NVIDIA A100-SXM4-40GB under
+PyTorch~2.7.1 with CUDA~12.6 and NVIDIA driver~580.126.20. The reference CPU baseline
 (host~A) is R~DESeq2~1.52.0 on a 12-vCPU virtual machine, with R~4.6.0 and
 apeglm~1.34.0. Every reported real-data timing is a warm median of five
 repetitions. GPU stage timers call \texttt{torch.cuda.synchronize()} at both
@@ -521,14 +521,14 @@ gtex          & 2 & 300 & 276.0 & 63.4 \\\bottomrule
 \end{table}
 
 In the matched stage-summed measurements, Triton is the fastest total mode on
-five of the six designs; graph is fastest on \texttt{pasilla}. Against
+all six designs. Against
 one-worker R using the same stage boundaries, the best GPU mode is
-\fact{8.4--58.9$\times$} faster, with \texttt{airway\_cell} and \texttt{gtex}
+\fact{10.6--171.2$\times$} faster, with \texttt{airway\_cell} and \texttt{gtex}
 as the endpoints. Triton has the fastest dispersion substep on all six:
 fusing the wider Cox--Reid solve (Sec.~\ref{sec:triton}) cuts the dispersion
-substep by \fact{8.7$\times$} on \texttt{pasilla\_2fac} ($P{=}3$) and
-\fact{2.7$\times$} on \texttt{airway} ($P{=}5$) against the eager loop
-(\fact{730}$\to$\fact{83}\,ms and \fact{1586}$\to$\fact{583}\,ms, same run).
+substep by \fact{8.9$\times$} on \texttt{pasilla\_2fac} ($P{=}3$) and
+\fact{2.8$\times$} on \texttt{airway} ($P{=}5$) against the eager loop
+(\fact{777}$\to$\fact{87}\,ms and \fact{1660}$\to$\fact{585}\,ms, same run).
 \texttt{airway}'s dispersion substep also includes
 the CPU R-stream replay of Sec.~\ref{sec:disp} in every mode.
 Although it typically lags Triton, graph is bit-identical to eager
@@ -547,42 +547,61 @@ medians and is not a directly observed end-to-end duration. \fact{Reproduce:
 \begin{tabular}{llrrrr}
 \toprule
 Dataset & Substep & R & eager & graph & Triton \\\midrule
-pasilla & dispersion & 1760 & 417 & 71 & 20 \\
-        & glm\_fit & 2035 & 39 & 39 & 39 \\
-        & significance & 223 & 62 & 61 & 62 \\
-        & lfc\_shrink & 5314 & 504 & 501 & 630 \\
-        & \textbf{stage sum} & \textbf{9485} & \textbf{1022} & \textbf{673} & \textbf{751} \\\midrule
-pasilla\_2fac & dispersion & 2134 & 730 & 163 & 83 \\
-        & glm\_fit & 1465 & 334 & 338 & 335 \\
-        & significance & 204 & 75 & 60 & 59 \\
-        & lfc\_shrink & 6043 & 396 & 399 & 398 \\
-        & \textbf{stage sum} & \textbf{9999} & \textbf{1536} & \textbf{960} & \textbf{876} \\\midrule
-airway\_dex & dispersion & 4732 & 427 & 110 & 52 \\
-        & glm\_fit & 5205 & 57 & 56 & 56 \\
-        & significance & 1391 & 145 & 126 & 124 \\
-        & lfc\_shrink & 14810 & 699 & 716 & 711 \\
-        & \textbf{stage sum} & \textbf{26320} & \textbf{1330} & \textbf{1010} & \textbf{944} \\\midrule
-airway\_cell & dispersion & 5668 & 753 & 185 & 60 \\
-        & glm\_fit & 3850 & 38 & 36 & 37 \\
-        & significance & 863 & 115 & 115 & 119 \\
-        & lfc\_shrink & 19755 & 3353 & 3327 & 3412 \\
-        & \textbf{stage sum} & \textbf{30326} & \textbf{4260} & \textbf{3665} & \textbf{3629} \\\midrule
-airway & dispersion & 7463 & 1586 & 719 & 583 \\
-        & glm\_fit & 4438 & 62 & 61 & 61 \\
-        & significance & 895 & 118 & 119 & 120 \\
-        & lfc\_shrink & 19488 & 811 & 808 & 767 \\
-        & \textbf{stage sum} & \textbf{32472} & \textbf{2578} & \textbf{1707} & \textbf{1531} \\\midrule
-gtex & dispersion & 184599 & 3507 & 3625 & 200 \\
-        & glm\_fit & 51134 & 3148 & 2794 & 2694 \\
-        & significance & 492 & 613 & 610 & 609 \\
-        & lfc\_shrink & 40117 & 1254 & 1252 & 1237 \\
-        & \textbf{stage sum} & \textbf{279604} & \textbf{8526} & \textbf{8284} & \textbf{4744} \\\bottomrule
+pasilla & dispersion & 1782 & 463 & 78 & 21 \\
+        & glm\_fit & 2079 & 42 & 42 & 41 \\
+        & significance & 209 & 40 & 40 & 40 \\
+        & lfc\_shrink & 5343 & 420 & 422 & 421 \\
+        & \textbf{stage sum} & \textbf{9573} & \textbf{966} & \textbf{583} & \textbf{524} \\\midrule
+pasilla\_2fac & dispersion & 2179 & 777 & 174 & 87 \\
+        & glm\_fit & 1495 & 354 & 354 & 352 \\
+        & significance & 184 & 50 & 50 & 49 \\
+        & lfc\_shrink & 6082 & 347 & 346 & 347 \\
+        & \textbf{stage sum} & \textbf{10104} & \textbf{1528} & \textbf{925} & \textbf{837} \\\midrule
+airway\_dex & dispersion & 4481 & 581 & 141 & 56 \\
+        & glm\_fit & 5171 & 58 & 59 & 57 \\
+        & significance & 1387 & 82 & 109 & 82 \\
+        & lfc\_shrink & 14843 & 573 & 578 & 576 \\
+        & \textbf{stage sum} & \textbf{26070} & \textbf{1296} & \textbf{888} & \textbf{773} \\\midrule
+airway\_cell & dispersion & 5456 & 801 & 198 & 62 \\
+        & glm\_fit & 3875 & 39 & 38 & 39 \\
+        & significance & 332 & 78 & 78 & 75 \\
+        & lfc\_shrink & 20271 & 2675 & 2667 & 2674 \\
+        & \textbf{stage sum} & \textbf{30122} & \textbf{3593} & \textbf{2982} & \textbf{2852} \\\midrule
+airway & dispersion & 7863 & 1660 & 723 & 585 \\
+        & glm\_fit & 4398 & 62 & 62 & 64 \\
+        & significance & 310 & 74 & 74 & 73 \\
+        & lfc\_shrink & 20189 & 673 & 685 & 663 \\
+        & \textbf{stage sum} & \textbf{32961} & \textbf{2470} & \textbf{1545} & \textbf{1386} \\\midrule
+gtex & dispersion & 187567 & 3574 & 3612 & 217 \\
+        & glm\_fit & 53421 & 849 & 491 & 432 \\
+        & significance & 456 & 85 & 73 & 95 \\
+        & lfc\_shrink & 42474 & 570 & 569 & 929 \\
+        & \textbf{stage sum} & \textbf{287354} & \textbf{5081} & \textbf{4749} & \textbf{1678} \\\bottomrule
 \end{tabular}}
 \\[3pt]
 {\footnotesize \texttt{normalization} omitted ($\le$\fact{4\,ms} cuDESeq2 on every set);
 full versioned R records are in \texttt{bench/results/timings.json} and
 \texttt{bench/results/r\_parallel\_a100\_12worker.json}. All GPU
 values come from the same A100 session.}
+\end{table}
+
+\begin{table}[htbp]\centering
+\caption{Direct end-to-end wall time (s) for the same staged workflow,
+including dataset construction and host-to-device transfer. Each value is the
+median of five complete observations; these direct measurements are reported
+separately from the stage sums in Table~\ref{tab:realsubstep}.}
+\label{tab:realdirectgpu}
+{\footnotesize
+\begin{tabular}{lrrrrr}
+\toprule
+Dataset & R & eager & graph & Triton & best speedup \\\midrule
+pasilla       & 9.945 & 0.972 & 0.588 & 0.525 & 19.0$\times$ \\
+pasilla\_2fac & 10.462 & 1.541 & 0.932 & 0.848 & 12.3$\times$ \\
+airway\_dex   & 26.678 & 1.332 & 0.858 & 0.790 & 33.8$\times$ \\
+airway\_cell  & 30.564 & 3.596 & 3.003 & 2.870 & 10.6$\times$ \\
+airway        & 33.063 & 2.479 & 1.552 & 1.401 & 23.6$\times$ \\
+gtex          & 289.337 & 5.284 & 4.910 & 1.807 & 160.2$\times$ \\\bottomrule
+\end{tabular}}
 \end{table}
 
 \subsection{Sample-count scaling}
@@ -624,7 +643,7 @@ Across six real-data designs, the implementation
 reproduced the intermediate quantities used by normalization, dispersion
 estimation, GLM fitting, significance testing, and LFC shrinkage
 (Table~\ref{tab:parity}), while reducing the matched sum of five stage medians
-by \fact{8.4--58.9$\times$} relative to one-worker R~DESeq2 on the A100
+by \fact{10.6--171.2$\times$} relative to one-worker R~DESeq2 on the A100
 benchmark host.
 These gains make repeated, reference-compatible differential-expression
 analyses more practical in settings such as model evaluation, where the same
@@ -661,7 +680,7 @@ For example Triton evaluates the same dispersion objective
 in a fused kernel, but its different floating-point reduction order 
 and digamma implementation introduce small numerical differences from 
 eager PyTorch. The maximum absolute eager--Triton dispersion difference retained
-by the benchmark is \fact{0.2604} on GTEx and at most \fact{$3.2 \times 10^{-7}$}
+by the benchmark is \fact{0.2604} on GTEx and at most \fact{$3.8 \times 10^{-7}$}
 across the five smaller designs.
 In such instances, it is worth noting that these differences arise from
 implementation choices, not from a change to the DESeq2 model, 
@@ -674,10 +693,10 @@ hardware. The real-data suite has six designs from three datasets, with five
 designs containing only seven or eight samples. Interactions, observation
 weights, the \texttt{ashr} and normal shrinkage estimators, and the
 \texttt{glmGamPoi} dispersion backend are outside the validated scope. GPU
-memory use is also not characterized here. Finally, the headline comparison is
-a matched sum of stage medians, not a direct end-to-end GPU observation; the
-revised benchmark harness now records both quantities separately for future
-runs.
+memory use is characterized only by the exploratory GTEx scaling study, not
+across GPU architectures. Finally, the headline comparison is a matched sum of
+stage medians, not a direct end-to-end GPU observation; direct complete-workflow
+medians are therefore reported separately in Table~\ref{tab:realdirectgpu}.
 
 In conclusion, cuDESeq2 preserves the DESeq2 analysis while making
 repeated differential-expression analyses substantially faster on a GPU.
@@ -731,7 +750,7 @@ caches by \texttt{scripts/audit\_paper\_numbers.py}.
 The benchmark host was a KVM virtual machine with an Intel Xeon CPU at
 2.20\,GHz, 6 physical cores and 12 logical CPUs, 83\,GiB RAM, and Linux~5.10.
 GPU measurements used one NVIDIA A100-SXM4-40GB. The software environment was
-PyTorch~2.6.0 with CUDA~12.4 and NVIDIA driver~550.90.07; the R environment was
+PyTorch~2.7.1 with CUDA~12.6 and NVIDIA driver~580.126.20; the R environment was
 R~4.6.0 with DESeq2~1.52.0 and apeglm~1.34.0. OMP, OpenBLAS, and MKL thread
 counts were pinned to one for the R measurements. Each real-data timing is the
 median of five measured repetitions following an untimed warm-up. The separate

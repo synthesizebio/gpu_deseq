@@ -1,108 +1,56 @@
 {
   "provenance": {
     "pipeline": "standard_wald_with_outlier_refit",
-    "cu_total_definition": "sum of independently measured stage medians; excludes DESeqDataset construction and host-to-device transfer",
-    "r_total_definition": "sum of independently measured stage medians; excludes DESeqDataSet construction",
-    "cross_implementation_total_comparable": true,
-    "direct_end_to_end": false,
+    "cu_total_definition": "median direct wall time including DESeqDataset construction and host-to-device transfer",
+    "cu_stage_total_definition": "sum of independently measured stage medians",
+    "timing_repetitions_per_case_mode": 5,
+    "measured_utc_start": "2026-09-11T20:50:23.114860+00:00",
+    "git_commit": "09feffd5276fd30037e8caffabd71c1d5ae4df25",
+    "working_tree_dirty_at_start": false,
+    "python_version": "3.12.3",
+    "torch_version": "2.7.1+cu126",
+    "torch_cuda_version": "12.6",
+    "gpu_name": "NVIDIA A100-SXM4-40GB",
+    "nvidia_driver_version": "580.126.20",
     "input_reconstruction": {
       "source_manifest_sha256": "79f3a506bd6fd31586e3f7512872205b42f1b2bf58750536da4a77dc2e6174ed",
-      "prepared_manifest_sha256": "c5fd93872ab417d947b042334ad1643f037e17648bb3417d410ef80968dd74c8",
-      "verified_byte_deterministic": true,
-      "measurement_predates_manifest": true
+      "prepared_manifest_sha256": "c5fd93872ab417d947b042334ad1643f037e17648bb3417d410ef80968dd74c8"
     },
-    "measured_utc": "2026-08-13T03:23:23Z",
-    "device_argument": "cuda",
-    "python_version": "3.10.17",
-    "torch_version": "2.6.0+cu124",
-    "torch_cuda_version": "12.4",
-    "cuda_available": true,
-    "gpu_name": "NVIDIA A100-SXM4-40GB",
-    "gpu_memory_bytes": 42285268992,
-    "gpu_compute_capability": "8.0",
-    "nvidia_driver_version": "550.90.07",
-    "timing_repetitions_per_case_mode": 5
+    "measured_utc_end": "2026-09-11T20:57:04.249665+00:00",
+    "direct_end_to_end": true,
+    "r_total_definition": "median direct wall time including DESeqDataSet construction",
+    "r_stage_total_definition": "sum of independently measured stage medians",
+    "cross_implementation_stage_total_comparable": true,
+    "r_version": "4.6.0",
+    "deseq2_version": "1.52.0",
+    "apeglm_version": "1.34.0"
   },
   "r": {
-    "airway": {
-      "case": "airway",
-      "reps": 5,
-      "pipeline": "staged_standard_wald_no_duplicate_dispersion",
-      "glm_fit_scope": "nbinomWaldTest_plus_outlier_replacement_refit",
-      "output_equivalent_to_DESeq": true,
-      "r_version": "4.6.0",
-      "deseq2_version": "1.52.0",
-      "apeglm_version": "1.34.0",
-      "normalization": 188.838,
-      "dispersion": 7463.187,
-      "glm_fit": 4437.634,
-      "significance": 894.708,
-      "lfc_shrink": 19487.944,
-      "total": 32472.311
-    },
-    "airway_cell": {
-      "case": "airway_cell",
-      "reps": 5,
-      "pipeline": "staged_standard_wald_no_duplicate_dispersion",
-      "glm_fit_scope": "nbinomWaldTest_plus_outlier_replacement_refit",
-      "output_equivalent_to_DESeq": true,
-      "r_version": "4.6.0",
-      "deseq2_version": "1.52.0",
-      "apeglm_version": "1.34.0",
-      "normalization": 189.631,
-      "dispersion": 5667.805,
-      "glm_fit": 3850.241,
-      "significance": 863.302,
-      "lfc_shrink": 19754.734,
-      "total": 30325.713
-    },
-    "airway_dex": {
-      "case": "airway_dex",
-      "reps": 5,
-      "pipeline": "staged_standard_wald_no_duplicate_dispersion",
-      "glm_fit_scope": "nbinomWaldTest_plus_outlier_replacement_refit",
-      "output_equivalent_to_DESeq": true,
-      "r_version": "4.6.0",
-      "deseq2_version": "1.52.0",
-      "apeglm_version": "1.34.0",
-      "normalization": 182.005,
-      "dispersion": 4732.302,
-      "glm_fit": 5204.649,
-      "significance": 1391.19,
-      "lfc_shrink": 14810.048,
-      "total": 26320.195
-    },
-    "gtex_blood_muscle": {
-      "case": "gtex_blood_muscle",
-      "reps": 5,
-      "pipeline": "staged_standard_wald_no_duplicate_dispersion",
-      "glm_fit_scope": "nbinomWaldTest_plus_outlier_replacement_refit",
-      "output_equivalent_to_DESeq": true,
-      "r_version": "4.6.0",
-      "deseq2_version": "1.52.0",
-      "apeglm_version": "1.34.0",
-      "normalization": 3262.308,
-      "dispersion": 184599.016,
-      "glm_fit": 51133.62,
-      "significance": 491.944,
-      "lfc_shrink": 40117.473,
-      "total": 279604.361
-    },
     "pasilla": {
       "case": "pasilla",
       "reps": 5,
       "pipeline": "staged_standard_wald_no_duplicate_dispersion",
       "glm_fit_scope": "nbinomWaldTest_plus_outlier_replacement_refit",
       "output_equivalent_to_DESeq": true,
+      "total_definition": "median direct wall time including DESeqDataSet construction",
+      "stage_total_definition": "sum of independently measured stage medians",
       "r_version": "4.6.0",
       "deseq2_version": "1.52.0",
       "apeglm_version": "1.34.0",
-      "normalization": 152.817,
-      "dispersion": 1760.333,
-      "glm_fit": 2034.854,
-      "significance": 222.691,
-      "lfc_shrink": 5314.143,
-      "total": 9484.838
+      "normalization": 159.133,
+      "dispersion": 1782.365,
+      "glm_fit": 2078.94,
+      "significance": 209.306,
+      "lfc_shrink": 5342.997,
+      "stage_total": 9572.741,
+      "total": 9945.0,
+      "total_values_ms": [
+        9862.0,
+        9850.0,
+        9964.0,
+        9945.0,
+        10257.0
+      ]
     },
     "pasilla_2fac": {
       "case": "pasilla_2fac",
@@ -110,15 +58,129 @@
       "pipeline": "staged_standard_wald_no_duplicate_dispersion",
       "glm_fit_scope": "nbinomWaldTest_plus_outlier_replacement_refit",
       "output_equivalent_to_DESeq": true,
+      "total_definition": "median direct wall time including DESeqDataSet construction",
+      "stage_total_definition": "sum of independently measured stage medians",
       "r_version": "4.6.0",
       "deseq2_version": "1.52.0",
       "apeglm_version": "1.34.0",
-      "normalization": 153.168,
-      "dispersion": 2133.502,
-      "glm_fit": 1464.846,
-      "significance": 204.454,
-      "lfc_shrink": 6042.552,
-      "total": 9998.522
+      "normalization": 163.315,
+      "dispersion": 2179.492,
+      "glm_fit": 1494.946,
+      "significance": 184.224,
+      "lfc_shrink": 6081.641,
+      "stage_total": 10103.618,
+      "total": 10462.0,
+      "total_values_ms": [
+        10416.0,
+        10476.0,
+        10474.0,
+        10462.0,
+        10372.0
+      ]
+    },
+    "airway_dex": {
+      "case": "airway_dex",
+      "reps": 5,
+      "pipeline": "staged_standard_wald_no_duplicate_dispersion",
+      "glm_fit_scope": "nbinomWaldTest_plus_outlier_replacement_refit",
+      "output_equivalent_to_DESeq": true,
+      "total_definition": "median direct wall time including DESeqDataSet construction",
+      "stage_total_definition": "sum of independently measured stage medians",
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "normalization": 187.56,
+      "dispersion": 4481.231,
+      "glm_fit": 5170.793,
+      "significance": 1387.308,
+      "lfc_shrink": 14843.043,
+      "stage_total": 26069.935,
+      "total": 26678.0,
+      "total_values_ms": [
+        26582.0,
+        26678.0,
+        26633.0,
+        26791.0,
+        26717.0
+      ]
+    },
+    "airway_cell": {
+      "case": "airway_cell",
+      "reps": 5,
+      "pipeline": "staged_standard_wald_no_duplicate_dispersion",
+      "glm_fit_scope": "nbinomWaldTest_plus_outlier_replacement_refit",
+      "output_equivalent_to_DESeq": true,
+      "total_definition": "median direct wall time including DESeqDataSet construction",
+      "stage_total_definition": "sum of independently measured stage medians",
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "normalization": 188.26,
+      "dispersion": 5456.362,
+      "glm_fit": 3874.585,
+      "significance": 332.077,
+      "lfc_shrink": 20270.569,
+      "stage_total": 30121.853,
+      "total": 30564.0,
+      "total_values_ms": [
+        30725.0,
+        30564.0,
+        30741.0,
+        30189.0,
+        30475.0
+      ]
+    },
+    "airway": {
+      "case": "airway",
+      "reps": 5,
+      "pipeline": "staged_standard_wald_no_duplicate_dispersion",
+      "glm_fit_scope": "nbinomWaldTest_plus_outlier_replacement_refit",
+      "output_equivalent_to_DESeq": true,
+      "total_definition": "median direct wall time including DESeqDataSet construction",
+      "stage_total_definition": "sum of independently measured stage medians",
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "normalization": 200.742,
+      "dispersion": 7862.517,
+      "glm_fit": 4398.439,
+      "significance": 310.22,
+      "lfc_shrink": 20188.902,
+      "stage_total": 32960.82,
+      "total": 33063.0,
+      "total_values_ms": [
+        33222.0,
+        32730.0,
+        33063.0,
+        33839.0,
+        32877.0
+      ]
+    },
+    "gtex_blood_muscle": {
+      "case": "gtex_blood_muscle",
+      "reps": 5,
+      "pipeline": "staged_standard_wald_no_duplicate_dispersion",
+      "glm_fit_scope": "nbinomWaldTest_plus_outlier_replacement_refit",
+      "output_equivalent_to_DESeq": true,
+      "total_definition": "median direct wall time including DESeqDataSet construction",
+      "stage_total_definition": "sum of independently measured stage medians",
+      "r_version": "4.6.0",
+      "deseq2_version": "1.52.0",
+      "apeglm_version": "1.34.0",
+      "normalization": 3436.82,
+      "dispersion": 187567.041,
+      "glm_fit": 53420.66,
+      "significance": 455.695,
+      "lfc_shrink": 42473.735,
+      "stage_total": 287353.95,
+      "total": 289337.0,
+      "total_values_ms": [
+        289809.0,
+        287604.0,
+        288198.0,
+        290690.0,
+        289337.0
+      ]
     }
   },
   "cu": {
@@ -126,170 +188,313 @@
       "_P": 5,
       "_n": 8,
       "eager": {
-        "normalization": 1.0425869841128588,
-        "dispersion": 1585.6246749754064,
-        "glm_fit": 62.13930097874254,
-        "significance": 118.41775401262566,
-        "lfc_shrink": 811.0434369882569,
-        "total": 2578.2677539391443
+        "normalization": 1.1005010455846786,
+        "dispersion": 1660.3621374815702,
+        "glm_fit": 62.0537418872118,
+        "significance": 74.05651174485683,
+        "lfc_shrink": 672.5474111735821,
+        "stage_total": 2470.1203033328056,
+        "total": 2478.805946186185,
+        "total_values_ms": [
+          2481.2037143856287,
+          2474.014637991786,
+          2479.2188107967377,
+          2473.9400539547205,
+          2478.805946186185
+        ]
       },
       "graph": {
-        "normalization": 1.0763920145109296,
-        "dispersion": 718.536268977914,
-        "glm_fit": 60.72676304029301,
-        "significance": 118.60936903394759,
-        "lfc_shrink": 808.4171040100046,
-        "total": 1707.36589707667
+        "normalization": 1.1271871626377106,
+        "dispersion": 722.9668851941824,
+        "glm_fit": 62.034161761403084,
+        "significance": 74.25587810575962,
+        "lfc_shrink": 685.0594878196716,
+        "stage_total": 1545.4436000436544,
+        "total": 1552.1960277110338,
+        "total_values_ms": [
+          1562.3658131808043,
+          1552.1960277110338,
+          1551.091242581606,
+          1552.005097270012,
+          1557.7506739646196
+        ]
       },
       "triton": {
-        "normalization": 1.0264470474794507,
-        "dispersion": 582.6961029670201,
-        "glm_fit": 61.19799299631268,
-        "significance": 119.57295599859208,
-        "lfc_shrink": 766.9264160213061,
-        "total": 1531.4199150307104
+        "normalization": 1.1249147355556488,
+        "dispersion": 585.139412432909,
+        "glm_fit": 64.41887654364109,
+        "significance": 72.71590083837509,
+        "lfc_shrink": 662.8278326243162,
+        "stage_total": 1386.226937174797,
+        "total": 1400.6382338702679,
+        "total_values_ms": [
+          1405.8414604514837,
+          1402.9068183153868,
+          1400.6382338702679,
+          1396.9999849796295,
+          1397.5886069238186
+        ]
       }
     },
     "airway_cell": {
       "_P": 4,
       "_n": 8,
       "eager": {
-        "normalization": 1.0017899912782013,
-        "dispersion": 753.1026210053824,
-        "glm_fit": 37.856343027669936,
-        "significance": 115.23305397713557,
-        "lfc_shrink": 3352.614759991411,
-        "total": 4259.808567992877
+        "normalization": 1.1319126933813095,
+        "dispersion": 800.8473962545395,
+        "glm_fit": 38.78029249608517,
+        "significance": 77.67313160002232,
+        "lfc_shrink": 2674.6004559099674,
+        "stage_total": 3593.0331889539957,
+        "total": 3596.0824377834797,
+        "total_values_ms": [
+          3599.3858501315117,
+          3595.2397771179676,
+          3596.0824377834797,
+          3604.804292321205,
+          3592.2474078834057
+        ]
       },
       "graph": {
-        "normalization": 0.9999949834309518,
-        "dispersion": 185.32021896680817,
-        "glm_fit": 36.31710301851854,
-        "significance": 115.29902397887781,
-        "lfc_shrink": 3326.8772570299916,
-        "total": 3664.813597977627
+        "normalization": 1.1229515075683594,
+        "dispersion": 197.95163720846176,
+        "glm_fit": 38.35231624543667,
+        "significance": 77.83985882997513,
+        "lfc_shrink": 2666.9596694409847,
+        "stage_total": 2982.2264332324266,
+        "total": 3002.5305207818747,
+        "total_values_ms": [
+          3011.895053088665,
+          3039.6389309316874,
+          2999.889835715294,
+          2993.0423330515623,
+          3002.5305207818747
+        ]
       },
       "triton": {
-        "normalization": 1.0055250022560358,
-        "dispersion": 59.85009600408375,
-        "glm_fit": 37.398946995381266,
-        "significance": 118.50573198171332,
-        "lfc_shrink": 3412.212074967101,
-        "total": 3628.9723749505356
+        "normalization": 1.113545149564743,
+        "dispersion": 62.37331219017506,
+        "glm_fit": 39.0839297324419,
+        "significance": 74.60234872996807,
+        "lfc_shrink": 2674.4381356984377,
+        "stage_total": 2851.6112715005875,
+        "total": 2869.893318042159,
+        "total_values_ms": [
+          2862.0793260633945,
+          2872.2741939127445,
+          2869.893318042159,
+          2866.657054051757,
+          2880.1285941153765
+        ]
       }
     },
     "airway_dex": {
       "_P": 2,
       "_n": 8,
       "eager": {
-        "normalization": 0.9970359969884157,
-        "dispersion": 427.3101770086214,
-        "glm_fit": 56.974992970936,
-        "significance": 145.3585010021925,
-        "lfc_shrink": 699.377694982104,
-        "total": 1330.0184019608423
+        "normalization": 1.1249873787164688,
+        "dispersion": 581.2509637326002,
+        "glm_fit": 58.048177510499954,
+        "significance": 81.94833993911743,
+        "lfc_shrink": 573.1969177722931,
+        "stage_total": 1295.5693863332272,
+        "total": 1332.3313985019922,
+        "total_values_ms": [
+          1311.7010574787855,
+          1344.25831399858,
+          1336.1434899270535,
+          1328.862363472581,
+          1332.3313985019922
+        ]
       },
       "graph": {
-        "normalization": 1.046045043040067,
-        "dispersion": 109.91207702318206,
-        "glm_fit": 56.33914901409298,
-        "significance": 126.41870405059308,
-        "lfc_shrink": 716.055425000377,
-        "total": 1009.7714001312852
+        "normalization": 1.100858673453331,
+        "dispersion": 140.75744338333607,
+        "glm_fit": 58.83209593594074,
+        "significance": 109.09238085150719,
+        "lfc_shrink": 578.3096253871918,
+        "stage_total": 888.0924042314291,
+        "total": 857.9581584781408,
+        "total_values_ms": [
+          857.9581584781408,
+          863.7746926397085,
+          853.9478648453951,
+          857.4240636080503,
+          863.0452435463667
+        ]
       },
       "triton": {
-        "normalization": 1.0538200149312615,
-        "dispersion": 51.654882030561566,
-        "glm_fit": 55.83884904626757,
-        "significance": 123.95041703712195,
-        "lfc_shrink": 711.2973449984565,
-        "total": 943.7953131273389
+        "normalization": 1.1000055819749832,
+        "dispersion": 56.193187832832336,
+        "glm_fit": 57.34621360898018,
+        "significance": 82.41553232073784,
+        "lfc_shrink": 576.398765668273,
+        "stage_total": 773.4537050127983,
+        "total": 790.3563510626554,
+        "total_values_ms": [
+          790.5661035329103,
+          790.3563510626554,
+          801.0290544480085,
+          784.9235609173775,
+          777.4371672421694
+        ]
       }
     },
     "gtex_blood_muscle": {
       "_P": 2,
       "_n": 300,
       "eager": {
-        "normalization": 3.706126008182764,
-        "dispersion": 3506.6866549896076,
-        "glm_fit": 3148.3706909930333,
-        "significance": 613.2358839968219,
-        "lfc_shrink": 1253.6368440487422,
-        "total": 8525.636200036388
+        "normalization": 3.739669919013977,
+        "dispersion": 3573.5650267452,
+        "glm_fit": 848.9383868873119,
+        "significance": 84.76288802921772,
+        "lfc_shrink": 570.258479565382,
+        "stage_total": 5081.264451146126,
+        "total": 5284.138755872846,
+        "total_values_ms": [
+          5259.93656180799,
+          5250.145260244608,
+          5302.1086398512125,
+          5348.093969747424,
+          5284.138755872846
+        ]
       },
       "graph": {
-        "normalization": 3.711030993144959,
-        "dispersion": 3625.040140992496,
-        "glm_fit": 2793.68176398566,
-        "significance": 610.1866620010696,
-        "lfc_shrink": 1251.7651810194366,
-        "total": 8284.384778991807
+        "normalization": 3.736468032002449,
+        "dispersion": 3612.039279192686,
+        "glm_fit": 490.7516445964575,
+        "significance": 73.26203025877476,
+        "lfc_shrink": 568.997997790575,
+        "stage_total": 4748.787419870496,
+        "total": 4909.795712679625,
+        "total_values_ms": [
+          4905.3825959563255,
+          4909.795712679625,
+          4906.1340522021055,
+          4922.898067161441,
+          4949.366783723235
+        ]
       },
       "triton": {
-        "normalization": 3.6976939882151783,
-        "dispersion": 200.29417297337204,
-        "glm_fit": 2693.806270021014,
-        "significance": 609.2421659850515,
-        "lfc_shrink": 1237.4473860254511,
-        "total": 4744.487688993104
+        "normalization": 3.7296954542398453,
+        "dispersion": 217.34522469341755,
+        "glm_fit": 432.37775936722755,
+        "significance": 95.44759802520275,
+        "lfc_shrink": 929.174454882741,
+        "stage_total": 1678.0747324228287,
+        "total": 1806.6183179616928,
+        "total_values_ms": [
+          1838.9652408659458,
+          1838.6509995907545,
+          1781.3320606946945,
+          1806.6183179616928,
+          1786.7568228393793
+        ]
       }
     },
     "pasilla": {
       "_P": 2,
       "_n": 7,
       "eager": {
-        "normalization": 1.0017540189437568,
-        "dispersion": 416.66495002573356,
-        "glm_fit": 39.16924400255084,
-        "significance": 61.909260984975845,
-        "lfc_shrink": 503.64203000208363,
-        "total": 1022.3872390342876
+        "normalization": 1.0836683213710785,
+        "dispersion": 463.1931111216545,
+        "glm_fit": 41.56343452632427,
+        "significance": 40.19627533853054,
+        "lfc_shrink": 419.93855871260166,
+        "stage_total": 965.9750480204821,
+        "total": 972.208047285676,
+        "total_values_ms": [
+          970.6573393195868,
+          971.0086788982153,
+          972.208047285676,
+          975.0786814838648,
+          976.4569755643606
+        ]
       },
       "graph": {
-        "normalization": 1.0473310248926282,
-        "dispersion": 71.3432360207662,
-        "glm_fit": 38.811378995887935,
-        "significance": 60.870010987855494,
-        "lfc_shrink": 500.85741200018674,
-        "total": 672.929369029589
+        "normalization": 1.0847579687833786,
+        "dispersion": 77.85402052104473,
+        "glm_fit": 42.3556063324213,
+        "significance": 39.723679423332214,
+        "lfc_shrink": 422.3592225462198,
+        "stage_total": 583.3772867918015,
+        "total": 588.4986538439989,
+        "total_values_ms": [
+          596.5292640030384,
+          593.4418328106403,
+          586.0772859305143,
+          588.4986538439989,
+          585.0594602525234
+        ]
       },
       "triton": {
-        "normalization": 1.0464439983479679,
-        "dispersion": 20.412158977705985,
-        "glm_fit": 38.66462199948728,
-        "significance": 61.56057398766279,
-        "lfc_shrink": 629.7968350118026,
-        "total": 751.4806339750066
+        "normalization": 1.0837558656930923,
+        "dispersion": 21.240441128611565,
+        "glm_fit": 41.30302928388119,
+        "significance": 39.76170904934406,
+        "lfc_shrink": 420.6035267561674,
+        "stage_total": 523.9924620836973,
+        "total": 524.6250461786985,
+        "total_values_ms": [
+          524.2919567972422,
+          524.6250461786985,
+          522.549306973815,
+          525.5903545767069,
+          525.8782897144556
+        ]
       }
     },
     "pasilla_2fac": {
       "_P": 3,
       "_n": 7,
       "eager": {
-        "normalization": 0.9811859927140176,
-        "dispersion": 729.8745070002042,
-        "glm_fit": 334.07992898719385,
-        "significance": 74.79976199101657,
-        "lfc_shrink": 396.2853470002301,
-        "total": 1536.0207309713587
+        "normalization": 1.1008437722921371,
+        "dispersion": 776.7594736069441,
+        "glm_fit": 353.7478409707546,
+        "significance": 49.594251438975334,
+        "lfc_shrink": 347.1083343029022,
+        "stage_total": 1528.3107440918684,
+        "total": 1540.5062530189753,
+        "total_values_ms": [
+          1550.331862643361,
+          1540.5062530189753,
+          1543.4659849852324,
+          1535.324914380908,
+          1539.0774048864841
+        ]
       },
       "graph": {
-        "normalization": 0.9666350088082254,
-        "dispersion": 163.05375302908942,
-        "glm_fit": 338.29246199456975,
-        "significance": 59.61505096638575,
-        "lfc_shrink": 398.51746801286936,
-        "total": 960.4453690117225
+        "normalization": 1.086559146642685,
+        "dispersion": 174.168162047863,
+        "glm_fit": 354.4281255453825,
+        "significance": 49.75732043385506,
+        "lfc_shrink": 345.66691517829895,
+        "stage_total": 925.1070823520422,
+        "total": 931.8502098321915,
+        "total_values_ms": [
+          933.3912655711174,
+          929.2846992611885,
+          927.3236189037561,
+          931.8502098321915,
+          936.3448936492205
+        ]
       },
       "triton": {
-        "normalization": 0.973369984421879,
-        "dispersion": 83.47996498923749,
-        "glm_fit": 334.69751599477604,
-        "significance": 58.84925398277119,
-        "lfc_shrink": 397.92574499733746,
-        "total": 875.925849948544
+        "normalization": 1.0784417390823364,
+        "dispersion": 86.96978352963924,
+        "glm_fit": 352.37668827176094,
+        "significance": 49.19474758207798,
+        "lfc_shrink": 347.0173981040716,
+        "stage_total": 836.6370592266321,
+        "total": 847.6234134286642,
+        "total_values_ms": [
+          853.9288397878408,
+          844.8859415948391,
+          847.3111521452665,
+          847.6234134286642,
+          850.7812786847353
+        ]
       }
     }
-  },
-  "pydeseq2": {}
+  }
 }

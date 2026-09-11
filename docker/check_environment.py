@@ -5,13 +5,13 @@ import subprocess
 
 EXPECTED = {
     "formulaic": "1.2.2",
-    "numba": "0.61.2",
-    "numpy": "2.2.6",
+    "numba": "0.64.0",
+    "numpy": "2.4.6",
     "pandas": "2.3.3",
-    "scipy": "1.15.3",
+    "scipy": "1.17.1",
     "statsmodels": "0.14.6",
-    "torch": "2.6.0+cu124",
-    "triton": "3.2.0",
+    "torch": "2.7.1",
+    "triton": "3.3.1",
 }
 
 actual = {package: version(package) for package in EXPECTED}
@@ -50,6 +50,14 @@ if r_versions != expected_r:
     )
 
 import torch
+
+expected_torch_build = "2.7.1+cu126"
+if torch.__version__ != expected_torch_build or torch.version.cuda != "12.6":
+    raise SystemExit(
+        "PyTorch CUDA build mismatch: expected "
+        f"{expected_torch_build}/CUDA 12.6, found "
+        f"{torch.__version__}/CUDA {torch.version.cuda}"
+    )
 
 print("environment OK")
 print(f"Python packages: {actual}")

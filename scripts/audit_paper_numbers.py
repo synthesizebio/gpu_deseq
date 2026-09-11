@@ -184,6 +184,25 @@ for artifact_name, artifact in (
 # stored the stage sum in ``total``; newly generated artifacts store a direct
 # observation in ``total`` and the matched sum in ``stage_total``.
 timing_provenance = TIMING["provenance"]
+check(
+    "current timing source commit",
+    timing_provenance.get("git_commit")
+    == "09feffd5276fd30037e8caffabd71c1d5ae4df25",
+)
+check(
+    "current timing clean checkout",
+    timing_provenance.get("working_tree_dirty_at_start") is False,
+)
+check(
+    "current timing PyTorch",
+    timing_provenance.get("torch_version") == "2.7.1+cu126",
+)
+check("current timing CUDA", timing_provenance.get("torch_cuda_version") == "12.6")
+check(
+    "paper records current timing stack",
+    "PyTorch~2.7.1 with CUDA~12.6 and NVIDIA driver~580.126.20"
+    in TEX_NORMALIZED,
+)
 legacy_stage_total = timing_provenance.get("direct_end_to_end") is False
 if legacy_stage_total:
     check("legacy timing is labelled non-direct", True)
@@ -306,12 +325,38 @@ for case, label in CASES:
         all(round(a) == round(b) for a, b in zip(shown_sum, actual_sum)),
     )
     speedups.append(actual_sum[0] / min(actual_sum[1:]))
-check("stage speed minimum", round(min(speedups), 1) == 8.4, min(speedups))
-check("stage speed maximum", round(max(speedups), 1) == 58.9, max(speedups))
+check("stage speed minimum", round(min(speedups), 1) == 10.6, min(speedups))
+check("stage speed maximum", round(max(speedups), 1) == 171.2, max(speedups))
 check(
     "headline stage range appears three times",
-    TEX.count(r"\fact{8.4--58.9$\times$}") == 3,
+    TEX.count(r"\fact{10.6--171.2$\times$}") == 3,
 )
+
+
+# Direct cross-implementation observations are reported separately from stage sums.
+direct_gpu_table = table("tab:realdirectgpu")
+for case, label in CASES:
+    row = next(
+        line
+        for line in direct_gpu_table.splitlines()
+        if line.strip().startswith(label + " ")
+    )
+    shown = [numeric_cell(cell) for cell in row.split("&")[1:]]
+    actual_ms = [TIMING["r"][case]["total"]] + [
+        TIMING["cu"][case][mode]["total"] for mode in MODES
+    ]
+    actual_speedup = actual_ms[0] / min(actual_ms[1:])
+    check(
+        f"direct GPU table {case}: times",
+        all(
+            round(displayed, 3) == round(actual / 1000, 3)
+            for displayed, actual in zip(shown[:4], actual_ms)
+        ),
+    )
+    check(
+        f"direct GPU table {case}: speedup",
+        round(shown[4], 1) == round(actual_speedup, 1),
+    )
 
 
 # Sample-axis table has a clean, versioned primary artifact.
@@ -369,8 +414,8 @@ check(
 )
 check(
     "reported Triton dispersion endpoints",
-    round(TIMING["cu"]["pasilla_2fac"]["eager"]["dispersion"] / TIMING["cu"]["pasilla_2fac"]["triton"]["dispersion"], 1) == 8.7
-    and round(TIMING["cu"]["airway"]["eager"]["dispersion"] / TIMING["cu"]["airway"]["triton"]["dispersion"], 1) == 2.7,
+    round(TIMING["cu"]["pasilla_2fac"]["eager"]["dispersion"] / TIMING["cu"]["pasilla_2fac"]["triton"]["dispersion"], 1) == 8.9
+    and round(TIMING["cu"]["airway"]["eager"]["dispersion"] / TIMING["cu"]["airway"]["triton"]["dispersion"], 1) == 2.8,
 )
 mode_dispersion = {
     case: next(row for row in rows if row["substep"] == "dispersion")
@@ -395,7 +440,7 @@ check(
         for case, row in mode_dispersion.items()
         if case != "gtex_blood_muscle"
     )
-    <= 3.2e-7,
+    <= 3.8e-7,
 )
 
 
@@ -422,20 +467,20 @@ checked_facts = {
     "8.5e-4",
     "0.99963",
     "0.99722",
-    "8.4--58.9$\\times$",
+    "10.6--171.2$\\times$",
     "0.44\\%",
     "$8.1\\times10^{-5}$",
     "3{,}993",
     "0.99997",
-    "8.7$\\times$",
-    "2.7$\\times$",
-    "730",
-    "83",
-    "1586",
-    "583",
+    "8.9$\\times$",
+    "2.8$\\times$",
+    "777",
+    "87",
+    "1660",
+    "585",
     "4\\,ms",
     "0.2604",
-    "$3.2 \\times 10^{-7}$",
+    "$3.8 \\times 10^{-7}$",
 }
 check(
     "every marked fact is artifact-backed",

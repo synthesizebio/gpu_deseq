@@ -8,7 +8,7 @@ the manuscript audit names the exact files it reads.
 
 | Record | What it contains | Used for |
 |---|---|---|
-| `timings.json` | Retained A100 cuDESeq2 timings and corrected one-worker, per-substep R timings for the six real designs. These legacy totals are sums of five stage medians; the current harness records direct totals separately. R 4.6.0, DESeq2 1.52.0, apeglm 1.34.0. | Matched per-stage columns in Table 4 and the 8.4--58.9x stage-summed comparison. |
+| `timings.json` | Versioned A100 cuDESeq2 timings and one-worker R timings for the six real designs. It records five raw direct observations, their median, and the independently measured stage medians for every GPU mode. R 4.6.0, DESeq2 1.52.0, apeglm 1.34.0; GPU measurements are from clean commit `09feffd`. | Matched per-stage columns, the 10.6--171.2x stage-summed comparison, and the separate direct end-to-end table. |
 | `r_parallel_a100_12worker.json` | A100-host direct full-pipeline R timing at one and 12 `MulticoreParam` workers, with standard count-outlier replacement/refitting. R 4.6.0, DESeq2 1.52.0, apeglm 1.34.0. | The two direct R columns in Table 3. |
 | `reference_parity.json` | R--cuDESeq2 output-parity measurements on the six real designs. | Table 2 and numerical-parity claims. |
 | `parity.json` | Per-mode eager/graph/Triton differences retained by the A100 run. | GPU-mode agreement claims, including the GTEx maximum absolute dispersion difference. |
