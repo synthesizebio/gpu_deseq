@@ -16,10 +16,12 @@
     "torch_cuda_version": "12.6",
     "nvidia_driver_version": "580.126.20",
     "observed_utc_start_from_output_mtime": "2026-09-11T21:58:10.463453+00:00",
-    "observed_utc_end_from_output_mtime": "2026-09-12T00:17:55.768577+00:00",
+    "observed_utc_end_from_output_mtime": "2026-09-12T02:19:46.114445+00:00",
     "gpu_timing_contract": "one warm-up, five staged repetitions, and five direct repetitions; CUDA-synchronized medians; source-matrix extraction excluded",
     "oom_probe_contract": "one cold staged workflow per fresh process; no separate direct run",
     "r_endpoint_contract": "one cold, one-worker staged observation; used only as an explicitly single-observation endpoint comparison",
+    "r_direct_timing_commit": "f834cd9dffce631b83b945cbb8842e01803e648e",
+    "r_direct_endpoint_contract": "one cold direct observation in a fresh process for each worker count; DESeqDataSet construction + DESeq() + results() + lfcShrink(); SerialParam or MulticoreParam(12); BLAS and OpenMP pinned to one",
     "input_file_sha256": {
       "p2_300_gpu.json": "eaba7e0d4737477314b659fb54bb4081f76073970edeb7dee0e32ee909399f06",
       "p2_600_gpu.json": "35cc66200f71436e2b45dd4db9d43aa0cadfefce00c18c269aef2b7ad79ce101",
@@ -38,7 +40,13 @@
       "p2_912_parity.json": "56b09eb92e5fe0febfcd1d4e02def5ff30ea35d3aa19756513aa2490fbf38f88",
       "p6_all_r/r_timings.json": "978284d6e002a270a581609acc596c09079960518b4aeff8709d0a792d9d4645",
       "p6_all_r/r_dispersion_stage.json": "00b54d1046e165e37ff85557e39a36af65e1c8c979cf1cf81ddc2615fe5df2c5",
-      "p6_all_parity.json": "4e5ce34cd95aea87ec58618c2ef0b08582c97ff6c04d9af64789327ef2d25f0f"
+      "p6_all_parity.json": "4e5ce34cd95aea87ec58618c2ef0b08582c97ff6c04d9af64789327ef2d25f0f",
+      "p2_912_r_direct_1/r_direct_timings.json": "127d5b13cc17535aaf299695f15fb78c92322d809f76bce0b42bae1691c232fd",
+      "p2_912_r_direct_12/r_direct_timings.json": "db42b7996ccf60484d2ca0570033402e51b08b2f6785f2d37698519138ffa696",
+      "p2_912_r_worker_parity.json": "a37f2f31774db3bcfbdeca2594e5948f8581ae24954968fb0001dc11de645f6e",
+      "p6_all_r_direct_1/r_direct_timings.json": "6d695cc659e4e0a62893bd98f4e9a666e910fe10e35a3d60f46ec9f5bf40385a",
+      "p6_all_r_direct_12/r_direct_timings.json": "71efad36080ea6c9675d3e7bbc943358b5a540a047f061ff6916b44f846b870b",
+      "p6_all_r_worker_parity.json": "4c86e4a2d412386e270e6e3c0f1cc2c09aadc04022d9a18daad48d3a6cdd7c64"
     }
   },
   "gpu_timings": {
@@ -27595,6 +27603,286 @@
         "pass": true
       },
       "stage_speedup_vs_gpu": 137.15842855639247
+    }
+  },
+  "r_direct_endpoints": {
+    "p2_912": {
+      "one_worker": {
+        "status": "pass",
+        "n_samples": 912,
+        "P": 2,
+        "coefficient": "tissue_Muscle...Skeletal_vs_Whole.Blood",
+        "workers": 1,
+        "backend": "BiocParallel::SerialParam",
+        "parallel": false,
+        "warmups": 0,
+        "reps": 1,
+        "direct_values_ms": [
+          947191.0
+        ],
+        "direct_median_ms": 947191.0,
+        "total_definition": "direct DESeqDataSet construction + DESeq() + results() + lfcShrink(type=apeglm)",
+        "git_commit": "f834cd9dffce631b83b945cbb8842e01803e648e",
+        "working_tree_dirty_at_start": false,
+        "r_version": "4.6.0",
+        "deseq2_version": "1.52.0",
+        "apeglm_version": "1.34.0",
+        "blas_threads": "1",
+        "omp_threads": "1",
+        "cpu_model": "Intel(R) Xeon(R) CPU @ 2.20GHz",
+        "logical_cpu_count": 12,
+        "source_rdata_sha256": "1727cc2b97e3b9792871b98c467f6be326dae022aeb870f6434c427c4947c46d",
+        "matrix_metadata_sha256": "bec711f107bd7eb75d1aca5e4b5a271038c24e96161af861389ef96ddff07af8",
+        "gpu_case_sha256": "14d3f78db86a6ba539956d616050b5a05bc2b7403eb77ff3b9eaf59f6694ba8d",
+        "result_file_sha256": {
+          "r_sizefactors.csv": "d8976af02e7af289ab8ca4f3a66309d17a834a44504dc1967ac595b31b0663e0",
+          "r_refit_dispersions.csv": "6c49cb2ce04eac4aeaa8cc83731d7f30bff2b6a9f35bb7a56c4f14aef10a19ba",
+          "r_results.csv": "9530a4f66210c09e2f265096be156b42f44fe86496c0a887e69d9ac4f0b0767a",
+          "r_shrink.csv": "aa4e8764a703e27339566514259888920ca454d7d7e11d04a25adbf58f315030"
+        },
+        "measured_utc_start": "2026-09-12 00:47:57 UTC",
+        "measured_utc_end": "2026-09-12 01:03:44 UTC"
+      },
+      "twelve_workers": {
+        "status": "pass",
+        "n_samples": 912,
+        "P": 2,
+        "coefficient": "tissue_Muscle...Skeletal_vs_Whole.Blood",
+        "workers": 12,
+        "backend": "BiocParallel::MulticoreParam",
+        "parallel": true,
+        "warmups": 0,
+        "reps": 1,
+        "direct_values_ms": [
+          213896.0
+        ],
+        "direct_median_ms": 213896.0,
+        "total_definition": "direct DESeqDataSet construction + DESeq() + results() + lfcShrink(type=apeglm)",
+        "git_commit": "f834cd9dffce631b83b945cbb8842e01803e648e",
+        "working_tree_dirty_at_start": false,
+        "r_version": "4.6.0",
+        "deseq2_version": "1.52.0",
+        "apeglm_version": "1.34.0",
+        "blas_threads": "1",
+        "omp_threads": "1",
+        "cpu_model": "Intel(R) Xeon(R) CPU @ 2.20GHz",
+        "logical_cpu_count": 12,
+        "source_rdata_sha256": "1727cc2b97e3b9792871b98c467f6be326dae022aeb870f6434c427c4947c46d",
+        "matrix_metadata_sha256": "bec711f107bd7eb75d1aca5e4b5a271038c24e96161af861389ef96ddff07af8",
+        "gpu_case_sha256": "14d3f78db86a6ba539956d616050b5a05bc2b7403eb77ff3b9eaf59f6694ba8d",
+        "result_file_sha256": {
+          "r_sizefactors.csv": "d8976af02e7af289ab8ca4f3a66309d17a834a44504dc1967ac595b31b0663e0",
+          "r_refit_dispersions.csv": "6c49cb2ce04eac4aeaa8cc83731d7f30bff2b6a9f35bb7a56c4f14aef10a19ba",
+          "r_results.csv": "9530a4f66210c09e2f265096be156b42f44fe86496c0a887e69d9ac4f0b0767a",
+          "r_shrink.csv": "aa4e8764a703e27339566514259888920ca454d7d7e11d04a25adbf58f315030"
+        },
+        "measured_utc_start": "2026-09-12 00:43:22 UTC",
+        "measured_utc_end": "2026-09-12 00:46:56 UTC"
+      },
+      "worker_parity": {
+        "serial_files_sha256": {
+          "r_sizefactors.csv": "d8976af02e7af289ab8ca4f3a66309d17a834a44504dc1967ac595b31b0663e0",
+          "r_refit_dispersions.csv": "6c49cb2ce04eac4aeaa8cc83731d7f30bff2b6a9f35bb7a56c4f14aef10a19ba",
+          "r_results.csv": "9530a4f66210c09e2f265096be156b42f44fe86496c0a887e69d9ac4f0b0767a",
+          "r_shrink.csv": "aa4e8764a703e27339566514259888920ca454d7d7e11d04a25adbf58f315030",
+          "r_direct_timings.json": "127d5b13cc17535aaf299695f15fb78c92322d809f76bce0b42bae1691c232fd"
+        },
+        "parallel_files_sha256": {
+          "r_sizefactors.csv": "d8976af02e7af289ab8ca4f3a66309d17a834a44504dc1967ac595b31b0663e0",
+          "r_refit_dispersions.csv": "6c49cb2ce04eac4aeaa8cc83731d7f30bff2b6a9f35bb7a56c4f14aef10a19ba",
+          "r_results.csv": "9530a4f66210c09e2f265096be156b42f44fe86496c0a887e69d9ac4f0b0767a",
+          "r_shrink.csv": "aa4e8764a703e27339566514259888920ca454d7d7e11d04a25adbf58f315030",
+          "r_direct_timings.json": "db42b7996ccf60484d2ca0570033402e51b08b2f6785f2d37698519138ffa696"
+        },
+        "n_samples": 912,
+        "n_genes": 54922,
+        "metrics": [
+          {
+            "substep": "normalization",
+            "metric": "max_relative_error",
+            "value": 0.0,
+            "threshold": 1e-10,
+            "higher_better": false,
+            "pass": true
+          },
+          {
+            "substep": "refit_dispersion",
+            "metric": "max_relative_error",
+            "value": 0.0,
+            "threshold": 1e-10,
+            "higher_better": false,
+            "pass": true
+          },
+          {
+            "substep": "glm_fit",
+            "metric": "max_absolute_lfc_error",
+            "value": 0.0,
+            "threshold": 1e-10,
+            "higher_better": false,
+            "pass": true
+          },
+          {
+            "substep": "significance",
+            "metric": "jaccard_padj_005",
+            "value": 1.0,
+            "threshold": 1.0,
+            "higher_better": true,
+            "pass": true
+          },
+          {
+            "substep": "lfc_shrink",
+            "metric": "pearson",
+            "value": 1.0,
+            "threshold": 0.9999999999,
+            "higher_better": true,
+            "max_absolute_lfc_error": 0.0,
+            "pass": true
+          }
+        ],
+        "pass": true
+      },
+      "r_parallel_speedup": 4.428278228671878,
+      "gpu_speedup_vs_one_worker": 174.44215814258237,
+      "gpu_speedup_vs_twelve_workers": 39.39277279668599
+    },
+    "p6_all": {
+      "one_worker": {
+        "status": "pass",
+        "n_samples": 2451,
+        "P": 6,
+        "coefficient": "tissue_Muscle...Skeletal_vs_Whole.Blood",
+        "workers": 1,
+        "backend": "BiocParallel::SerialParam",
+        "parallel": false,
+        "warmups": 0,
+        "reps": 1,
+        "direct_values_ms": [
+          3609156.0
+        ],
+        "direct_median_ms": 3609156.0,
+        "total_definition": "direct DESeqDataSet construction + DESeq() + results() + lfcShrink(type=apeglm)",
+        "git_commit": "f834cd9dffce631b83b945cbb8842e01803e648e",
+        "working_tree_dirty_at_start": false,
+        "r_version": "4.6.0",
+        "deseq2_version": "1.52.0",
+        "apeglm_version": "1.34.0",
+        "blas_threads": "1",
+        "omp_threads": "1",
+        "cpu_model": "Intel(R) Xeon(R) CPU @ 2.20GHz",
+        "logical_cpu_count": 12,
+        "source_rdata_sha256": "1727cc2b97e3b9792871b98c467f6be326dae022aeb870f6434c427c4947c46d",
+        "matrix_metadata_sha256": "bec711f107bd7eb75d1aca5e4b5a271038c24e96161af861389ef96ddff07af8",
+        "gpu_case_sha256": "6770ae0d4eb662182a5b658e0fe6eca2dc62ea6811310300caa45d0b3ef5607b",
+        "result_file_sha256": {
+          "r_sizefactors.csv": "c98e9e756e04d694520b66962944276248416c10d789d3c7060b7304c779e378",
+          "r_refit_dispersions.csv": "1952194e726116e2a74a5858e4cf7b9ad8c52765c5c39e4f167e7c6dab1e1b3c",
+          "r_results.csv": "34e4c58c84ba961cf8045b1b584a862fdef196a53dda257676f97edba551bb4c",
+          "r_shrink.csv": "72bf08e15284f028f0018cd410fb5ed847b2b3ca407c2560074ceec1243f60f7"
+        },
+        "measured_utc_start": "2026-09-12 01:17:03 UTC",
+        "measured_utc_end": "2026-09-12 02:17:12 UTC"
+      },
+      "twelve_workers": {
+        "status": "pass",
+        "n_samples": 2451,
+        "P": 6,
+        "coefficient": "tissue_Muscle...Skeletal_vs_Whole.Blood",
+        "workers": 12,
+        "backend": "BiocParallel::MulticoreParam",
+        "parallel": true,
+        "warmups": 0,
+        "reps": 1,
+        "direct_values_ms": [
+          642552.0
+        ],
+        "direct_median_ms": 642552.0,
+        "total_definition": "direct DESeqDataSet construction + DESeq() + results() + lfcShrink(type=apeglm)",
+        "git_commit": "f834cd9dffce631b83b945cbb8842e01803e648e",
+        "working_tree_dirty_at_start": false,
+        "r_version": "4.6.0",
+        "deseq2_version": "1.52.0",
+        "apeglm_version": "1.34.0",
+        "blas_threads": "1",
+        "omp_threads": "1",
+        "cpu_model": "Intel(R) Xeon(R) CPU @ 2.20GHz",
+        "logical_cpu_count": 12,
+        "source_rdata_sha256": "1727cc2b97e3b9792871b98c467f6be326dae022aeb870f6434c427c4947c46d",
+        "matrix_metadata_sha256": "bec711f107bd7eb75d1aca5e4b5a271038c24e96161af861389ef96ddff07af8",
+        "gpu_case_sha256": "6770ae0d4eb662182a5b658e0fe6eca2dc62ea6811310300caa45d0b3ef5607b",
+        "result_file_sha256": {
+          "r_sizefactors.csv": "c98e9e756e04d694520b66962944276248416c10d789d3c7060b7304c779e378",
+          "r_refit_dispersions.csv": "a52d22e00a3d0cbf7eea7629a3089383cde0310fe54904176357d8b431b576a7",
+          "r_results.csv": "44ddf57169ad948c74649ce78a367f1eb5e72d65ea1427beaa5d33c962922c08",
+          "r_shrink.csv": "c67f8d62f7717547fa340cf30f3aa3a9a2df687f2ff70c4d8697eadec140b03d"
+        },
+        "measured_utc_start": "2026-09-12 01:05:01 UTC",
+        "measured_utc_end": "2026-09-12 01:15:44 UTC"
+      },
+      "worker_parity": {
+        "serial_files_sha256": {
+          "r_sizefactors.csv": "c98e9e756e04d694520b66962944276248416c10d789d3c7060b7304c779e378",
+          "r_refit_dispersions.csv": "1952194e726116e2a74a5858e4cf7b9ad8c52765c5c39e4f167e7c6dab1e1b3c",
+          "r_results.csv": "34e4c58c84ba961cf8045b1b584a862fdef196a53dda257676f97edba551bb4c",
+          "r_shrink.csv": "72bf08e15284f028f0018cd410fb5ed847b2b3ca407c2560074ceec1243f60f7",
+          "r_direct_timings.json": "6d695cc659e4e0a62893bd98f4e9a666e910fe10e35a3d60f46ec9f5bf40385a"
+        },
+        "parallel_files_sha256": {
+          "r_sizefactors.csv": "c98e9e756e04d694520b66962944276248416c10d789d3c7060b7304c779e378",
+          "r_refit_dispersions.csv": "a52d22e00a3d0cbf7eea7629a3089383cde0310fe54904176357d8b431b576a7",
+          "r_results.csv": "44ddf57169ad948c74649ce78a367f1eb5e72d65ea1427beaa5d33c962922c08",
+          "r_shrink.csv": "c67f8d62f7717547fa340cf30f3aa3a9a2df687f2ff70c4d8697eadec140b03d",
+          "r_direct_timings.json": "71efad36080ea6c9675d3e7bbc943358b5a540a047f061ff6916b44f846b870b"
+        },
+        "n_samples": 2451,
+        "n_genes": 54922,
+        "metrics": [
+          {
+            "substep": "normalization",
+            "metric": "max_relative_error",
+            "value": 0.0,
+            "threshold": 1e-10,
+            "higher_better": false,
+            "pass": true
+          },
+          {
+            "substep": "refit_dispersion",
+            "metric": "max_relative_error",
+            "value": 1.5326683823524586e-14,
+            "threshold": 1e-10,
+            "higher_better": false,
+            "pass": true
+          },
+          {
+            "substep": "glm_fit",
+            "metric": "max_absolute_lfc_error",
+            "value": 9.992007221626409e-15,
+            "threshold": 1e-10,
+            "higher_better": false,
+            "pass": true
+          },
+          {
+            "substep": "significance",
+            "metric": "jaccard_padj_005",
+            "value": 1.0,
+            "threshold": 1.0,
+            "higher_better": true,
+            "pass": true
+          },
+          {
+            "substep": "lfc_shrink",
+            "metric": "pearson",
+            "value": 1.0,
+            "threshold": 0.9999999999,
+            "higher_better": true,
+            "max_absolute_lfc_error": 9.992007221626409e-15,
+            "pass": true
+          }
+        ],
+        "pass": true
+      },
+      "r_parallel_speedup": 5.616908826056101,
+      "gpu_speedup_vs_one_worker": 157.35825356354906,
+      "gpu_speedup_vs_twelve_workers": 28.015098417404396
     }
   }
 }

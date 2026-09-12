@@ -195,6 +195,14 @@ The worker count applies through `BiocParallel::SerialParam` or
 oversubscription. These long endpoint measurements are single observations,
 not five-repetition headline timings.
 
+Confirm that the worker count does not change the result tables:
+
+```bash
+PYTHONPATH=src:. python bench/score_gtex_r_workers.py \
+  /tmp/p6_all_r_direct_1 /tmp/p6_all_r_direct_12 \
+  --output /tmp/p6_all_r_worker_parity.json
+```
+
 For a reference directory produced by an older run of this script, regenerate
 only the pre-Wald dispersion-stage capture without repeating Wald fitting or
 shrinkage:

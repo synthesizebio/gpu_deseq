@@ -1,6 +1,6 @@
 # Real-GTEx scaling and A100 memory boundary
 
-The gene axis is fixed at 54,922. Direct GPU times are medians of five complete observations after one warm-up; stage sums add independently measured stage medians, and peak allocation is the maximum over the five staged repetitions. R endpoint rows are single cold one-worker staged observations and are not pooled with the main five-repetition headline benchmark.
+The gene axis is fixed at 54,922. Direct GPU times are medians of five complete observations after one warm-up; stage sums add independently measured stage medians, and peak allocation is the maximum over the five staged repetitions. R endpoint rows are single cold observations and are not pooled with the main five-repetition headline benchmark.
 
 ## Full-workflow GPU timing
 
@@ -15,7 +15,16 @@ The gene axis is fixed at 54,922. Direct GPU times are medians of five complete 
 | p6_fixed300 | 1800 | 6 | 14.323 | 13.745 | 14.77 |
 | p6_all | 2451 | 6 | 22.936 | 23.415 | 20.10 |
 
-## One-worker R endpoint observations
+## Direct one- and 12-worker R endpoint observations
+
+The R modes use the same public `DESeqDataSetFromMatrix + DESeq + results + lfcShrink` call path in separate fresh processes. CPU scaling and both GPU speedups therefore use matched direct wall times.
+
+| case | samples | P | GPU (s) | R 1 worker (s) | R 12 workers (s) | R 12w speedup | GPU vs 1w | GPU vs 12w | worker parity |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|:---:|
+| p2_912 | 912 | 2 | 5.430 | 947.191 | 213.896 | 4.43× | 174.4× | 39.4× | PASS |
+| p6_all | 2451 | 6 | 22.936 | 3609.156 | 642.552 | 5.62× | 157.4× | 28.0× | PASS |
+
+## Stage-timed one-worker R reference observations
 
 | case | samples | P | R stage sum (s) | GPU stage sum (s) | observed speedup | parity |
 |---|---:|---:|---:|---:|---:|:---:|

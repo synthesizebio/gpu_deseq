@@ -476,23 +476,89 @@ for case, row_prefix in (("p2_912", "912 "), ("p6_all", r"2{,}451 ")):
         line for line in gtex_r_table.splitlines() if line.strip().startswith(row_prefix)
     )
     cells = row.split("&")
-    endpoint = GTEX_SCALING["r_endpoints"][case]
-    check(f"GTEx R endpoint {case}: parity", endpoint["parity"]["pass"] is True)
+    endpoint = GTEX_SCALING["r_direct_endpoints"][case]
+    one_worker = endpoint["one_worker"]
+    twelve_workers = endpoint["twelve_workers"]
+    check(f"GTEx direct R endpoint {case}: worker parity", endpoint["worker_parity"]["pass"] is True)
+    for workers, record in ((1, one_worker), (12, twelve_workers)):
+        check(f"GTEx direct R endpoint {case}/{workers}: pass", record["status"] == "pass")
+        check(
+            f"GTEx direct R endpoint {case}/{workers}: clean",
+            record["working_tree_dirty_at_start"] is False,
+        )
+        check(
+            f"GTEx direct R endpoint {case}/{workers}: contract",
+            record["workers"] == workers
+            and record["warmups"] == 0
+            and record["reps"] == 1
+            and len(record["direct_values_ms"]) == 1
+            and close(
+                record["direct_median_ms"],
+                statistics.median(record["direct_values_ms"]),
+                1e-12,
+            ),
+        )
     check(
-        f"GTEx R endpoint table {case}: R",
+        f"GTEx direct R table {case}: GPU",
         round(numeric_cell(cells[2]), 3)
-        == round(endpoint["timing"]["stage_total_ms"] / 1000, 3),
+        == round(gtex_timings[case]["direct_median_ms"] / 1000, 3),
     )
     check(
-        f"GTEx R endpoint table {case}: GPU",
+        f"GTEx direct R table {case}: one worker",
         round(numeric_cell(cells[3]), 3)
-        == round(gtex_timings[case]["stage_total_ms"] / 1000, 3),
+        == round(one_worker["direct_median_ms"] / 1000, 3),
     )
     check(
-        f"GTEx R endpoint table {case}: speedup",
-        round(numeric_cell(cells[4]), 1)
-        == round(endpoint["stage_speedup_vs_gpu"], 1),
+        f"GTEx direct R table {case}: twelve workers",
+        round(numeric_cell(cells[4]), 3)
+        == round(twelve_workers["direct_median_ms"] / 1000, 3),
     )
+    for cell, key, digits in (
+        (5, "gpu_speedup_vs_one_worker", 1),
+        (6, "gpu_speedup_vs_twelve_workers", 1),
+    ):
+        check(
+            f"GTEx direct R table {case}: {key}",
+            round(numeric_cell(cells[cell]), digits)
+            == round(endpoint[key], digits),
+        )
+    expected_r_scaling = 4.43 if case == "p2_912" else 5.62
+    check(
+        f"GTEx direct R prose {case}: CPU scaling",
+        round(endpoint["r_parallel_speedup"], 2) == expected_r_scaling,
+    )
+
+check(
+    "GTEx direct R endpoint clean timing commit",
+    gtex_provenance["r_direct_timing_commit"]
+    == "f834cd9dffce631b83b945cbb8842e01803e648e",
+)
+for case in ("p2_912", "p6_all"):
+    check(
+        f"GTEx staged GPU--R endpoint {case}: parity",
+        GTEX_SCALING["r_endpoints"][case]["parity"]["pass"] is True,
+    )
+
+p6_worker_metrics = {
+    metric["substep"]: metric
+    for metric in GTEX_SCALING["r_direct_endpoints"]["p6_all"]["worker_parity"]["metrics"]
+}
+check(
+    "GTEx P6 worker dispersion agreement",
+    p6_worker_metrics["refit_dispersion"]["value"] < 1.54e-14,
+)
+check(
+    "GTEx P6 worker raw LFC agreement",
+    p6_worker_metrics["glm_fit"]["value"] < 1.0e-14,
+)
+check(
+    "GTEx P6 worker significant-set agreement",
+    p6_worker_metrics["significance"]["value"] == 1.0,
+)
+check(
+    "GTEx P6 worker shrinkage agreement",
+    p6_worker_metrics["lfc_shrink"]["value"] > 0.9999999999,
+)
 
 p6_metrics = {
     metric["substep"]: metric
@@ -638,8 +704,12 @@ checked_facts = {
     "2{,}451",
     "22.936-s",
     "20.10 GiB",
-    "185.3$\\times$",
-    "137.2$\\times$",
+    "4.43$\\times$",
+    "174.4$\\times$",
+    "39.4$\\times$",
+    "5.62$\\times$",
+    "157.4$\\times$",
+    "28.0$\\times$",
     "0.00212",
     "0.99896",
     "0.999994",

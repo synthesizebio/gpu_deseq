@@ -89,7 +89,9 @@ Wald path includes count-outlier replacement and refitting. On one A100,
 the fastest \cudeseq{} mode is \fact{10.6--171.2$\times$} faster than one-worker
 R when the same five stage medians are summed. A separate real-GTEx scaling
 study runs 54{,}922 genes across \fact{2{,}451} samples and a $P=6$ tissue
-design in a \fact{22.936-s} direct median.\\[3pt]
+design in a \fact{22.936-s} direct median, \fact{157.4$\times$} faster than a
+one-worker direct R endpoint and \fact{28.0$\times$} faster than a 12-worker
+endpoint.\\[3pt]
 \textbf{Availability and implementation:} Open source under the MIT license at
 \url{https://github.com/synthesizebio/gpu_deseq}; PyTorch and a CUDA GPU are
 required for the reported acceleration.\\[3pt]
@@ -396,11 +398,13 @@ R--GPU comparison sums the five independently measured stage medians; it is not
 a directly observed end-to-end duration. A separately collected R experiment
 times the ordinary \texttt{DESeq()} call path directly with one and 12
 BiocParallel workers, and is reported without combining it with stage-summed
-GPU measurements. The two large-GTEx R endpoints are single cold staged
-observations because one run takes 16--54 minutes; they are labeled separately
-and are not pooled with the five-repetition headline comparison. OOM-boundary
-points are also single cold feasibility probes in fresh processes, not timing
-estimates.
+GPU measurements. The large-GTEx worker comparison likewise uses matched
+direct calls in separate fresh processes: one observation for each of two
+cohorts and two worker counts. These four long R endpoints are labeled
+separately and are not pooled with the five-repetition headline comparison.
+Separate one-worker staged observations provide the R outputs for GPU parity.
+OOM-boundary points are also single cold feasibility probes in fresh processes,
+not timing estimates.
 
 We validate on three real, published RNA-seq datasets sliced into six designs
 spanning $P=2$--$5$ model terms: pasilla \citep{brooks2011pasilla}
@@ -681,29 +685,41 @@ For the nested P=2 series, tripling the real sample count from 300 to 912
 increases direct GPU time from 1.753 to 5.430 seconds and peak allocation from
 1.98 to 5.99 GiB. The widest fused case uses all samples from the six largest
 tissues: \fact{2{,}451} samples at $P=6$ complete in a \fact{22.936-s} direct
-median with \fact{20.10 GiB} peak allocation. One cold one-worker R staged
-observation takes 952.305 seconds at 912 samples/P=2 and 3{,}211.540 seconds at
-2{,}451 samples/P=6 (Table~\ref{tab:gtexrendpoint}). These observations imply
-\fact{185.3$\times$} and \fact{137.2$\times$} matched-stage speedups,
-respectively, but are kept outside the main headline because the R endpoints
-have one observation rather than five.
+median with \fact{20.10 GiB} peak allocation. We also measured the same direct
+public R pipeline---\texttt{DESeqDataSetFromMatrix}, \texttt{DESeq},
+\texttt{results}, and \texttt{lfcShrink(type=apeglm)}---with one worker and with
+\texttt{MulticoreParam(12)} in separate fresh processes
+(Table~\ref{tab:gtexrendpoint}). At 912 samples/P=2, 12 workers reduce the R
+endpoint from 947.191 to 213.896 seconds, a \fact{4.43$\times$} CPU speedup;
+the GPU remains \fact{174.4$\times$} faster than one worker and
+\fact{39.4$\times$} faster than 12. At 2{,}451 samples/P=6, 12 workers reduce R
+from 3{,}609.156 to 642.552 seconds, a \fact{5.62$\times$} CPU speedup; the GPU
+remains \fact{157.4$\times$} and \fact{28.0$\times$} faster, respectively.
+These R values are single observations because each complete one-worker call
+takes 16--60 minutes; they are endpoint comparisons, not repeated headline
+estimates.
 
 \begin{table}[htbp]\centering
-\caption{Large-GTEx one-worker R endpoint observations versus the matched sum
-of five GPU stage medians. The R column is one cold staged observation and is
-therefore an endpoint measurement, not part of the five-repetition headline.}
+\caption{Large-GTEx direct endpoint observations. Each R worker setting is one
+cold observation in a separate process; GPU is the direct median of five warm
+observations. All columns include dataset construction and the complete
+workflow. ``GPU vs.'' reports R time divided by GPU time.}
 \label{tab:gtexrendpoint}
 {\footnotesize
-\begin{tabular}{lrrrrr}
+\begin{tabular}{lrrrrrr}
 \toprule
-Samples & $P$ & R (s) & GPU (s) & Speedup & Parity \\\midrule
-912   & 2 & 952.305   & 5.139  & 185.3$\times$ & pass \\
-2{,}451 & 6 & 3{,}211.540 & 23.415 & 137.2$\times$ & pass \\\bottomrule
+Samples & $P$ & GPU (s) & R 1w (s) & R 12w (s) & GPU vs. 1w & GPU vs. 12w \\\midrule
+912 & 2 & 5.430 & 947.191 & 213.896 & 174.4$\times$ & 39.4$\times$ \\
+2{,}451 & 6 & 22.936 & 3{,}609.156 & 642.552 & 157.4$\times$ & 28.0$\times$ \\\bottomrule
 \end{tabular}}
 \end{table}
 
-The endpoint parity checks use the same five predefined tolerances as
-Table~\ref{tab:parity}. At P=6, dispersion p95 relative error is
+Serial and 12-worker R output tables agree to floating-point precision: at
+P=6 the largest relative dispersion difference is $1.53\times10^{-14}$, the
+largest raw- or shrunken-LFC difference is $9.99\times10^{-15}$, and the
+significant sets are identical. The independent GPU--R endpoint parity checks
+use the same five predefined tolerances as Table~\ref{tab:parity}. At P=6,
+dispersion p95 relative error is
 \fact{0.00212}, raw-LFC p95 absolute error is $3.18\times10^{-5}$,
 significant-set Jaccard is \fact{0.99896}, and shrunken-LFC Pearson correlation
 is \fact{0.999994}; all five stages pass. The R exporter preserves dispersion
@@ -861,10 +877,10 @@ PyTorch~2.7.1 with CUDA~12.6 and NVIDIA driver~580.126.20; the R environment was
 R~4.6.0 with DESeq2~1.52.0 and apeglm~1.34.0. OMP, OpenBLAS, and MKL thread
 counts were pinned to one for the R measurements. Main-suite and real-GTEx GPU
 timings are medians of five measured repetitions following an untimed warm-up.
-The two large-GTEx R endpoint observations and four OOM-boundary probes are
-explicitly single-run measurements. The separate synthetic sample-axis sweep
-uses seven measured repetitions after three warm-ups and records its software
-stack in its artifact.
+The four direct large-GTEx R worker endpoints, two one-worker staged parity
+references, and four OOM-boundary probes are explicitly single-run
+measurements. The separate synthetic sample-axis sweep uses seven measured
+repetitions after three warm-ups and records its software stack in its artifact.
 
 \section*{Supplementary algorithms}
 \addcontentsline{toc}{section}{Supplementary algorithms}

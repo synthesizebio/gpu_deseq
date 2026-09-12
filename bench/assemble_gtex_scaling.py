@@ -24,6 +24,7 @@ TIMING_CASES = (
 )
 PROBE_CASES = ("p8_all", "p9_all", "p10_all", "p12_all")
 R_CASES = ("p2_912", "p6_all")
+DIRECT_WORKERS = (1, 12)
 
 
 def digest(path: Path) -> str:
@@ -106,6 +107,61 @@ def assemble(run_dir: Path) -> dict[str, Any]:
         for path in (r_path, dispersion_path, parity_path):
             input_hashes[str(path.relative_to(run_dir))] = digest(path)
 
+    r_direct_endpoints: dict[str, Any] = {}
+    direct_commits: set[str] = set()
+    for case in R_CASES:
+        worker_records: dict[int, Any] = {}
+        for workers in DIRECT_WORKERS:
+            directory = run_dir / f"{case}_r_direct_{workers}"
+            path = directory / "r_direct_timings.json"
+            record = read(path)
+            if record["status"] != "pass":
+                raise ValueError(f"direct R endpoint did not pass: {case}/{workers}")
+            if (record["workers"], record["warmups"], record["reps"]) != (
+                workers,
+                0,
+                1,
+            ):
+                raise ValueError(f"direct R endpoint contract mismatch: {case}/{workers}")
+            if record["working_tree_dirty_at_start"] is not False:
+                raise ValueError(f"direct R endpoint was not run clean: {case}/{workers}")
+            if record["gpu_case_sha256"] != digest(run_dir / f"{case}_gpu.json"):
+                raise ValueError(f"direct R endpoint used wrong GPU cohort: {case}/{workers}")
+            if record["source_rdata_sha256"] != gtex_source["sha256"]:
+                raise ValueError(f"direct R endpoint used wrong source: {case}/{workers}")
+            if record["parallel"] is not (workers > 1):
+                raise ValueError(f"direct R endpoint parallel flag mismatch: {case}/{workers}")
+            for filename, expected_hash in record["result_file_sha256"].items():
+                if digest(directory / filename) != expected_hash:
+                    raise ValueError(
+                        f"direct R endpoint result hash mismatch: {case}/{workers}/{filename}"
+                    )
+            worker_records[workers] = record
+            direct_commits.add(record["git_commit"])
+            input_hashes[str(path.relative_to(run_dir))] = digest(path)
+
+        parity_path = run_dir / f"{case}_r_worker_parity.json"
+        worker_parity = read(parity_path)
+        if worker_parity["pass"] is not True:
+            raise ValueError(f"R worker parity failed: {case}")
+        input_hashes[parity_path.name] = digest(parity_path)
+        serial = worker_records[1]
+        parallel = worker_records[12]
+        gpu_ms = timings[case]["direct_median_ms"]
+        r_direct_endpoints[case] = {
+            "one_worker": serial,
+            "twelve_workers": parallel,
+            "worker_parity": worker_parity,
+            "r_parallel_speedup": serial["direct_median_ms"]
+            / parallel["direct_median_ms"],
+            "gpu_speedup_vs_one_worker": serial["direct_median_ms"] / gpu_ms,
+            "gpu_speedup_vs_twelve_workers": parallel["direct_median_ms"] / gpu_ms,
+        }
+    if len(direct_commits) != 1:
+        raise ValueError(
+            f"direct R endpoints do not share one clean harness commit: {direct_commits}"
+        )
+
     files = [run_dir / name for name in input_hashes]
     observed_end = max(timestamp(path) for path in files)
     first_timing = run_dir / f"{TIMING_CASES[0]}_gpu.json"
@@ -144,11 +200,18 @@ def assemble(run_dir: Path) -> dict[str, Any]:
                 "one cold, one-worker staged observation; used only as an explicitly "
                 "single-observation endpoint comparison"
             ),
+            "r_direct_timing_commit": next(iter(direct_commits)),
+            "r_direct_endpoint_contract": (
+                "one cold direct observation in a fresh process for each worker count; "
+                "DESeqDataSet construction + DESeq() + results() + lfcShrink(); "
+                "SerialParam or MulticoreParam(12); BLAS and OpenMP pinned to one"
+            ),
             "input_file_sha256": input_hashes,
         },
         "gpu_timings": timings,
         "oom_probes": probes,
         "r_endpoints": r_endpoints,
+        "r_direct_endpoints": r_direct_endpoints,
     }
 
 
@@ -159,9 +222,8 @@ def render_markdown(artifact: dict[str, Any]) -> str:
         "The gene axis is fixed at 54,922. Direct GPU times are medians of five "
         "complete observations after one warm-up; stage sums add independently "
         "measured stage medians, and peak allocation is the maximum over the five "
-        "staged repetitions. R endpoint rows are single cold one-worker staged "
-        "observations and are not pooled with the main five-repetition headline "
-        "benchmark.",
+        "staged repetitions. R endpoint rows are single cold observations and "
+        "are not pooled with the main five-repetition headline benchmark.",
         "",
         "## Full-workflow GPU timing",
         "",
@@ -178,7 +240,31 @@ def render_markdown(artifact: dict[str, Any]) -> str:
         )
     lines += [
         "",
-        "## One-worker R endpoint observations",
+        "## Direct one- and 12-worker R endpoint observations",
+        "",
+        "The R modes use the same public `DESeqDataSetFromMatrix + DESeq + results "
+        "+ lfcShrink` call path in separate fresh processes. CPU scaling and both "
+        "GPU speedups therefore use matched direct wall times.",
+        "",
+        "| case | samples | P | GPU (s) | R 1 worker (s) | R 12 workers (s) | R 12w speedup | GPU vs 1w | GPU vs 12w | worker parity |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|:---:|",
+    ]
+    for case in R_CASES:
+        gpu = artifact["gpu_timings"][case]
+        endpoint = artifact["r_direct_endpoints"][case]
+        lines.append(
+            f"| {case} | {gpu['n_samples']} | {gpu['P']} | "
+            f"{gpu['direct_median_ms'] / 1000:.3f} | "
+            f"{endpoint['one_worker']['direct_median_ms'] / 1000:.3f} | "
+            f"{endpoint['twelve_workers']['direct_median_ms'] / 1000:.3f} | "
+            f"{endpoint['r_parallel_speedup']:.2f}× | "
+            f"{endpoint['gpu_speedup_vs_one_worker']:.1f}× | "
+            f"{endpoint['gpu_speedup_vs_twelve_workers']:.1f}× | "
+            f"{'PASS' if endpoint['worker_parity']['pass'] else 'FAIL'} |"
+        )
+    lines += [
+        "",
+        "## Stage-timed one-worker R reference observations",
         "",
         "| case | samples | P | R stage sum (s) | GPU stage sum (s) | observed speedup | parity |",
         "|---|---:|---:|---:|---:|---:|:---:|",

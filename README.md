@@ -47,10 +47,12 @@ The separate [real-GTEx scaling record](bench/results/GTEX_SCALING.md) holds
 the gene axis at 54,922 and measures complete workflows through 2,451 samples
 and a six-tissue design. The largest fused-Triton case has a 22.936-second
 direct median and 20.10 GiB peak CUDA allocation. Single-observation,
-one-worker R endpoints show 185.3× matched-stage speedup at 912 samples/P=2
-and 137.2× at 2,451 samples/P=6; all five parity gates pass. Fresh-process
-feasibility probes place the observed 40-GB A100 boundary between 3,478
-samples/P=9 (pass) and 3,784 samples/P=10 (OOM during dispersion).
+matched direct R endpoints show GPU speedups of 174.4×/39.4× against one/12
+workers at 912 samples/P=2 and 157.4×/28.0× at 2,451 samples/P=6. R itself
+scales by 4.43× and 5.62× across the two cohorts, and the serial and parallel
+result tables agree to floating-point precision. All five GPU--R parity gates
+pass. Fresh-process feasibility probes place the observed 40-GB A100 boundary
+between 3,478 samples/P=9 (pass) and 3,784 samples/P=10 (OOM during dispersion).
 
 ## What's tested vs R DESeq2
 
