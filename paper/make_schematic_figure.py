@@ -8,6 +8,8 @@ the iterative stage it accelerates.
 Outputs:
   paper/figures/gpt_schematic.png
   paper/figures/gpt_schematic.pdf
+  paper/figures/triton_dispersion_schematic.png
+  paper/figures/triton_dispersion_schematic.pdf
 """
 
 from pathlib import Path
@@ -191,7 +193,7 @@ def optimization_card(x, y, w, h, number, color, tint, title, body):
 ax.text(
     6,
     84.0,
-    "Figure 1  |  DESeq2 workflow and cuDESeq2 optimization strategy",
+    "DESeq2 workflow mapped to GPU execution",
     fontsize=20,
     fontweight="bold",
     color=NAVY,
@@ -201,7 +203,7 @@ ax.text(
 ax.text(
     6,
     79.5,
-    "The statistical workflow is preserved; cuDESeq2 changes how the per-gene computation is executed.",
+    "cuDESeq2 retains the statistical model and inference sequence while changing the execution strategy.",
     fontsize=11.4,
     color=MUTED,
     ha="left",
@@ -214,7 +216,7 @@ ax.add_patch(Rectangle((6, 72.0), 1.5, 4.8, facecolor=BLUE, edgecolor="none", zo
 ax.text(
     80,
     74.4,
-    "cuDESeq2: fp64 PyTorch implementation  ·  genes processed in parallel on the GPU  ·  reference-faithful outputs",
+    "Same model and inference  ·  fp64 arithmetic  ·  thousands of genes evaluated concurrently",
     fontsize=10.8,
     fontweight="bold",
     color=NAVY,
@@ -285,9 +287,9 @@ optimization_card(
     "C",
     ORANGE,
     ORANGE_TINT,
-    "Triton loop fusion",
+    "Fused dispersion kernel",
     "One program per gene runs the\n"
-    "Newton loop in registers, with\n"
+    "gradient-ascent loop in registers, with\n"
     "independent early convergence.",
 )
 optimization_card(
@@ -298,10 +300,10 @@ optimization_card(
     "D",
     PURPLE,
     PURPLE_TINT,
-    "Robust apeGLM optimizer",
-    "Adaptive LM damping plus pinned-\n"
-    "boundary convergence prevents\n"
-    "extreme-LFC optimization failures.",
+    "Batched LFC shrinkage",
+    "Reference-compatible L-BFGS with\n"
+    "compiled loss, gradient, and Hessian\n"
+    "evaluation on resident GPU tensors.",
 )
 
 # Mapping from workflow bottlenecks to the relevant optimizations.
@@ -316,7 +318,7 @@ rounded(6, 17.8, 148, 5.6, NAVY, NAVY, lw=0, radius=1.4, z=2)
 ax.text(
     80,
     20.6,
-    "Outcome: identical analysis stages and statistical interpretation  ·  less serial work  ·  fewer launches  ·  faster convergence",
+    "Outcome: preserved inference  ·  gene-parallel optimization  ·  lower dispatch overhead",
     fontsize=10.7,
     fontweight="bold",
     color=WHITE,
@@ -352,3 +354,157 @@ for extension in ("png", "pdf"):
     )
 
 print(f"wrote {OUT / 'gpt_schematic.png'} and {OUT / 'gpt_schematic.pdf'}")
+plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# Figure 2: detailed view of the fused dispersion kernel
+# ---------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(16, 8.4))
+fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
+ax.set_xlim(0, 160)
+ax.set_ylim(0, 84)
+ax.axis("off")
+
+ax.text(
+    6,
+    78.5,
+    "Fused Triton dispersion estimation",
+    fontsize=20,
+    fontweight="bold",
+    color=NAVY,
+    ha="left",
+    va="center",
+)
+ax.text(
+    6,
+    74.2,
+    "The same per-gene kernel evaluates the Cox–Reid MLE and the prior-regularized MAP estimate.",
+    fontsize=11.2,
+    color=MUTED,
+    ha="left",
+    va="center",
+)
+
+
+def flow_box(x, w, title, detail, accent=None):
+    edge = accent or LINE
+    face = GREEN_TINT if accent == GREEN else WHITE
+    rounded(x, 59.5, w, 9.5, face, edge, lw=1.8 if accent else 1.3, radius=1.3)
+    ax.text(x + w / 2, 65.3, title, fontsize=11.3, fontweight="bold",
+            color=NAVY, ha="center", va="center")
+    ax.text(x + w / 2, 61.9, detail, fontsize=8.4, color=MUTED,
+            ha="center", va="center")
+
+
+flow_box(6, 25, "Gene inputs", r"counts $y_g$  ·  fitted means $\mu_g$  ·  design $X$")
+flow_box(38, 27, "Cox–Reid MLE", "gene-wise dispersion", GREEN)
+flow_box(72, 21, "Trend fit", "shared across genes")
+flow_box(100, 27, "MAP estimate", "Gaussian prior", GREEN)
+flow_box(134, 20, "Final dispersion", r"$\alpha_g$")
+for x0, x1 in ((31.5, 37.5), (65.5, 71.5), (93.5, 99.5), (127.5, 133.5)):
+    arrow(x0, 64.25, x1, 64.25, color=NAVY, lw=1.8)
+ax.text(51.5, 70.4, "FUSED", fontsize=7.7, fontweight="bold", color=GREEN,
+        ha="center", va="center")
+ax.text(82.5, 70.4, "GLOBAL FIT", fontsize=7.7, fontweight="bold", color=MUTED,
+        ha="center", va="center")
+ax.text(113.5, 70.4, "FUSED", fontsize=7.7, fontweight="bold", color=GREEN,
+        ha="center", va="center")
+
+ax.plot([6, 154], [55.8, 55.8], color=LINE, linewidth=1.2, zorder=1)
+
+# GPU grid: the gene dimension becomes the launch grid.
+rounded(6, 11, 48, 39.8, WHITE, GREEN, lw=1.8, radius=1.5, z=2)
+ax.text(10, 46.7, "GPU launch grid", fontsize=13, fontweight="bold", color=NAVY,
+        ha="left", va="center")
+ax.text(10, 43.0, "one independent program per gene", fontsize=9.2, color=MUTED,
+        ha="left", va="center")
+
+tile_x = [10, 20.5, 31, 41.5]
+tile_y = [33, 23]
+tile_labels = [r"$g_0$", r"$g_1$", r"$g_2$", r"$g_3$",
+               r"$g_4$", r"$g_5$", r"$\cdots$", r"$g_{G-1}$"]
+for idx, (yy, xx) in enumerate((y, x) for y in tile_y for x in tile_x):
+    rounded(xx, yy, 8.5, 7.0, GREEN_TINT, GREEN, lw=1.1, radius=0.9, z=3)
+    ax.text(xx + 4.25, yy + 3.5, tile_labels[idx], fontsize=10.5,
+            fontweight="bold", color=GREEN, ha="center", va="center")
+ax.text(30, 15.9, "genes execute concurrently", fontsize=9.0, color=GREEN,
+        fontweight="bold", ha="center", va="center")
+
+arrow(56.0, 30.9, 65.0, 30.9, color=GREEN, lw=2.0)
+ax.text(60.5, 34.1, "inspect one", fontsize=8.0, color=MUTED,
+        ha="center", va="center")
+
+# One program: data are loaded once and the complete optimization loop remains
+# within the kernel rather than returning to the Python dispatcher.
+rounded(66, 8.5, 88, 44.8, WHITE, GREEN, lw=1.8, radius=1.5, z=2)
+ax.text(70, 49.0, r"Inside program $g$", fontsize=13, fontweight="bold",
+        color=NAVY, ha="left", va="center")
+ax.text(150, 49.0, "register-resident state", fontsize=8.5, color=GREEN,
+        fontweight="bold", ha="right", va="center")
+
+rounded(71, 33.2, 23, 10, BLUE_TINT, BLUE, lw=1.3, radius=1.0, z=3)
+ax.text(82.5, 39.5, "Load once", fontsize=10.5, fontweight="bold", color=NAVY,
+        ha="center", va="center")
+ax.text(82.5, 35.9, r"$y_g,\ \mu_g,\ X$", fontsize=10.0, color=BLUE,
+        ha="center", va="center")
+
+rounded(100, 31.2, 28, 14, GREEN_TINT, GREEN, lw=1.3, radius=1.0, z=3)
+ax.text(114, 40.9, "Evaluate objective", fontsize=10.5, fontweight="bold",
+        color=NAVY, ha="center", va="center")
+ax.text(114, 36.6, "NB likelihood + Cox–Reid", fontsize=8.4, color=TEXT,
+        ha="center", va="center")
+ax.text(114, 33.4, r"$\ell(a)$ and $\partial\ell/\partial a$", fontsize=9.0,
+        color=GREEN, ha="center", va="center")
+
+rounded(133.5, 33.2, 15.5, 10, ORANGE_TINT, ORANGE, lw=1.3, radius=1.0, z=3)
+ax.text(141.25, 39.5, "Armijo step", fontsize=9.6, fontweight="bold", color=NAVY,
+        ha="center", va="center")
+ax.text(141.25, 35.9, r"update $a=\log\alpha$", fontsize=8.4, color=ORANGE,
+        ha="center", va="center")
+
+arrow(94.8, 38.2, 99.5, 38.2, color=NAVY, lw=1.6)
+arrow(128.5, 38.2, 133.0, 38.2, color=NAVY, lw=1.6)
+
+loop = FancyArrowPatch(
+    (141.0, 32.5),
+    (114.0, 30.5),
+    connectionstyle="arc3,rad=-0.35",
+    arrowstyle="-|>",
+    mutation_scale=14,
+    linewidth=1.5,
+    color=ORANGE,
+    zorder=4,
+)
+ax.add_patch(loop)
+ax.text(128, 24.7, "repeat until this gene converges", fontsize=8.3,
+        color=MUTED, ha="center", va="center")
+
+rounded(98, 12.8, 35, 7.0, NAVY, NAVY, lw=0, radius=1.0, z=3)
+ax.text(115.5, 16.3, r"write converged $\alpha_g$", fontsize=9.5,
+        fontweight="bold", color=WHITE, ha="center", va="center")
+arrow(141.2, 32.7, 133.0, 20.1, color=NAVY, lw=1.5)
+
+ax.text(
+    6,
+    4.3,
+    "CR-MLE: Cox–Reid maximum-likelihood estimate. The trend fit is shared across genes; both gene-wise fits use the fused kernel.",
+    fontsize=8.0,
+    color=MUTED,
+    ha="left",
+    va="center",
+)
+
+for extension in ("png", "pdf"):
+    fig.savefig(
+        OUT / f"triton_dispersion_schematic.{extension}",
+        dpi=300,
+        bbox_inches="tight",
+        pad_inches=0.08,
+    )
+
+print(
+    f"wrote {OUT / 'triton_dispersion_schematic.png'} and "
+    f"{OUT / 'triton_dispersion_schematic.pdf'}"
+)
+plt.close(fig)

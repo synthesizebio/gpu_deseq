@@ -75,23 +75,21 @@ Max~Highsmith\,$^{1,\ast}$, Gregory~Koytiger\,$^{1,\ast}$\\[2pt]
 % --- Structured abstract: the fixed Bioinformatics headings. ----------------
 \begin{abstract}
 \noindent
-\textbf{Motivation:} DESeq2 is widely used for bulk RNA-seq
-differential-expression analysis. Its gene-wise dispersion, generalized
-linear-model, and effect-size-shrinkage calculations expose substantial
-parallelism, yet their iterative and numerically sensitive structure has
-limited faithful GPU implementations.\\[3pt]
-\textbf{Results:} We present \cudeseq, a GPU implementation that preserves the
-DESeq2 statistical workflow while batching gene-wise computation.
-Comparing eager mode with R~DESeq2~1.52.0 across six real designs (7--300
-samples, $P=2$--$5$), final dispersion has a median p95 relative error of
-\fact{8.5e-4}, significant-gene sets have Jaccard similarity of at least
-\fact{0.99963}, and shrunken LFCs have Pearson correlation of at least
-\fact{0.99722}. On one A100,
-the fastest \cudeseq{} mode is \fact{3.6--35.1$\times$} faster than a practical
-12-worker R baseline in direct end-to-end measurements. A separate real-GTEx scaling
-study runs 54{,}922 genes across \fact{2{,}451} samples and a $P=6$ tissue
-design in a \fact{22.936-s} direct median, \fact{28.0$\times$} faster than the
-12-worker R endpoint.\\[3pt]
+\textbf{Motivation:} DESeq2 is a standard method for bulk RNA-seq differential
+expression, but its iterative per-gene optimization makes repeated analyses
+computationally expensive. We asked whether this structure could be mapped to
+GPUs without changing the inferential workflow.\\[3pt]
+\textbf{Results:} We developed \cudeseq, which combines gene-batched PyTorch
+with CUDA-graph replay and a fused Triton dispersion kernel. Across six
+real-data designs (7--300 samples, $P=2$--$5$), median p95 relative dispersion
+error was \fact{8.5e-4}, significant-gene sets had Jaccard similarity of at
+least \fact{0.99963}, and shrunken LFCs had Pearson correlation of at least
+\fact{0.99722} relative to R~DESeq2~1.52.0. On one A100, the fastest mode was
+\fact{3.6--35.1$\times$} faster than 12-worker R in end-to-end measurements. A
+54{,}922-gene GTEx analysis with \fact{2{,}451} samples and $P=6$ completed in
+a \fact{22.936-s} median, \fact{28.0$\times$} faster than the 12-worker R
+endpoint. These results show that GPU execution can increase throughput while
+preserving DESeq2-style inference across the evaluated scope.\\[3pt]
 \textbf{Availability and implementation:} Open source under the MIT license at
 \url{https://github.com/synthesizebio/gpu_deseq}; PyTorch and a CUDA GPU are
 required for the reported acceleration.\\[3pt]
@@ -136,15 +134,13 @@ throughput to be improved together rather than traded against one another.
 
 
 \begin{figure}[t]\centering
-\includegraphics[width=\linewidth]{figures/gpt_schematic.png}
-\caption{Overview of \cudeseq. \emph{Top}, the five stages of a DESeq2 run.
-\emph{Bottom}, where the GPU work goes: DESeq2's per-gene, sequential CPU work
-(dispersion estimation, the negative-binomial GLM, and apeGLM LFC shrinkage) is
-batched across all genes (\emph{left}, solid arrows), and the dispersion fit,
-which is limited mainly by launch latency, has a fully fused Triton
-implementation (\emph{right}, dashed arrow). A third mode uses CUDA-graph
-chunked replay; the three modes are compared in Table~\ref{tab:modes}. Every stage is
-checked against R~DESeq2 step by step (Sec.~\ref{sec:parity}).}
+\includegraphics[width=\linewidth]{figures/gpt_schematic.pdf}
+\caption{Computational mapping of DESeq2 to \cudeseq. The statistical stages
+and their dependencies are unchanged (top). Independent gene-wise fits are
+expressed as batched tensor operations (A); dispersion estimation additionally
+supports CUDA-graph replay (B) and a fused Triton kernel (C); and apeGLM uses a
+batched L-BFGS optimizer with compiled loss, gradient, and Hessian evaluation
+(D). Dashed arrows map each optimization to the stage it accelerates.}
 \label{fig:schematic}
 \end{figure}
 
@@ -303,20 +299,14 @@ it retains bit-identical parity with the eager mode implementation.
 \label{sec:triton}
 
 \begin{figure}[htbp]\centering
-\includegraphics[width=\linewidth]{figures/triton_dispersion_schematic.png}
-\caption{The fused Triton dispersion kernel. The same kernel implementation is
-invoked separately for the two gene-wise fits of the dispersion pipeline: the
-Cox--Reid MLE and the MAP shrinkage with a Gaussian prior that follows the trend
-fit (the trend fit itself runs outside Triton). Each invocation is one kernel
-launch over a grid with one Triton program instance per gene. Each instance loads
-$\mathbf{y}_g$, $\boldsymbol{\mu}_g$, and the design $\mathbf{X}$ once, then runs every iteration
-of the gradient ascent register-resident, with the NB log-likelihood, the
-Cox--Reid term $-\tfrac12\log\det\mathbf{B}$ ($\mathbf{B}=\mathbf{X}^{\!\top}
-\mathbf{W}\mathbf{X}$), the $\log\alpha$-gradient and the Armijo line search all
-fused into the loop body. Only the converged $a_g=\log\alpha_g$ and a diagnostic
-iteration count are written back to global memory. Supplementary
-Algorithms~\ref{alg:triton-overview}--\ref{alg:triton-detail} give the
-pseudocode.}
+\includegraphics[width=\linewidth]{figures/triton_dispersion_schematic.pdf}
+\caption{Fused Triton execution of dispersion estimation. The same kernel is
+invoked for the Cox--Reid MLE and the prior-regularized MAP estimate on either
+side of the shared trend fit. Each gene maps to one program, which loads
+$\mathbf{y}_g$, $\boldsymbol{\mu}_g$, and $\mathbf{X}$ once and retains the
+objective, gradient, Armijo update, and convergence state inside the kernel.
+Supplementary Algorithms~\ref{alg:triton-overview}--\ref{alg:triton-detail}
+provide pseudocode.}
 \label{fig:triton}
 \end{figure}
 
@@ -397,8 +387,7 @@ Performance was evaluated on one NVIDIA A100-SXM4-40GB under PyTorch~2.7.1,
 CUDA~12.6, and NVIDIA driver~580.126.20. The CPU reference was
 R~DESeq2~1.52.0 with apeglm~1.34.0 on a 12-vCPU virtual machine. The primary
 comparison used the ordinary \texttt{DESeq()}, \texttt{results()}, and
-\texttt{lfcShrink()} call sequence with \texttt{MulticoreParam(12)}. A
-one-worker run was used only to attribute time to comparable pipeline stages.
+\texttt{lfcShrink()} call sequence with \texttt{MulticoreParam(12)}.
 GPU times are medians of five complete, CUDA-synchronized measurements after
 one warm-up. The two long-running large-GTEx CPU endpoints are single cold
 observations and are interpreted as endpoint comparisons rather than sampling
@@ -453,26 +442,22 @@ by at most \fact{$8.1\times10^{-5}$} at the 95th percentile, and
 significant-gene sets had Jaccard similarity of at least \fact{0.99963}.
 Shrunken LFCs had Pearson correlation of at least \fact{0.99722} with R.
 
-\subsubsection{Parity in the standard DE plots}
+\subsubsection{Parity in standard DE visualizations}
 \label{sec:deplots}
-In addition to summary statistics we validate against
-standard diagnostic plots used in DE analysis. Figure~\ref{fig:deplots}
-displays dispersion-estimation, MA, and volcano plots from both pipelines.
-The gene-wise MLE cloud, the fitted trend, the shrunken MAP
-band, and the outlier pattern visually overlap; both implementations call
+In addition to summary statistics, we compare visualizations routinely used to
+interpret differential-expression analyses. Figure~\ref{fig:deplots} displays
+final dispersion, MA, and volcano plots from both pipelines on matched axes.
+The mean--dispersion relationship, shrunken effect-size pattern, and
+significance structure visually overlap; both implementations call
 \fact{3{,}993} genes at $\mathrm{padj}<0.05$ in this design.
 
 \begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/de_diagnostics_parity.pdf}
-\caption{The three standard DESeq2 diagnostics on \texttt{airway}
-($\sim$\,cell\,+\,dex, $n{=}8$, $P{=}5$), drawn from R~DESeq2~1.52.0 (top) and
-\cudeseq\ (bottom) by the same plotting code. \emph{Left}, the
-\texttt{plotDispEsts} view: gene-wise MLE (grey), fitted trend (orange), final
-estimate (blue), and circled genes whose MLE exceeds the trend by more than two
-residual SDs and is therefore kept unshrunk. \emph{Center}, MA plot of the
-apeGLM-shrunk LFC, with out-of-range genes on the boundary as in
-\texttt{plotMA}. \emph{Right}, volcano plot. Axis limits are computed from R's
-output and reused for \cudeseq.}
+\caption{Matched differential-expression visualizations for \texttt{airway}
+($\sim$\,cell\,+\,dex, $n{=}8$, $P{=}5$). R~DESeq2~1.52.0 is shown above and
+\cudeseq{} below. Panels show final dispersion versus mean normalized count,
+the apeGLM-shrunken MA relationship, and adjusted-p-value volcano plots. The
+same code and R-derived axis limits are used for both rows.}
 \label{fig:deplots}
 \end{figure}
 
@@ -513,19 +498,20 @@ the source of their additional gains.
 \texttt{BiocParallel} workers; GPU columns are the three \cudeseq{} modes.
 Values are medians of five complete observations and include data-object
 construction, inference, result assembly, LFC shrinkage, and any required
-count-outlier refitting.}
+count-outlier refitting. Bold values identify the fastest implementation in
+each row.}
 \label{tab:realtiming}
 {\footnotesize
 \begin{tabular}{lrrrrrrr}
 \toprule
 Dataset & $P$ & $n$ & R 12w (s) & eager (s) & graph (s) & Triton (s) & best GPU vs. R \\
 \midrule
-pasilla       & 2 &   7 &  7.336 & 0.972 & 0.588 & 0.525 & 14.0$\times$ \\
-pasilla\_2fac & 3 &   7 &  7.371 & 1.541 & 0.932 & 0.848 &  8.7$\times$ \\
-airway\_dex   & 2 &   8 & 11.856 & 1.332 & 0.858 & 0.790 & 15.0$\times$ \\
-airway\_cell  & 4 &   8 & 10.421 & 3.596 & 3.003 & 2.870 &  3.6$\times$ \\
-airway        & 5 &   8 & 12.099 & 2.479 & 1.552 & 1.401 &  8.6$\times$ \\
-gtex          & 2 & 300 & 63.445 & 5.284 & 4.910 & 1.807 & 35.1$\times$ \\\bottomrule
+pasilla       & 2 &   7 &  7.336 & 0.972 & 0.588 & \textbf{0.525} & 14.0$\times$ \\
+pasilla\_2fac & 3 &   7 &  7.371 & 1.541 & 0.932 & \textbf{0.848} &  8.7$\times$ \\
+airway\_dex   & 2 &   8 & 11.856 & 1.332 & 0.858 & \textbf{0.790} & 15.0$\times$ \\
+airway\_cell  & 4 &   8 & 10.421 & 3.596 & 3.003 & \textbf{2.870} &  3.6$\times$ \\
+airway        & 5 &   8 & 12.099 & 2.479 & 1.552 & \textbf{1.401} &  8.6$\times$ \\
+gtex          & 2 & 300 & 63.445 & 5.284 & 4.910 & \textbf{1.807} & 35.1$\times$ \\\bottomrule
 \end{tabular}}
 \end{table}
 
@@ -543,46 +529,46 @@ Although it typically lags Triton, graph is bit-identical to eager
 (Sec.~\ref{sec:parity}).
 
 \begin{table}[htbp]\centering
-\caption{Pipeline-stage wall time (ms) on the real datasets. The one-worker R
-measurement is a diagnostic for stage attribution rather than the practical
-performance baseline. \texttt{glm\_fit} includes the initial Wald fit and
-count-outlier replacement/refitting; \textbf{stage sum} is the sum of stage
-medians rather than a separately observed end-to-end duration.}
+\caption{Pipeline-stage wall time (ms) for the three GPU execution modes.
+Bold values identify the fastest mode for each measured stage. \texttt{glm\_fit}
+includes the initial Wald fit and count-outlier replacement/refitting;
+\emph{component total} is the sum of the stage medians rather than a separately
+observed end-to-end duration.}
 \label{tab:realsubstep}
 {\footnotesize
-\begin{tabular}{llrrrr}
+\begin{tabular}{llrrr}
 \toprule
-Dataset & Substep & R 1w diagnostic & eager & graph & Triton \\\midrule
-pasilla & dispersion & 1782 & 463 & 78 & 21 \\
-        & glm\_fit & 2079 & 42 & 42 & 41 \\
-        & significance & 209 & 40 & 40 & 40 \\
-        & lfc\_shrink & 5343 & 420 & 422 & 421 \\
-        & \textbf{stage sum} & \textbf{9573} & \textbf{966} & \textbf{583} & \textbf{524} \\\midrule
-pasilla\_2fac & dispersion & 2179 & 777 & 174 & 87 \\
-        & glm\_fit & 1495 & 354 & 354 & 352 \\
-        & significance & 184 & 50 & 50 & 49 \\
-        & lfc\_shrink & 6082 & 347 & 346 & 347 \\
-        & \textbf{stage sum} & \textbf{10104} & \textbf{1528} & \textbf{925} & \textbf{837} \\\midrule
-airway\_dex & dispersion & 4481 & 581 & 141 & 56 \\
-        & glm\_fit & 5171 & 58 & 59 & 57 \\
-        & significance & 1387 & 82 & 109 & 82 \\
-        & lfc\_shrink & 14843 & 573 & 578 & 576 \\
-        & \textbf{stage sum} & \textbf{26070} & \textbf{1296} & \textbf{888} & \textbf{773} \\\midrule
-airway\_cell & dispersion & 5456 & 801 & 198 & 62 \\
-        & glm\_fit & 3875 & 39 & 38 & 39 \\
-        & significance & 332 & 78 & 78 & 75 \\
-        & lfc\_shrink & 20271 & 2675 & 2667 & 2674 \\
-        & \textbf{stage sum} & \textbf{30122} & \textbf{3593} & \textbf{2982} & \textbf{2852} \\\midrule
-airway & dispersion & 7863 & 1660 & 723 & 585 \\
-        & glm\_fit & 4398 & 62 & 62 & 64 \\
-        & significance & 310 & 74 & 74 & 73 \\
-        & lfc\_shrink & 20189 & 673 & 685 & 663 \\
-        & \textbf{stage sum} & \textbf{32961} & \textbf{2470} & \textbf{1545} & \textbf{1386} \\\midrule
-gtex & dispersion & 187567 & 3574 & 3612 & 217 \\
-        & glm\_fit & 53421 & 849 & 491 & 432 \\
-        & significance & 456 & 85 & 73 & 95 \\
-        & lfc\_shrink & 42474 & 570 & 569 & 929 \\
-        & \textbf{stage sum} & \textbf{287354} & \textbf{5081} & \textbf{4749} & \textbf{1678} \\\bottomrule
+Dataset & Substep & eager & graph & Triton \\\midrule
+pasilla & dispersion & 463 & 78 & \textbf{21} \\
+        & glm\_fit & 42 & 42 & \textbf{41} \\
+        & significance & 40 & \textbf{40} & 40 \\
+        & lfc\_shrink & \textbf{420} & 422 & 421 \\
+        & \emph{component total} & 966 & 583 & 524 \\\midrule
+pasilla\_2fac & dispersion & 777 & 174 & \textbf{87} \\
+        & glm\_fit & 354 & 354 & \textbf{352} \\
+        & significance & 50 & 50 & \textbf{49} \\
+        & lfc\_shrink & 347 & \textbf{346} & 347 \\
+        & \emph{component total} & 1528 & 925 & 837 \\\midrule
+airway\_dex & dispersion & 581 & 141 & \textbf{56} \\
+        & glm\_fit & 58 & 59 & \textbf{57} \\
+        & significance & \textbf{82} & 109 & 82 \\
+        & lfc\_shrink & \textbf{573} & 578 & 576 \\
+        & \emph{component total} & 1296 & 888 & 773 \\\midrule
+airway\_cell & dispersion & 801 & 198 & \textbf{62} \\
+        & glm\_fit & 39 & \textbf{38} & 39 \\
+        & significance & 78 & 78 & \textbf{75} \\
+        & lfc\_shrink & 2675 & \textbf{2667} & 2674 \\
+        & \emph{component total} & 3593 & 2982 & 2852 \\\midrule
+airway & dispersion & 1660 & 723 & \textbf{585} \\
+        & glm\_fit & 62 & \textbf{62} & 64 \\
+        & significance & 74 & 74 & \textbf{73} \\
+        & lfc\_shrink & 673 & 685 & \textbf{663} \\
+        & \emph{component total} & 2470 & 1545 & 1386 \\\midrule
+gtex & dispersion & 3574 & 3612 & \textbf{217} \\
+        & glm\_fit & 849 & 491 & \textbf{432} \\
+        & significance & 85 & \textbf{73} & 95 \\
+        & lfc\_shrink & 570 & \textbf{569} & 929 \\
+        & \emph{component total} & 5081 & 4749 & 1678 \\\bottomrule
 \end{tabular}}
 \\[3pt]
 {\footnotesize \texttt{normalization} omitted ($\le$\fact{4\,ms} cuDESeq2 on
@@ -606,13 +592,13 @@ warm-ups on one A100; the simulator seed is $7919n$.}
 \begin{tabular}{rrrr}
 \toprule
 Samples & eager & graph & Triton \\\midrule
-4    & 1075 & 636 & 498 \\
-6    & 627  & 161 & 32  \\
-30   & 187  & 68  & 28  \\
-60   & 238  & 61  & 30  \\
-200  & 239  & 113 & 34  \\
-1000 & 337  & 282 & 23  \\
-2000 & 474  & 402 & 90  \\\bottomrule
+4    & 1075 & 636 & \textbf{498} \\
+6    & 627  & 161 & \textbf{32}  \\
+30   & 187  & 68  & \textbf{28}  \\
+60   & 238  & 61  & \textbf{30}  \\
+200  & 239  & 113 & \textbf{34}  \\
+1000 & 337  & 282 & \textbf{23}  \\
+2000 & 474  & 402 & \textbf{90}  \\\bottomrule
 \end{tabular}
 \end{table}
 
@@ -663,22 +649,19 @@ comparisons rather than estimates with repeated-sampling uncertainty.
 12-worker R baseline. R is one cold observation in a fresh process; GPU is the
 direct median of five warm observations. All columns include dataset
 construction and the complete workflow. ``GPU vs.'' reports R time divided by
-GPU time.}
+GPU time. Bold values identify the faster implementation.}
 \label{tab:gtexrendpoint}
 {\footnotesize
 \begin{tabular}{lrrrr}
 \toprule
 Samples & $P$ & GPU (s) & R 12w (s) & GPU vs. R 12w \\\midrule
-912 & 2 & 5.430 & 213.896 & 39.4$\times$ \\
-2{,}451 & 6 & 22.936 & 642.552 & 28.0$\times$ \\\bottomrule
+912 & 2 & \textbf{5.430} & 213.896 & 39.4$\times$ \\
+2{,}451 & 6 & \textbf{22.936} & 642.552 & 28.0$\times$ \\\bottomrule
 \end{tabular}}
 \end{table}
 
-As a validation check, serial and 12-worker R output tables agree to
-floating-point precision: at P=6 the largest relative dispersion difference is
-$1.53\times10^{-14}$, the largest raw- or shrunken-LFC difference is
-$9.99\times10^{-15}$, and the significant sets are identical. The independent GPU--R endpoint parity checks
-use the same five predefined tolerances as Table~\ref{tab:parity}. At P=6,
+The independent GPU--R endpoint parity checks use the same five predefined
+tolerances as Table~\ref{tab:parity}. At P=6,
 dispersion p95 relative error is
 \fact{0.00212}, raw-LFC p95 absolute error is $3.18\times10^{-5}$,
 significant-set Jaccard is \fact{0.99896}, and shrunken-LFC Pearson correlation
@@ -833,8 +816,7 @@ PyTorch~2.7.1 with CUDA~12.6 and NVIDIA driver~580.126.20; the R environment was
 R~4.6.0 with DESeq2~1.52.0 and apeglm~1.34.0. OMP, OpenBLAS, and MKL thread
 counts were pinned to one for the R measurements. Main-suite and real-GTEx GPU
 timings are medians of five measured repetitions following an untimed warm-up.
-The two practical 12-worker and two controlled serial direct large-GTEx R
-endpoints, two serial staged parity references, and four OOM-boundary probes
+The two practical 12-worker large-GTEx R endpoints and four OOM-boundary probes
 are explicitly single-run measurements. The separate synthetic sample-axis sweep uses seven measured
 repetitions after three warm-ups and records its software stack in its artifact.
 

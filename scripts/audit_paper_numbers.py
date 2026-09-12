@@ -325,7 +325,8 @@ check(
 )
 
 
-# Controlled serial per-stage table. It supports attribution, not the headline.
+# Per-stage GPU comparison. CPU acceleration is reported only against the
+# practical 12-worker baseline in the end-to-end table.
 stage_table = table("tab:realsubstep")
 for case, label in CASES:
     start = stage_table.index(label + " &")
@@ -336,22 +337,21 @@ for case, label in CASES:
             line for line in block.splitlines() if step.replace("_", r"\_") in line
         )
         shown = [numeric_cell(cell) for cell in shown_row.split("&")[2:]]
-        actual = [TIMING["r"][case][step]] + [
-            TIMING["cu"][case][mode][step] for mode in MODES
-        ]
+        actual = [TIMING["cu"][case][mode][step] for mode in MODES]
         check(
             f"stage table {case}/{step}",
             all(round(a) == round(b) for a, b in zip(shown, actual)),
         )
-    sum_row = next(line for line in block.splitlines() if "stage sum" in line)
+    sum_row = next(line for line in block.splitlines() if "component total" in line)
     shown_sum = [numeric_cell(cell) for cell in sum_row.split("&")[2:]]
-    actual_sum = [stage_total(TIMING["r"][case])] + [
-        stage_total(TIMING["cu"][case][mode]) for mode in MODES
-    ]
+    actual_sum = [stage_total(TIMING["cu"][case][mode]) for mode in MODES]
     check(
         f"stage table {case}/sum",
         all(round(a) == round(b) for a, b in zip(shown_sum, actual_sum)),
     )
+
+check("paper omits one-worker comparison", not re.search(r"one[- ]worker|R 1w", TEX, re.I))
+check("component totals are not bold", r"\textbf{component total}" not in stage_table)
 
 
 # Sample-axis table has a clean, versioned primary artifact.

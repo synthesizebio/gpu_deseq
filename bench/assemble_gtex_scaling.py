@@ -272,14 +272,14 @@ def render_markdown(artifact: dict[str, Any]) -> str:
         "# Real-GTEx scaling and A100 memory boundary",
         "",
         "The gene axis is fixed at 54,922. Direct GPU times are medians of five "
-        "complete observations after one warm-up; stage sums add independently "
+        "complete observations after one warm-up; component totals add independently "
         "measured stage medians, and peak allocation is the maximum over the five "
         "staged repetitions. R endpoint rows are single cold observations and "
         "are not pooled with the main five-repetition headline benchmark.",
         "",
         "## Full-workflow GPU timing",
         "",
-        "| case | samples | P | direct (s) | stage sum (s) | peak allocated (GiB) |",
+        "| case | samples | P | direct (s) | component total (s) | peak allocated (GiB) |",
         "|---|---:|---:|---:|---:|---:|",
     ]
     for case in TIMING_CASES:
@@ -295,40 +295,20 @@ def render_markdown(artifact: dict[str, Any]) -> str:
         "## Practical direct GPU versus 12-worker R endpoints",
         "",
         "The R modes use the same public `DESeqDataSetFromMatrix + DESeq + results "
-        "+ lfcShrink` call path. Twelve-worker R is the practical CPU baseline; the "
-        "one-worker observations remain in the JSON only as controlled diagnostics.",
+        "+ lfcShrink` call path. Twelve-worker R is the practical CPU baseline. "
+        "Bold values identify the faster implementation.",
         "",
-        "| case | samples | P | GPU (s) | R 12 workers (s) | GPU vs R 12w | worker parity |",
-        "|---|---:|---:|---:|---:|---:|:---:|",
+        "| case | samples | P | GPU (s) | R 12 workers (s) | GPU vs R 12w |",
+        "|---|---:|---:|---:|---:|---:|",
     ]
     for case in R_CASES:
         gpu = artifact["gpu_timings"][case]
         endpoint = artifact["r_direct_endpoints"][case]
         lines.append(
             f"| {case} | {gpu['n_samples']} | {gpu['P']} | "
-            f"{gpu['direct_median_ms'] / 1000:.3f} | "
+            f"**{gpu['direct_median_ms'] / 1000:.3f}** | "
             f"{endpoint['twelve_workers']['direct_median_ms'] / 1000:.3f} | "
-            f"{endpoint['gpu_speedup_vs_twelve_workers']:.1f}× | "
-            f"{'PASS' if endpoint['worker_parity']['pass'] else 'FAIL'} |"
-        )
-    lines += [
-        "",
-        "## Controlled serial stage diagnostic",
-        "",
-        "These one-worker stage sums preserve matched boundaries for attribution and "
-        "parity. They are intentionally not used as practical acceleration claims.",
-        "",
-        "| case | samples | P | R 1w stage sum (s) | GPU stage sum (s) | parity |",
-        "|---|---:|---:|---:|---:|:---:|",
-    ]
-    for case in R_CASES:
-        record = artifact["gpu_timings"][case]
-        endpoint = artifact["r_endpoints"][case]
-        lines.append(
-            f"| {case} | {record['n_samples']} | {record['P']} | "
-            f"{endpoint['timing']['stage_total_ms'] / 1000:.3f} | "
-            f"{record['stage_total_ms'] / 1000:.3f} | "
-            f"{'PASS' if endpoint['parity']['pass'] else 'FAIL'} |"
+            f"{endpoint['gpu_speedup_vs_twelve_workers']:.1f}× |"
         )
     lines += [
         "",

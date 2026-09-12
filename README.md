@@ -40,16 +40,15 @@ On a host configured with the NVIDIA Container Toolkit,
 > cuDESeq2 (eager / CUDA-graph / Triton), and a PyDESeq2 competitor, across six
 > real RNA-seq datasets (7–300 samples) on an A100. The primary comparison uses
 > direct end-to-end medians and a practical 12-worker R DESeq2 baseline; the
-> best GPU mode is 3.6–35.1× faster. One-worker measurements are retained only
-> as controlled stage-attribution diagnostics, not as headline performance.
+> best GPU mode is 3.6–35.1× faster. Per-stage tables compare the three GPU
+> execution modes and use the 12-worker CPU only for end-to-end acceleration.
 
 The separate [real-GTEx scaling record](bench/results/GTEX_SCALING.md) holds
 the gene axis at 54,922 and measures complete workflows through 2,451 samples
 and a six-tissue design. The largest fused-Triton case has a 22.936-second
 direct median and 20.10 GiB peak CUDA allocation. Matched direct endpoints
 show GPU speedups of 39.4× and 28.0× against 12-worker R at 912 samples/P=2
-and 2,451 samples/P=6, respectively. Controlled serial and 12-worker result
-tables agree to floating-point precision. All five GPU--R parity gates pass.
+and 2,451 samples/P=6, respectively. All five GPU--R parity gates pass.
 Fresh-process feasibility probes place the observed 40-GB A100 boundary
 between 3,478 samples/P=9 (pass) and 3,784 samples/P=10 (OOM during dispersion).
 

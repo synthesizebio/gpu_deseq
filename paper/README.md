@@ -22,26 +22,24 @@ requires the project Python environment and the validation data described in
 
 - Real-data parity across six designs is recorded in
   `bench/results/reference_parity.json` and summarized in Table 2.
-- A100 cuDESeq2 and one-worker R timings are recorded in
+- A100 cuDESeq2 end-to-end and component timings are recorded in
   `bench/results/timings.json`.
-- Same-host one- and 12-worker R timings are recorded in
+- The practical same-host 12-worker R baseline is recorded in
   `bench/results/r_parallel_a100_12worker.json`.
 - Exact download URLs/checksums and prepared-input checksums are recorded in
   `validation/data_sources.json` and `validation/prepared_data_manifest.json`.
 - GPU execution-mode agreement is recorded in `bench/results/parity.json`.
-- Real-GTEx full-workflow scaling, exact nested cohorts, matched direct one-
-  and 12-worker R endpoints, worker-output parity, GPU--R parity, peak CUDA
+- Real-GTEx full-workflow scaling, exact nested cohorts, matched 12-worker R
+  endpoints, GPU--R parity, peak CUDA
   memory, and the A100 OOM boundary are recorded in
   `bench/results/gtex_scaling_a100.json`.
 - Human-readable derived tables are in `bench/results/TABLES.md`.
 
 Main-suite and repeated real-GTEx GPU timings are medians of five measured
-repetitions following an untimed warm-up. The R worker tables contain direct
-end-to-end observations;
-the retained matched R--GPU table contains explicitly labelled sums of stage
-medians. The four direct large-GTEx R endpoints, two staged parity references,
-and the OOM feasibility probes are explicitly single observations and are not
-pooled into the main headline.
+repetitions following an untimed warm-up. The practical R comparison uses
+direct end-to-end observations. The large-GTEx R endpoints and OOM feasibility
+probes are explicitly single observations and are not pooled into the main
+headline.
 The manuscript's measured claims can be checked from a clean checkout, without
 ignored data or caches, with:
 

@@ -1,10 +1,10 @@
 # Real-GTEx scaling and A100 memory boundary
 
-The gene axis is fixed at 54,922. Direct GPU times are medians of five complete observations after one warm-up; stage sums add independently measured stage medians, and peak allocation is the maximum over the five staged repetitions. R endpoint rows are single cold observations and are not pooled with the main five-repetition headline benchmark.
+The gene axis is fixed at 54,922. Direct GPU times are medians of five complete observations after one warm-up; component totals add independently measured stage medians, and peak allocation is the maximum over the five staged repetitions. R endpoint rows are single cold observations and are not pooled with the main five-repetition headline benchmark.
 
 ## Full-workflow GPU timing
 
-| case | samples | P | direct (s) | stage sum (s) | peak allocated (GiB) |
+| case | samples | P | direct (s) | component total (s) | peak allocated (GiB) |
 |---|---:|---:|---:|---:|---:|
 | p2_300 | 300 | 2 | 1.753 | 1.686 | 1.98 |
 | p2_600 | 600 | 2 | 2.740 | 2.501 | 3.95 |
@@ -17,21 +17,12 @@ The gene axis is fixed at 54,922. Direct GPU times are medians of five complete 
 
 ## Practical direct GPU versus 12-worker R endpoints
 
-The R modes use the same public `DESeqDataSetFromMatrix + DESeq + results + lfcShrink` call path. Twelve-worker R is the practical CPU baseline; the one-worker observations remain in the JSON only as controlled diagnostics.
+The R modes use the same public `DESeqDataSetFromMatrix + DESeq + results + lfcShrink` call path. Twelve-worker R is the practical CPU baseline. Bold values identify the faster implementation.
 
-| case | samples | P | GPU (s) | R 12 workers (s) | GPU vs R 12w | worker parity |
-|---|---:|---:|---:|---:|---:|:---:|
-| p2_912 | 912 | 2 | 5.430 | 213.896 | 39.4× | PASS |
-| p6_all | 2451 | 6 | 22.936 | 642.552 | 28.0× | PASS |
-
-## Controlled serial stage diagnostic
-
-These one-worker stage sums preserve matched boundaries for attribution and parity. They are intentionally not used as practical acceleration claims.
-
-| case | samples | P | R 1w stage sum (s) | GPU stage sum (s) | parity |
-|---|---:|---:|---:|---:|:---:|
-| p2_912 | 912 | 2 | 952.305 | 5.139 | PASS |
-| p6_all | 2451 | 6 | 3211.540 | 23.415 | PASS |
+| case | samples | P | GPU (s) | R 12 workers (s) | GPU vs R 12w |
+|---|---:|---:|---:|---:|---:|
+| p2_912 | 912 | 2 | **5.430** | 213.896 | 39.4× |
+| p6_all | 2451 | 6 | **22.936** | 642.552 | 28.0× |
 
 ## Fresh-process A100 feasibility boundary
 

@@ -50,62 +50,54 @@ def main() -> None:
             mode: timings["cu"][case][mode]["total"]
             for mode in MODES
         }
+        best_mode = min(gpu, key=gpu.get)
         speedup = r_total / min(gpu.values())
         lines.append(
             f"| {case} | {meta.get('P', '—')} | {meta['n_samples']} | "
             f"{r_total:.0f} | "
-            + " | ".join(number(gpu[mode]) for mode in MODES)
+            + " | ".join(
+                f"**{number(gpu[mode])}**" if mode == best_mode
+                else number(gpu[mode])
+                for mode in MODES
+            )
             + f" | {speedup:.1f}× |"
         )
 
     lines += [
         "",
-        "## Controlled serial stage diagnostic (ms)",
+        "## GPU pipeline-stage measurements (ms)",
         "",
-        "This table preserves matched stage boundaries for attributing where time is "
-        "spent. Its R column deliberately uses one worker to isolate algorithmic "
-        "work; it is not the practical CPU baseline and no headline acceleration is "
-        "computed from it. Totals are sums of stage medians, not direct observations.",
+        "Bold values identify the fastest GPU mode for each measured stage. "
+        "Component totals sum independently measured stage medians and are not "
+        "direct end-to-end observations.",
         "",
-        "| dataset | P | n | R, 1 worker (diagnostic) | eager | graph | Triton |",
-        "|---|--:|--:|--:|--:|--:|--:|",
+        "| dataset | substep | eager | graph | Triton |",
+        "|---|---|--:|--:|--:|",
     ]
     for case in cases:
-        meta = metadata[case]
-        r_total = timings["r"][case].get(
-            "stage_total", timings["r"][case]["total"]
-        )
-        gpu = {
+        for step in STEPS:
+            gpu = {mode: timings["cu"][case][mode][step] for mode in MODES}
+            best_mode = min(gpu, key=gpu.get)
+            lines.append(
+                f"| {case} | {step} | "
+                + " | ".join(
+                    f"**{number(gpu[mode])}**" if mode == best_mode
+                    else number(gpu[mode])
+                    for mode in MODES
+                )
+                + " |"
+            )
+        totals = {
             mode: timings["cu"][case][mode].get(
                 "stage_total", timings["cu"][case][mode]["total"]
             )
             for mode in MODES
         }
         lines.append(
-            f"| {case} | {meta.get('P', '—')} | {meta['n_samples']} | "
-            f"{r_total:.0f} | "
-            + " | ".join(number(gpu[mode]) for mode in MODES)
+            f"| {case} | *component total* | "
+            + " | ".join(number(totals[mode]) for mode in MODES)
             + " |"
         )
-
-    lines += [
-        "",
-        "## Controlled per-stage diagnostic (ms)",
-        "",
-        "The R values below are the same one-worker diagnostic observations, not "
-        "the practical baseline used in the acceleration table above.",
-        "",
-        "| dataset | substep | R, 1 worker (diagnostic) | eager | graph | Triton |",
-        "|---|---|--:|--:|--:|--:|",
-    ]
-    for case in cases:
-        for step in STEPS:
-            values = [timings["cu"][case][mode][step] for mode in MODES]
-            lines.append(
-                f"| {case} | {step} | {timings['r'][case][step]:.0f} | "
-                + " | ".join(number(value) for value in values)
-                + " |"
-            )
 
     lines += [
         "",

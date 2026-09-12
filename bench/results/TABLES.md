@@ -8,62 +8,55 @@ Each cell is the median of five direct, complete workflow observations. The CPU 
 
 | dataset | P | n | R, 12 workers | eager | graph | Triton | best GPU vs. R |
 |---|--:|--:|--:|--:|--:|--:|--:|
-| airway | 5 | 8 | 12099 | 2479 | 1552 | 1401 | 8.6× |
-| airway_cell | 4 | 8 | 10421 | 3596 | 3003 | 2870 | 3.6× |
-| airway_dex | 2 | 8 | 11856 | 1332 | 858 | 790 | 15.0× |
-| gtex_blood_muscle | 2 | 300 | 63445 | 5284 | 4910 | 1807 | 35.1× |
-| pasilla | 2 | 7 | 7336 | 972 | 588 | 525 | 14.0× |
-| pasilla_2fac | 3 | 7 | 7371 | 1541 | 932 | 848 | 8.7× |
+| airway | 5 | 8 | 12099 | 2479 | 1552 | **1401** | 8.6× |
+| airway_cell | 4 | 8 | 10421 | 3596 | 3003 | **2870** | 3.6× |
+| airway_dex | 2 | 8 | 11856 | 1332 | 858 | **790** | 15.0× |
+| gtex_blood_muscle | 2 | 300 | 63445 | 5284 | 4910 | **1807** | 35.1× |
+| pasilla | 2 | 7 | 7336 | 972 | 588 | **525** | 14.0× |
+| pasilla_2fac | 3 | 7 | 7371 | 1541 | 932 | **848** | 8.7× |
 
-## Controlled serial stage diagnostic (ms)
+## GPU pipeline-stage measurements (ms)
 
-This table preserves matched stage boundaries for attributing where time is spent. Its R column deliberately uses one worker to isolate algorithmic work; it is not the practical CPU baseline and no headline acceleration is computed from it. Totals are sums of stage medians, not direct observations.
+Bold values identify the fastest GPU mode for each measured stage. Component totals sum independently measured stage medians and are not direct end-to-end observations.
 
-| dataset | P | n | R, 1 worker (diagnostic) | eager | graph | Triton |
-|---|--:|--:|--:|--:|--:|--:|
-| airway | 5 | 8 | 32961 | 2470 | 1545 | 1386 |
-| airway_cell | 4 | 8 | 30122 | 3593 | 2982 | 2852 |
-| airway_dex | 2 | 8 | 26070 | 1296 | 888 | 773 |
-| gtex_blood_muscle | 2 | 300 | 287354 | 5081 | 4749 | 1678 |
-| pasilla | 2 | 7 | 9573 | 966 | 583 | 524 |
-| pasilla_2fac | 3 | 7 | 10104 | 1528 | 925 | 837 |
-
-## Controlled per-stage diagnostic (ms)
-
-The R values below are the same one-worker diagnostic observations, not the practical baseline used in the acceleration table above.
-
-| dataset | substep | R, 1 worker (diagnostic) | eager | graph | Triton |
-|---|---|--:|--:|--:|--:|
-| airway | normalization | 201 | 1 | 1 | 1 |
-| airway | dispersion | 7863 | 1660 | 723 | 585 |
-| airway | glm_fit | 4398 | 62 | 62 | 64 |
-| airway | significance | 310 | 74 | 74 | 73 |
-| airway | lfc_shrink | 20189 | 673 | 685 | 663 |
-| airway_cell | normalization | 188 | 1 | 1 | 1 |
-| airway_cell | dispersion | 5456 | 801 | 198 | 62 |
-| airway_cell | glm_fit | 3875 | 39 | 38 | 39 |
-| airway_cell | significance | 332 | 78 | 78 | 75 |
-| airway_cell | lfc_shrink | 20271 | 2675 | 2667 | 2674 |
-| airway_dex | normalization | 188 | 1 | 1 | 1 |
-| airway_dex | dispersion | 4481 | 581 | 141 | 56 |
-| airway_dex | glm_fit | 5171 | 58 | 59 | 57 |
-| airway_dex | significance | 1387 | 82 | 109 | 82 |
-| airway_dex | lfc_shrink | 14843 | 573 | 578 | 576 |
-| gtex_blood_muscle | normalization | 3437 | 4 | 4 | 4 |
-| gtex_blood_muscle | dispersion | 187567 | 3574 | 3612 | 217 |
-| gtex_blood_muscle | glm_fit | 53421 | 849 | 491 | 432 |
-| gtex_blood_muscle | significance | 456 | 85 | 73 | 95 |
-| gtex_blood_muscle | lfc_shrink | 42474 | 570 | 569 | 929 |
-| pasilla | normalization | 159 | 1 | 1 | 1 |
-| pasilla | dispersion | 1782 | 463 | 78 | 21 |
-| pasilla | glm_fit | 2079 | 42 | 42 | 41 |
-| pasilla | significance | 209 | 40 | 40 | 40 |
-| pasilla | lfc_shrink | 5343 | 420 | 422 | 421 |
-| pasilla_2fac | normalization | 163 | 1 | 1 | 1 |
-| pasilla_2fac | dispersion | 2179 | 777 | 174 | 87 |
-| pasilla_2fac | glm_fit | 1495 | 354 | 354 | 352 |
-| pasilla_2fac | significance | 184 | 50 | 50 | 49 |
-| pasilla_2fac | lfc_shrink | 6082 | 347 | 346 | 347 |
+| dataset | substep | eager | graph | Triton |
+|---|---|--:|--:|--:|
+| airway | normalization | **1** | 1 | 1 |
+| airway | dispersion | 1660 | 723 | **585** |
+| airway | glm_fit | 62 | **62** | 64 |
+| airway | significance | 74 | 74 | **73** |
+| airway | lfc_shrink | 673 | 685 | **663** |
+| airway | *component total* | 2470 | 1545 | 1386 |
+| airway_cell | normalization | 1 | 1 | **1** |
+| airway_cell | dispersion | 801 | 198 | **62** |
+| airway_cell | glm_fit | 39 | **38** | 39 |
+| airway_cell | significance | 78 | 78 | **75** |
+| airway_cell | lfc_shrink | 2675 | **2667** | 2674 |
+| airway_cell | *component total* | 3593 | 2982 | 2852 |
+| airway_dex | normalization | 1 | 1 | **1** |
+| airway_dex | dispersion | 581 | 141 | **56** |
+| airway_dex | glm_fit | 58 | 59 | **57** |
+| airway_dex | significance | **82** | 109 | 82 |
+| airway_dex | lfc_shrink | **573** | 578 | 576 |
+| airway_dex | *component total* | 1296 | 888 | 773 |
+| gtex_blood_muscle | normalization | 4 | 4 | **4** |
+| gtex_blood_muscle | dispersion | 3574 | 3612 | **217** |
+| gtex_blood_muscle | glm_fit | 849 | 491 | **432** |
+| gtex_blood_muscle | significance | 85 | **73** | 95 |
+| gtex_blood_muscle | lfc_shrink | 570 | **569** | 929 |
+| gtex_blood_muscle | *component total* | 5081 | 4749 | 1678 |
+| pasilla | normalization | **1** | 1 | 1 |
+| pasilla | dispersion | 463 | 78 | **21** |
+| pasilla | glm_fit | 42 | 42 | **41** |
+| pasilla | significance | 40 | **40** | 40 |
+| pasilla | lfc_shrink | **420** | 422 | 421 |
+| pasilla | *component total* | 966 | 583 | 524 |
+| pasilla_2fac | normalization | 1 | 1 | **1** |
+| pasilla_2fac | dispersion | 777 | 174 | **87** |
+| pasilla_2fac | glm_fit | 354 | 354 | **352** |
+| pasilla_2fac | significance | 50 | 50 | **49** |
+| pasilla_2fac | lfc_shrink | 347 | **346** | 347 |
+| pasilla_2fac | *component total* | 1528 | 925 | 837 |
 
 ## Output parity against DESeq2 1.52.0
 
