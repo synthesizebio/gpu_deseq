@@ -34,23 +34,20 @@ def main() -> None:
         "R reference: R 4.6.0, DESeq2 1.52.0, apeglm 1.34.0. GPU "
         "measurements use one A100-SXM4-40GB.",
         "",
-        "## Matched sum of stage medians (ms)",
+        f"## Practical GPU acceleration versus {workers}-worker R (ms)",
         "",
-        "R and cuDESeq2 use the same five stage boundaries. These totals are sums "
-        "of independently measured stage medians, not direct end-to-end observations.",
+        "Each cell is the median of five direct, complete workflow observations. "
+        "The CPU baseline uses `BiocParallel::MulticoreParam(12)` with BLAS and "
+        "OpenMP pinned to one thread per worker.",
         "",
-        "| dataset | P | n | R, 1 worker | eager | graph | Triton | best cuDESeq2 vs. R |",
+        f"| dataset | P | n | R, {workers} workers | eager | graph | Triton | best GPU vs. R |",
         "|---|--:|--:|--:|--:|--:|--:|--:|",
     ]
     for case in cases:
         meta = metadata[case]
-        r_total = timings["r"][case].get(
-            "stage_total", timings["r"][case]["total"]
-        )
+        r_total = parallel["cases"][case]["parallel"]["median_ms"]
         gpu = {
-            mode: timings["cu"][case][mode].get(
-                "stage_total", timings["cu"][case][mode]["total"]
-            )
+            mode: timings["cu"][case][mode]["total"]
             for mode in MODES
         }
         speedup = r_total / min(gpu.values())
@@ -63,51 +60,42 @@ def main() -> None:
 
     lines += [
         "",
-        "## Direct end-to-end wall time (ms)",
+        "## Controlled serial stage diagnostic (ms)",
         "",
-        "Each cell is the median of five complete workflow observations, including "
-        "dataset construction and host-to-device transfer. These values are kept "
-        "separate from the matched sums of stage medians above.",
+        "This table preserves matched stage boundaries for attributing where time is "
+        "spent. Its R column deliberately uses one worker to isolate algorithmic "
+        "work; it is not the practical CPU baseline and no headline acceleration is "
+        "computed from it. Totals are sums of stage medians, not direct observations.",
         "",
-        "| dataset | n | R, 1 worker | eager | graph | Triton | best cuDESeq2 vs. R |",
+        "| dataset | P | n | R, 1 worker (diagnostic) | eager | graph | Triton |",
         "|---|--:|--:|--:|--:|--:|--:|",
     ]
     for case in cases:
-        direct_gpu = {
-            mode: timings["cu"][case][mode]["total"] for mode in MODES
+        meta = metadata[case]
+        r_total = timings["r"][case].get(
+            "stage_total", timings["r"][case]["total"]
+        )
+        gpu = {
+            mode: timings["cu"][case][mode].get(
+                "stage_total", timings["cu"][case][mode]["total"]
+            )
+            for mode in MODES
         }
-        direct_r = timings["r"][case]["total"]
-        speedup = direct_r / min(direct_gpu.values())
         lines.append(
-            f"| {case} | {metadata[case]['n_samples']} | {direct_r:.0f} | "
-            + " | ".join(number(direct_gpu[mode]) for mode in MODES)
-            + f" | {speedup:.1f}× |"
+            f"| {case} | {meta.get('P', '—')} | {meta['n_samples']} | "
+            f"{r_total:.0f} | "
+            + " | ".join(number(gpu[mode]) for mode in MODES)
+            + " |"
         )
 
     lines += [
         "",
-        f"## Direct R end-to-end wall time: one vs. {workers} workers (ms)",
+        "## Controlled per-stage diagnostic (ms)",
         "",
-        "Each cell is the median of direct `DESeq() + results() + lfcShrink()` "
-        "observations. This separately collected table is not combined with the "
-        "stage-summed GPU measurements above.",
+        "The R values below are the same one-worker diagnostic observations, not "
+        "the practical baseline used in the acceleration table above.",
         "",
-        f"| dataset | n | 1 worker | {workers} workers |",
-        "|---|--:|--:|--:|",
-    ]
-    for case in cases:
-        record = parallel["cases"][case]
-        lines.append(
-            f"| {case} | {metadata[case]['n_samples']} | "
-            f"{record['serial']['median_ms']:.0f} | "
-            f"{record['parallel']['median_ms']:.0f} |"
-        )
-
-    lines += [
-        "",
-        "## Per-stage wall time (ms)",
-        "",
-        "| dataset | substep | R | eager | graph | Triton |",
+        "| dataset | substep | R, 1 worker (diagnostic) | eager | graph | Triton |",
         "|---|---|--:|--:|--:|--:|",
     ]
     for case in cases:

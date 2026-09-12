@@ -15,21 +15,23 @@ The gene axis is fixed at 54,922. Direct GPU times are medians of five complete 
 | p6_fixed300 | 1800 | 6 | 14.323 | 13.745 | 14.77 |
 | p6_all | 2451 | 6 | 22.936 | 23.415 | 20.10 |
 
-## Direct one- and 12-worker R endpoint observations
+## Practical direct GPU versus 12-worker R endpoints
 
-The R modes use the same public `DESeqDataSetFromMatrix + DESeq + results + lfcShrink` call path in separate fresh processes. CPU scaling and both GPU speedups therefore use matched direct wall times.
+The R modes use the same public `DESeqDataSetFromMatrix + DESeq + results + lfcShrink` call path. Twelve-worker R is the practical CPU baseline; the one-worker observations remain in the JSON only as controlled diagnostics.
 
-| case | samples | P | GPU (s) | R 1 worker (s) | R 12 workers (s) | R 12w speedup | GPU vs 1w | GPU vs 12w | worker parity |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|:---:|
-| p2_912 | 912 | 2 | 5.430 | 947.191 | 213.896 | 4.43× | 174.4× | 39.4× | PASS |
-| p6_all | 2451 | 6 | 22.936 | 3609.156 | 642.552 | 5.62× | 157.4× | 28.0× | PASS |
-
-## Stage-timed one-worker R reference observations
-
-| case | samples | P | R stage sum (s) | GPU stage sum (s) | observed speedup | parity |
+| case | samples | P | GPU (s) | R 12 workers (s) | GPU vs R 12w | worker parity |
 |---|---:|---:|---:|---:|---:|:---:|
-| p2_912 | 912 | 2 | 952.305 | 5.139 | 185.3× | PASS |
-| p6_all | 2451 | 6 | 3211.540 | 23.415 | 137.2× | PASS |
+| p2_912 | 912 | 2 | 5.430 | 213.896 | 39.4× | PASS |
+| p6_all | 2451 | 6 | 22.936 | 642.552 | 28.0× | PASS |
+
+## Controlled serial stage diagnostic
+
+These one-worker stage sums preserve matched boundaries for attribution and parity. They are intentionally not used as practical acceleration claims.
+
+| case | samples | P | R 1w stage sum (s) | GPU stage sum (s) | parity |
+|---|---:|---:|---:|---:|:---:|
+| p2_912 | 912 | 2 | 952.305 | 5.139 | PASS |
+| p6_all | 2451 | 6 | 3211.540 | 23.415 | PASS |
 
 ## Fresh-process A100 feasibility boundary
 

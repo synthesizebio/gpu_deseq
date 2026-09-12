@@ -38,20 +38,19 @@ On a host configured with the NVIDIA Container Toolkit,
 > the three tables in [`bench/results/TABLES.md`](bench/results/TABLES.md):
 > total-pipeline timing, per-substep timing, and output parity — for R DESeq2,
 > cuDESeq2 (eager / CUDA-graph / Triton), and a PyDESeq2 competitor, across six
-> real RNA-seq datasets (7–300 samples) on an A100. Across all six retained
-> matched stage-summed measurements, the best GPU mode is 10.6–171.2× faster
-> than one-worker R DESeq2. These are sums of five stage medians, not direct
-> end-to-end observations; direct workflow medians are reported separately.
+> real RNA-seq datasets (7–300 samples) on an A100. The primary comparison uses
+> direct end-to-end medians and a practical 12-worker R DESeq2 baseline; the
+> best GPU mode is 3.6–35.1× faster. One-worker measurements are retained only
+> as controlled stage-attribution diagnostics, not as headline performance.
 
 The separate [real-GTEx scaling record](bench/results/GTEX_SCALING.md) holds
 the gene axis at 54,922 and measures complete workflows through 2,451 samples
 and a six-tissue design. The largest fused-Triton case has a 22.936-second
-direct median and 20.10 GiB peak CUDA allocation. Single-observation,
-matched direct R endpoints show GPU speedups of 174.4×/39.4× against one/12
-workers at 912 samples/P=2 and 157.4×/28.0× at 2,451 samples/P=6. R itself
-scales by 4.43× and 5.62× across the two cohorts, and the serial and parallel
-result tables agree to floating-point precision. All five GPU--R parity gates
-pass. Fresh-process feasibility probes place the observed 40-GB A100 boundary
+direct median and 20.10 GiB peak CUDA allocation. Matched direct endpoints
+show GPU speedups of 39.4× and 28.0× against 12-worker R at 912 samples/P=2
+and 2,451 samples/P=6, respectively. Controlled serial and 12-worker result
+tables agree to floating-point precision. All five GPU--R parity gates pass.
+Fresh-process feasibility probes place the observed 40-GB A100 boundary
 between 3,478 samples/P=9 (pass) and 3,784 samples/P=10 (OOM during dispersion).
 
 ## What's tested vs R DESeq2

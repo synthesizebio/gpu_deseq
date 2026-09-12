@@ -163,8 +163,10 @@ check(
     "prepared GTEx records 300 source sample names",
     len(gtex_metadata["selected_source_samples"]) == 300,
 )
-check("paper names source manifest", "validation/data\\_sources.json" in TEX)
-check("paper names prepared manifest", "validation/prepared\\_data\\_manifest.json" in TEX)
+check(
+    "paper identifies archived provenance",
+    "archived provenance record contains source URLs" in TEX_NORMALIZED,
+)
 check("paper records GTEx seed", "using R seed 1" in TEX_NORMALIZED)
 prepared_manifest_digest = digest(ROOT / "validation/prepared_data_manifest.json")
 source_manifest_digest = digest(SOURCE_MANIFEST_PATH)
@@ -281,28 +283,50 @@ for step, values in metrics.items():
     check(f"parity table {step}: worst", close(shown_worst, actual_worst, 0.06))
 
 
-# Direct R-only table.
+# Primary direct comparison: practical 12-worker R versus all GPU modes.
 direct_table = table("tab:realtiming")
+practical_speedups = []
 for case, label in CASES:
     row = next(
         line for line in direct_table.splitlines() if line.strip().startswith(label + " ")
     )
     cells = [cell.strip() for cell in row.split("&")]
     record = PARALLEL_R["cases"][case]
+    gpu_ms = [TIMING["cu"][case][mode]["total"] for mode in MODES]
     check(
-        f"direct R table {case}: one worker",
-        round(numeric_cell(cells[3]), 1) == round(record["serial"]["median_ms"] / 1000, 1),
+        f"primary direct table {case}: 12-worker R",
+        round(numeric_cell(cells[3]), 3)
+        == round(record["parallel"]["median_ms"] / 1000, 3),
     )
+    for offset, (mode, value) in enumerate(zip(MODES, gpu_ms), start=4):
+        check(
+            f"primary direct table {case}: {mode}",
+            round(numeric_cell(cells[offset]), 3) == round(value / 1000, 3),
+        )
+    practical_speedup = record["parallel"]["median_ms"] / min(gpu_ms)
+    practical_speedups.append(practical_speedup)
     check(
-        f"direct R table {case}: 12 workers",
-        round(numeric_cell(cells[4]), 1) == round(record["parallel"]["median_ms"] / 1000, 1),
+        f"primary direct table {case}: speedup",
+        round(numeric_cell(cells[7]), 1) == round(practical_speedup, 1),
     )
-    check(f"direct R table {case}: no GPU cells", len(cells) == 5)
+check(
+    "practical speed minimum",
+    round(min(practical_speedups), 1) == 3.6,
+    min(practical_speedups),
+)
+check(
+    "practical speed maximum",
+    round(max(practical_speedups), 1) == 35.1,
+    max(practical_speedups),
+)
+check(
+    "headline practical range appears three times",
+    TEX.count(r"\fact{3.6--35.1$\times$}") == 3,
+)
 
 
-# Matched per-stage table and stage-summed speed claim.
+# Controlled serial per-stage table. It supports attribution, not the headline.
 stage_table = table("tab:realsubstep")
-speedups = []
 for case, label in CASES:
     start = stage_table.index(label + " &")
     end = stage_table.find(r"\midrule", start)
@@ -327,39 +351,6 @@ for case, label in CASES:
     check(
         f"stage table {case}/sum",
         all(round(a) == round(b) for a, b in zip(shown_sum, actual_sum)),
-    )
-    speedups.append(actual_sum[0] / min(actual_sum[1:]))
-check("stage speed minimum", round(min(speedups), 1) == 10.6, min(speedups))
-check("stage speed maximum", round(max(speedups), 1) == 171.2, max(speedups))
-check(
-    "headline stage range appears three times",
-    TEX.count(r"\fact{10.6--171.2$\times$}") == 3,
-)
-
-
-# Direct cross-implementation observations are reported separately from stage sums.
-direct_gpu_table = table("tab:realdirectgpu")
-for case, label in CASES:
-    row = next(
-        line
-        for line in direct_gpu_table.splitlines()
-        if line.strip().startswith(label + " ")
-    )
-    shown = [numeric_cell(cell) for cell in row.split("&")[1:]]
-    actual_ms = [TIMING["r"][case]["total"]] + [
-        TIMING["cu"][case][mode]["total"] for mode in MODES
-    ]
-    actual_speedup = actual_ms[0] / min(actual_ms[1:])
-    check(
-        f"direct GPU table {case}: times",
-        all(
-            round(displayed, 3) == round(actual / 1000, 3)
-            for displayed, actual in zip(shown[:4], actual_ms)
-        ),
-    )
-    check(
-        f"direct GPU table {case}: speedup",
-        round(shown[4], 1) == round(actual_speedup, 1),
     )
 
 
@@ -504,28 +495,14 @@ for case, row_prefix in (("p2_912", "912 "), ("p6_all", r"2{,}451 ")):
         == round(gtex_timings[case]["direct_median_ms"] / 1000, 3),
     )
     check(
-        f"GTEx direct R table {case}: one worker",
-        round(numeric_cell(cells[3]), 3)
-        == round(one_worker["direct_median_ms"] / 1000, 3),
-    )
-    check(
         f"GTEx direct R table {case}: twelve workers",
-        round(numeric_cell(cells[4]), 3)
+        round(numeric_cell(cells[3]), 3)
         == round(twelve_workers["direct_median_ms"] / 1000, 3),
     )
-    for cell, key, digits in (
-        (5, "gpu_speedup_vs_one_worker", 1),
-        (6, "gpu_speedup_vs_twelve_workers", 1),
-    ):
-        check(
-            f"GTEx direct R table {case}: {key}",
-            round(numeric_cell(cells[cell]), digits)
-            == round(endpoint[key], digits),
-        )
-    expected_r_scaling = 4.43 if case == "p2_912" else 5.62
     check(
-        f"GTEx direct R prose {case}: CPU scaling",
-        round(endpoint["r_parallel_speedup"], 2) == expected_r_scaling,
+        f"GTEx direct R table {case}: GPU speedup vs twelve workers",
+        round(numeric_cell(cells[4]), 1)
+        == round(endpoint["gpu_speedup_vs_twelve_workers"], 1),
     )
 
 check(
@@ -687,7 +664,7 @@ checked_facts = {
     "8.5e-4",
     "0.99963",
     "0.99722",
-    "10.6--171.2$\\times$",
+    "3.6--35.1$\\times$",
     "0.44\\%",
     "$8.1\\times10^{-5}$",
     "3{,}993",
@@ -704,11 +681,7 @@ checked_facts = {
     "2{,}451",
     "22.936-s",
     "20.10 GiB",
-    "4.43$\\times$",
-    "174.4$\\times$",
     "39.4$\\times$",
-    "5.62$\\times$",
-    "157.4$\\times$",
     "28.0$\\times$",
     "0.00212",
     "0.99896",

@@ -2,48 +2,37 @@
 
 R reference: R 4.6.0, DESeq2 1.52.0, apeglm 1.34.0. GPU measurements use one A100-SXM4-40GB.
 
-## Matched sum of stage medians (ms)
+## Practical GPU acceleration versus 12-worker R (ms)
 
-R and cuDESeq2 use the same five stage boundaries. These totals are sums of independently measured stage medians, not direct end-to-end observations.
+Each cell is the median of five direct, complete workflow observations. The CPU baseline uses `BiocParallel::MulticoreParam(12)` with BLAS and OpenMP pinned to one thread per worker.
 
-| dataset | P | n | R, 1 worker | eager | graph | Triton | best cuDESeq2 vs. R |
+| dataset | P | n | R, 12 workers | eager | graph | Triton | best GPU vs. R |
 |---|--:|--:|--:|--:|--:|--:|--:|
-| airway | 5 | 8 | 32961 | 2470 | 1545 | 1386 | 23.8× |
-| airway_cell | 4 | 8 | 30122 | 3593 | 2982 | 2852 | 10.6× |
-| airway_dex | 2 | 8 | 26070 | 1296 | 888 | 773 | 33.7× |
-| gtex_blood_muscle | 2 | 300 | 287354 | 5081 | 4749 | 1678 | 171.2× |
-| pasilla | 2 | 7 | 9573 | 966 | 583 | 524 | 18.3× |
-| pasilla_2fac | 3 | 7 | 10104 | 1528 | 925 | 837 | 12.1× |
+| airway | 5 | 8 | 12099 | 2479 | 1552 | 1401 | 8.6× |
+| airway_cell | 4 | 8 | 10421 | 3596 | 3003 | 2870 | 3.6× |
+| airway_dex | 2 | 8 | 11856 | 1332 | 858 | 790 | 15.0× |
+| gtex_blood_muscle | 2 | 300 | 63445 | 5284 | 4910 | 1807 | 35.1× |
+| pasilla | 2 | 7 | 7336 | 972 | 588 | 525 | 14.0× |
+| pasilla_2fac | 3 | 7 | 7371 | 1541 | 932 | 848 | 8.7× |
 
-## Direct end-to-end wall time (ms)
+## Controlled serial stage diagnostic (ms)
 
-Each cell is the median of five complete workflow observations, including dataset construction and host-to-device transfer. These values are kept separate from the matched sums of stage medians above.
+This table preserves matched stage boundaries for attributing where time is spent. Its R column deliberately uses one worker to isolate algorithmic work; it is not the practical CPU baseline and no headline acceleration is computed from it. Totals are sums of stage medians, not direct observations.
 
-| dataset | n | R, 1 worker | eager | graph | Triton | best cuDESeq2 vs. R |
+| dataset | P | n | R, 1 worker (diagnostic) | eager | graph | Triton |
 |---|--:|--:|--:|--:|--:|--:|
-| airway | 8 | 33063 | 2479 | 1552 | 1401 | 23.6× |
-| airway_cell | 8 | 30564 | 3596 | 3003 | 2870 | 10.6× |
-| airway_dex | 8 | 26678 | 1332 | 858 | 790 | 33.8× |
-| gtex_blood_muscle | 300 | 289337 | 5284 | 4910 | 1807 | 160.2× |
-| pasilla | 7 | 9945 | 972 | 588 | 525 | 19.0× |
-| pasilla_2fac | 7 | 10462 | 1541 | 932 | 848 | 12.3× |
+| airway | 5 | 8 | 32961 | 2470 | 1545 | 1386 |
+| airway_cell | 4 | 8 | 30122 | 3593 | 2982 | 2852 |
+| airway_dex | 2 | 8 | 26070 | 1296 | 888 | 773 |
+| gtex_blood_muscle | 2 | 300 | 287354 | 5081 | 4749 | 1678 |
+| pasilla | 2 | 7 | 9573 | 966 | 583 | 524 |
+| pasilla_2fac | 3 | 7 | 10104 | 1528 | 925 | 837 |
 
-## Direct R end-to-end wall time: one vs. 12 workers (ms)
+## Controlled per-stage diagnostic (ms)
 
-Each cell is the median of direct `DESeq() + results() + lfcShrink()` observations. This separately collected table is not combined with the stage-summed GPU measurements above.
+The R values below are the same one-worker diagnostic observations, not the practical baseline used in the acceleration table above.
 
-| dataset | n | 1 worker | 12 workers |
-|---|--:|--:|--:|
-| airway | 8 | 32130 | 12099 |
-| airway_cell | 8 | 29341 | 10421 |
-| airway_dex | 8 | 25968 | 11856 |
-| gtex_blood_muscle | 300 | 276016 | 63445 |
-| pasilla | 7 | 9447 | 7336 |
-| pasilla_2fac | 7 | 10200 | 7371 |
-
-## Per-stage wall time (ms)
-
-| dataset | substep | R | eager | graph | Triton |
+| dataset | substep | R, 1 worker (diagnostic) | eager | graph | Triton |
 |---|---|--:|--:|--:|--:|
 | airway | normalization | 201 | 1 | 1 | 1 |
 | airway | dispersion | 7863 | 1660 | 723 | 585 |

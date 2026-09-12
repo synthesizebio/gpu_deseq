@@ -474,6 +474,48 @@ def test_combined_apeglm_loss_gradient_matches_separate_evaluations() -> None:
     torch.testing.assert_close(actual_grad, expected_grad, rtol=1e-14, atol=1e-12)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_compiled_apeglm_kernels_match_eager_cuda() -> None:
+    """The CUDA fast path may change reduction order, but not the solution."""
+    from gpu_deseq import _shrink
+
+    generator = torch.Generator(device="cuda").manual_seed(23)
+    beta = (
+        torch.randn(
+            127, 4, generator=generator, dtype=torch.float64, device="cuda"
+        )
+        * 0.1
+    )
+    counts = torch.randint(
+        0, 500, (127, 31), generator=generator, dtype=torch.int64, device="cuda"
+    ).to(torch.float64)
+    size = (
+        torch.rand(127, generator=generator, dtype=torch.float64, device="cuda")
+        * 20.0
+        + 0.1
+    )
+    offset = (
+        torch.randn(31, generator=generator, dtype=torch.float64, device="cuda")
+        * 0.2
+    )
+    design = torch.randn(
+        31, 4, generator=generator, dtype=torch.float64, device="cuda"
+    )
+    scales = (
+        torch.scalar_tensor(15.0, dtype=torch.float64, device="cuda"),
+        torch.scalar_tensor(0.7, dtype=torch.float64, device="cuda"),
+    )
+    args = (beta, counts, size, offset, design, *scales, 3)
+    eager_loss, eager_grad = _shrink._nbinom_apeglm_loss_grad(*args)
+    compiled_loss, compiled_grad = _shrink._compiled_nbinom_apeglm_loss_grad(*args)
+    eager_hess = _shrink._nbinom_apeglm_hess(*args)
+    compiled_hess = _shrink._compiled_nbinom_apeglm_hess(*args)
+
+    torch.testing.assert_close(compiled_loss, eager_loss, rtol=2e-13, atol=2e-10)
+    torch.testing.assert_close(compiled_grad, eager_grad, rtol=2e-12, atol=2e-10)
+    torch.testing.assert_close(compiled_hess, eager_hess, rtol=2e-12, atol=2e-10)
+
+
 @pytest.mark.parametrize("replicated_cells", [False, True])
 def test_tensor_cooks_distance_matches_numpy(replicated_cells: bool) -> None:
     generator = np.random.default_rng(19)

@@ -900,7 +900,7 @@ def lfc_shrink(
     else:
         prior_scale = 1.0
 
-    # Batched Newton MAP.
+    # Batched L-BFGS MAP.
     counts_nz = fit.counts[nz]
     disp_nz = fit.dispersions[nz]
     beta_shrunk_nz, inv_hess_diag_nz, _conv = _shrink_core.apeglm_shrink_batched(

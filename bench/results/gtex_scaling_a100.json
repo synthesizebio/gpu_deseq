@@ -19,7 +19,8 @@
     "observed_utc_end_from_output_mtime": "2026-09-12T02:19:46.114445+00:00",
     "gpu_timing_contract": "one warm-up, five staged repetitions, and five direct repetitions; CUDA-synchronized medians; source-matrix extraction excluded",
     "oom_probe_contract": "one cold staged workflow per fresh process; no separate direct run",
-    "r_endpoint_contract": "one cold, one-worker staged observation; used only as an explicitly single-observation endpoint comparison",
+    "r_endpoint_contract": "one cold, one-worker staged observation; controlled stage diagnostic and parity reference only, not the practical CPU baseline",
+    "primary_cpu_baseline": "BiocParallel::MulticoreParam(12)",
     "r_direct_timing_commit": "f834cd9dffce631b83b945cbb8842e01803e648e",
     "r_direct_endpoint_contract": "one cold direct observation in a fresh process for each worker count; DESeqDataSet construction + DESeq() + results() + lfcShrink(); SerialParam or MulticoreParam(12); BLAS and OpenMP pinned to one",
     "input_file_sha256": {
