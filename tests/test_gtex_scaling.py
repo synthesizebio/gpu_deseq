@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from bench.assemble_gtex_scaling import validate_same_cohort
 from bench.gtex_scaling import CASE_NAMES, case_spec, stable_order
 
 
@@ -84,3 +85,25 @@ def test_balanced_two_tissue_maximum_is_912() -> None:
     assert spec["P"] == 2
     assert spec["n_samples"] == 912
     assert set(spec["group_counts"].values()) == {456}
+
+
+def _cohort_record() -> dict[str, object]:
+    return {
+        "n_samples": 912,
+        "P": 2,
+        "contrast": "tissue[T.Muscle - Skeletal]",
+        "source_columns_one_based": [14, 216, 248],
+        "source_sample_ids_sha256": "samples",
+        "matrix_metadata_sha256": "metadata",
+        "matrix_binary_sha256": "matrix",
+    }
+
+
+def test_reusing_r_endpoints_requires_exact_same_cohort() -> None:
+    current = _cohort_record()
+    reference = _cohort_record()
+    validate_same_cohort(current, reference, context="p2_912")
+
+    reference["source_columns_one_based"] = [14, 216, 249]
+    with pytest.raises(ValueError, match="source_columns_one_based"):
+        validate_same_cohort(current, reference, context="p2_912")

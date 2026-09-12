@@ -190,8 +190,9 @@ Normalization, Dispersion Estimation, GLM Fit, Significance Testing, and LFC Shr
 \label{sec:normalization}
 Median-of-ratios normalization is implemented with GPU tensor reductions and
 quantiles. The default \texttt{sfType="ratio"} raises, as DESeq2 does, when
-every gene contains a zero. Users can explicitly select DESeq2's optional
-\texttt{sfType="poscounts"} estimator for such sparse matrices.
+every gene contains a zero. DESeq2's alternative
+\texttt{sfType="poscounts"} estimator is also implemented for such sparse
+matrices.
 
 \subsubsection{Dispersion estimation}
 \label{sec:disp-overview}

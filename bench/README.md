@@ -105,13 +105,14 @@ historical synthetic and CPU-only-host experiments.
   each, with five measured repetitions after an untimed warm-up. R substeps call
   `estimateSizeFactors → estimateDispersions → nbinomWaldTest` plus eligible
   outlier refitting `→ results → lfcShrink`. R also uses five measured
-  repetitions and one worker for the matched stage comparison. Current harness
+  repetitions and one worker for a controlled stage-attribution diagnostic. Current harness
   output keeps `stage_total` (the sum of independently measured stage medians)
   separate from `total` (the median of direct observations including dataset
-  construction and, for CUDA, host-to-device transfer). The separate R worker
-  comparison uses direct `DESeq() + results() + lfcShrink()` observations at one and 12
-  `MulticoreParam` workers, with standard count-outlier replacement/refitting;
-  its record is `bench/results/r_parallel_a100_12worker.json`.
+  construction and, for CUDA, host-to-device transfer). The primary acceleration
+  comparison uses direct `DESeq() + results() + lfcShrink()` observations with
+  12 `MulticoreParam` workers and standard count-outlier
+  replacement/refitting. One-worker measurements remain available as controlled
+  diagnostics, not as the practical baseline.
 
 ## Files
 
@@ -171,8 +172,9 @@ PYTHONPATH=src python bench/score_gtex_scaling.py \
   /tmp/p6_all_gpu.npz /tmp/p6_all_r --output /tmp/p6_all_parity.json
 ```
 
-For direct one-versus-12-worker comparisons, run the public standard DESeq2
-pipeline in separate fresh processes. Both settings include
+For the practical direct comparison, run the public standard DESeq2 pipeline
+with 12 workers in a fresh process. A corresponding one-worker run may be kept
+as a controlled scaling and output-parity diagnostic. Both settings include
 `DESeqDataSetFromMatrix + DESeq + results + lfcShrink` and use the exact same
 source columns:
 
@@ -193,7 +195,8 @@ Rscript bench/run_gtex_scaling_r_direct.R \
 The worker count applies through `BiocParallel::SerialParam` or
 `MulticoreParam`; BLAS/OpenMP threads remain pinned to one to prevent nested
 oversubscription. These long endpoint measurements are single observations,
-not five-repetition headline timings.
+not five-repetition headline timings. Only the 12-worker endpoint is used as
+the practical CPU baseline.
 
 Confirm that the worker count does not change the result tables:
 
@@ -221,3 +224,17 @@ PYTHONPATH=src python bench/assemble_gtex_scaling.py /path/to/run \
   bench/results/gtex_scaling_a100.json \
   --markdown bench/results/GTEX_SCALING.md
 ```
+
+When a code change affects only GPU execution, previously measured R endpoints
+can be reused without copying or relabeling them:
+
+```bash
+PYTHONPATH=src python bench/assemble_gtex_scaling.py /path/to/new-gpu-run \
+  bench/results/gtex_scaling_a100.json \
+  --r-run-directory /path/to/prior-r-reference-run \
+  --markdown bench/results/GTEX_SCALING.md
+```
+
+The assembler accepts this only when sample count, design width, contrast,
+exact source columns, sample-ID hash, and both matrix hashes match. New GPU
+captures must still be rescored against the retained R outputs.

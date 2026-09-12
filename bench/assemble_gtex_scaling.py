@@ -25,6 +25,15 @@ TIMING_CASES = (
 PROBE_CASES = ("p8_all", "p9_all", "p10_all", "p12_all")
 R_CASES = ("p2_912", "p6_all")
 DIRECT_WORKERS = (1, 12)
+COHORT_FIELDS = (
+    "n_samples",
+    "P",
+    "contrast",
+    "source_columns_one_based",
+    "source_sample_ids_sha256",
+    "matrix_metadata_sha256",
+    "matrix_binary_sha256",
+)
 
 
 def digest(path: Path) -> str:
@@ -43,7 +52,22 @@ def timestamp(path: Path) -> str:
     return dt.datetime.fromtimestamp(path.stat().st_mtime, dt.timezone.utc).isoformat()
 
 
-def assemble(run_dir: Path) -> dict[str, Any]:
+def validate_same_cohort(
+    current: dict[str, Any],
+    reference: dict[str, Any],
+    *,
+    context: str,
+) -> None:
+    """Require two GPU records to identify the exact same input and design."""
+    mismatched = [
+        field for field in COHORT_FIELDS if current.get(field) != reference.get(field)
+    ]
+    if mismatched:
+        raise ValueError(f"cohort mismatch for {context}: {', '.join(mismatched)}")
+
+
+def assemble(run_dir: Path, *, r_run_dir: Path | None = None) -> dict[str, Any]:
+    r_run_dir = run_dir if r_run_dir is None else r_run_dir
     source_manifest_path = ROOT / "validation" / "data_sources.json"
     prepared_manifest_path = ROOT / "validation" / "prepared_data_manifest.json"
     source_manifest = read(source_manifest_path)
@@ -56,6 +80,12 @@ def assemble(run_dir: Path) -> dict[str, Any]:
     timings: dict[str, Any] = {}
     probes: dict[str, Any] = {}
     input_hashes: dict[str, str] = {}
+    input_paths: list[Path] = []
+
+    def record_input(path: Path, key: str) -> None:
+        input_hashes[key] = digest(path)
+        input_paths.append(path)
+
     for case in TIMING_CASES:
         path = run_dir / f"{case}_gpu.json"
         record = read(path)
@@ -66,7 +96,7 @@ def assemble(run_dir: Path) -> dict[str, Any]:
         if record["working_tree_dirty_at_start"] is not False:
             raise ValueError(f"timing case was not run clean: {case}")
         timings[case] = record
-        input_hashes[path.name] = digest(path)
+        record_input(path, path.name)
     commits = {record["git_commit"] for record in timings.values()}
     if len(commits) != 1:
         raise ValueError(f"GPU timing cases do not share one commit: {commits}")
@@ -80,12 +110,17 @@ def assemble(run_dir: Path) -> dict[str, Any]:
         if record["working_tree_dirty_at_start"] is not False:
             raise ValueError(f"probe was not run clean: {case}")
         probes[case] = record
-        input_hashes[path.name] = digest(path)
+        record_input(path, path.name)
 
     r_endpoints: dict[str, Any] = {}
+    r_reference_gpu_commits: set[str] = set()
     for case in R_CASES:
-        r_path = run_dir / f"{case}_r" / "r_timings.json"
-        dispersion_path = run_dir / f"{case}_r" / "r_dispersion_stage.json"
+        reference_gpu_path = r_run_dir / f"{case}_gpu.json"
+        reference_gpu = read(reference_gpu_path)
+        validate_same_cohort(timings[case], reference_gpu, context=case)
+        r_reference_gpu_commits.add(reference_gpu["git_commit"])
+        r_path = r_run_dir / f"{case}_r" / "r_timings.json"
+        dispersion_path = r_run_dir / f"{case}_r" / "r_dispersion_stage.json"
         parity_path = run_dir / f"{case}_parity.json"
         r_record = read(r_path)
         dispersion_record = read(dispersion_path)
@@ -96,6 +131,8 @@ def assemble(run_dir: Path) -> dict[str, Any]:
             raise ValueError(f"R endpoint is not the documented staged observation: {case}")
         if r_record["working_tree_dirty_at_start"] is not False:
             raise ValueError(f"R endpoint was not run clean: {case}")
+        if r_record["gpu_case_sha256"] != digest(reference_gpu_path):
+            raise ValueError(f"staged R endpoint used wrong reference cohort: {case}")
         r_endpoints[case] = {
             "timing": r_record,
             "dispersion_capture": dispersion_record,
@@ -104,15 +141,22 @@ def assemble(run_dir: Path) -> dict[str, Any]:
                 r_record["stage_total_ms"] / timings[case]["stage_total_ms"]
             ),
         }
-        for path in (r_path, dispersion_path, parity_path):
-            input_hashes[str(path.relative_to(run_dir))] = digest(path)
+        record_input(reference_gpu_path, f"r_reference/{reference_gpu_path.name}")
+        for path in (r_path, dispersion_path):
+            record_input(path, f"r_reference/{path.relative_to(r_run_dir)}")
+        record_input(parity_path, parity_path.name)
+    if len(r_reference_gpu_commits) != 1:
+        raise ValueError(
+            "R endpoint cohorts do not share one GPU reference commit: "
+            f"{r_reference_gpu_commits}"
+        )
 
     r_direct_endpoints: dict[str, Any] = {}
     direct_commits: set[str] = set()
     for case in R_CASES:
         worker_records: dict[int, Any] = {}
         for workers in DIRECT_WORKERS:
-            directory = run_dir / f"{case}_r_direct_{workers}"
+            directory = r_run_dir / f"{case}_r_direct_{workers}"
             path = directory / "r_direct_timings.json"
             record = read(path)
             if record["status"] != "pass":
@@ -125,7 +169,9 @@ def assemble(run_dir: Path) -> dict[str, Any]:
                 raise ValueError(f"direct R endpoint contract mismatch: {case}/{workers}")
             if record["working_tree_dirty_at_start"] is not False:
                 raise ValueError(f"direct R endpoint was not run clean: {case}/{workers}")
-            if record["gpu_case_sha256"] != digest(run_dir / f"{case}_gpu.json"):
+            if record["gpu_case_sha256"] != digest(
+                r_run_dir / f"{case}_gpu.json"
+            ):
                 raise ValueError(f"direct R endpoint used wrong GPU cohort: {case}/{workers}")
             if record["source_rdata_sha256"] != gtex_source["sha256"]:
                 raise ValueError(f"direct R endpoint used wrong source: {case}/{workers}")
@@ -138,13 +184,13 @@ def assemble(run_dir: Path) -> dict[str, Any]:
                     )
             worker_records[workers] = record
             direct_commits.add(record["git_commit"])
-            input_hashes[str(path.relative_to(run_dir))] = digest(path)
+            record_input(path, f"r_reference/{path.relative_to(r_run_dir)}")
 
-        parity_path = run_dir / f"{case}_r_worker_parity.json"
+        parity_path = r_run_dir / f"{case}_r_worker_parity.json"
         worker_parity = read(parity_path)
         if worker_parity["pass"] is not True:
             raise ValueError(f"R worker parity failed: {case}")
-        input_hashes[parity_path.name] = digest(parity_path)
+        record_input(parity_path, f"r_reference/{parity_path.name}")
         serial = worker_records[1]
         parallel = worker_records[12]
         gpu_ms = timings[case]["direct_median_ms"]
@@ -162,8 +208,7 @@ def assemble(run_dir: Path) -> dict[str, Any]:
             f"direct R endpoints do not share one clean harness commit: {direct_commits}"
         )
 
-    files = [run_dir / name for name in input_hashes]
-    observed_end = max(timestamp(path) for path in files)
+    observed_end = max(timestamp(path) for path in input_paths)
     first_timing = run_dir / f"{TIMING_CASES[0]}_gpu.json"
     observed_start = dt.datetime.fromtimestamp(
         first_timing.stat().st_mtime - timings[TIMING_CASES[0]]["elapsed_s"],
@@ -202,6 +247,12 @@ def assemble(run_dir: Path) -> dict[str, Any]:
             ),
             "primary_cpu_baseline": "BiocParallel::MulticoreParam(12)",
             "r_direct_timing_commit": next(iter(direct_commits)),
+            "r_reference_gpu_commits": sorted(r_reference_gpu_commits),
+            "r_reference_reuse_contract": (
+                "R endpoints may come from a separate run only when sample count, "
+                "design width, contrast, exact source columns, sample-ID hash, and "
+                "matrix hashes match the current GPU records"
+            ),
             "r_direct_endpoint_contract": (
                 "one cold direct observation in a fresh process for each worker count; "
                 "DESeqDataSet construction + DESeq() + results() + lfcShrink(); "
@@ -302,8 +353,13 @@ def main() -> None:
     parser.add_argument("run_directory", type=Path)
     parser.add_argument("output_json", type=Path)
     parser.add_argument("--markdown", type=Path)
+    parser.add_argument(
+        "--r-run-directory",
+        type=Path,
+        help="prior raw bundle containing reusable R endpoints for identical cohorts",
+    )
     args = parser.parse_args()
-    artifact = assemble(args.run_directory)
+    artifact = assemble(args.run_directory, r_run_dir=args.r_run_directory)
     args.output_json.parent.mkdir(parents=True, exist_ok=True)
     args.output_json.write_text(json.dumps(artifact, indent=2) + "\n")
     if args.markdown:

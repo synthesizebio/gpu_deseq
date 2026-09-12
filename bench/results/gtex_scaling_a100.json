@@ -22,6 +22,10 @@
     "r_endpoint_contract": "one cold, one-worker staged observation; controlled stage diagnostic and parity reference only, not the practical CPU baseline",
     "primary_cpu_baseline": "BiocParallel::MulticoreParam(12)",
     "r_direct_timing_commit": "f834cd9dffce631b83b945cbb8842e01803e648e",
+    "r_reference_gpu_commits": [
+      "17ee2e5bcb27d163efbd3e1a2306b1129ddd6674"
+    ],
+    "r_reference_reuse_contract": "R endpoints may come from a separate run only when sample count, design width, contrast, exact source columns, sample-ID hash, and matrix hashes match the current GPU records",
     "r_direct_endpoint_contract": "one cold direct observation in a fresh process for each worker count; DESeqDataSet construction + DESeq() + results() + lfcShrink(); SerialParam or MulticoreParam(12); BLAS and OpenMP pinned to one",
     "input_file_sha256": {
       "p2_300_gpu.json": "eaba7e0d4737477314b659fb54bb4081f76073970edeb7dee0e32ee909399f06",
@@ -36,18 +40,20 @@
       "p9_all_probe.json": "1aec729e48d826c3d67b25c195224ab3eaee6f156551cf3c1a67c63653707950",
       "p10_all_probe.json": "f1c0e5646b0c4dd04422648b6ed4bfdbc5460d5410031007dfefa0734262ffb0",
       "p12_all_probe.json": "caa91e3a9bc046d2f2743ae8b2a0f82e66f867e280f5306b8ad8c7dd9e5d629f",
-      "p2_912_r/r_timings.json": "a523372c1262876046eea74dd3daf59326dca98ef5b0f0196eaef30ab4de8180",
-      "p2_912_r/r_dispersion_stage.json": "52912e822085edb47f569ae3e425d025f44adc6d26b359422062cace4a2815a8",
+      "r_reference/p2_912_gpu.json": "14d3f78db86a6ba539956d616050b5a05bc2b7403eb77ff3b9eaf59f6694ba8d",
+      "r_reference/p2_912_r/r_timings.json": "a523372c1262876046eea74dd3daf59326dca98ef5b0f0196eaef30ab4de8180",
+      "r_reference/p2_912_r/r_dispersion_stage.json": "52912e822085edb47f569ae3e425d025f44adc6d26b359422062cace4a2815a8",
       "p2_912_parity.json": "56b09eb92e5fe0febfcd1d4e02def5ff30ea35d3aa19756513aa2490fbf38f88",
-      "p6_all_r/r_timings.json": "978284d6e002a270a581609acc596c09079960518b4aeff8709d0a792d9d4645",
-      "p6_all_r/r_dispersion_stage.json": "00b54d1046e165e37ff85557e39a36af65e1c8c979cf1cf81ddc2615fe5df2c5",
+      "r_reference/p6_all_gpu.json": "6770ae0d4eb662182a5b658e0fe6eca2dc62ea6811310300caa45d0b3ef5607b",
+      "r_reference/p6_all_r/r_timings.json": "978284d6e002a270a581609acc596c09079960518b4aeff8709d0a792d9d4645",
+      "r_reference/p6_all_r/r_dispersion_stage.json": "00b54d1046e165e37ff85557e39a36af65e1c8c979cf1cf81ddc2615fe5df2c5",
       "p6_all_parity.json": "4e5ce34cd95aea87ec58618c2ef0b08582c97ff6c04d9af64789327ef2d25f0f",
-      "p2_912_r_direct_1/r_direct_timings.json": "127d5b13cc17535aaf299695f15fb78c92322d809f76bce0b42bae1691c232fd",
-      "p2_912_r_direct_12/r_direct_timings.json": "db42b7996ccf60484d2ca0570033402e51b08b2f6785f2d37698519138ffa696",
-      "p2_912_r_worker_parity.json": "a37f2f31774db3bcfbdeca2594e5948f8581ae24954968fb0001dc11de645f6e",
-      "p6_all_r_direct_1/r_direct_timings.json": "6d695cc659e4e0a62893bd98f4e9a666e910fe10e35a3d60f46ec9f5bf40385a",
-      "p6_all_r_direct_12/r_direct_timings.json": "71efad36080ea6c9675d3e7bbc943358b5a540a047f061ff6916b44f846b870b",
-      "p6_all_r_worker_parity.json": "4c86e4a2d412386e270e6e3c0f1cc2c09aadc04022d9a18daad48d3a6cdd7c64"
+      "r_reference/p2_912_r_direct_1/r_direct_timings.json": "127d5b13cc17535aaf299695f15fb78c92322d809f76bce0b42bae1691c232fd",
+      "r_reference/p2_912_r_direct_12/r_direct_timings.json": "db42b7996ccf60484d2ca0570033402e51b08b2f6785f2d37698519138ffa696",
+      "r_reference/p2_912_r_worker_parity.json": "a37f2f31774db3bcfbdeca2594e5948f8581ae24954968fb0001dc11de645f6e",
+      "r_reference/p6_all_r_direct_1/r_direct_timings.json": "6d695cc659e4e0a62893bd98f4e9a666e910fe10e35a3d60f46ec9f5bf40385a",
+      "r_reference/p6_all_r_direct_12/r_direct_timings.json": "71efad36080ea6c9675d3e7bbc943358b5a540a047f061ff6916b44f846b870b",
+      "r_reference/p6_all_r_worker_parity.json": "4c86e4a2d412386e270e6e3c0f1cc2c09aadc04022d9a18daad48d3a6cdd7c64"
     }
   },
   "gpu_timings": {
