@@ -48,6 +48,13 @@ CASES = (
 )
 MODES = ("eager", "graph", "triton")
 STEPS = ("normalization", "dispersion", "glm_fit", "significance", "lfc_shrink")
+STEP_LABELS = {
+    "normalization": "normalization",
+    "dispersion": "dispersion",
+    "glm_fit": "GLM fit",
+    "significance": "significance",
+    "lfc_shrink": "LFC shrinkage",
+}
 
 failures: list[str] = []
 checks = 0
@@ -165,9 +172,9 @@ check(
 )
 check(
     "paper identifies archived provenance",
-    "archived provenance record contains source URLs" in TEX_NORMALIZED,
+    "repository records input checksums" in TEX_NORMALIZED,
 )
-check("paper records GTEx seed", "using R seed 1" in TEX_NORMALIZED)
+check("paper records GTEx seed", "with R seed 1" in TEX_NORMALIZED)
 prepared_manifest_digest = digest(ROOT / "validation/prepared_data_manifest.json")
 source_manifest_digest = digest(SOURCE_MANIFEST_PATH)
 for artifact_name, artifact in (
@@ -206,8 +213,10 @@ check(
 check("current timing CUDA", timing_provenance.get("torch_cuda_version") == "12.6")
 check(
     "paper records current timing stack",
-    "PyTorch~2.7.1 with CUDA~12.6 and NVIDIA driver~580.126.20"
-    in TEX_NORMALIZED,
+    all(
+        item in TEX_NORMALIZED
+        for item in ("PyTorch~2.7.1", "CUDA~12.6", "NVIDIA driver~580.126.20")
+    ),
 )
 legacy_stage_total = timing_provenance.get("direct_end_to_end") is False
 if legacy_stage_total:
@@ -270,7 +279,7 @@ for step, values in metrics.items():
     row = next(
         line
         for line in parity_table.splitlines()
-        if line.startswith(step.replace("_", r"\_") + " &")
+        if line.startswith(STEP_LABELS[step] + " &")
     )
     cells = [cell.strip() for cell in row.split("&")]
     shown_median = numeric_cell(cells[-2])
@@ -334,7 +343,7 @@ for case, label in CASES:
     block = stage_table[start : end if end >= 0 else None]
     for step in STEPS[1:]:
         shown_row = next(
-            line for line in block.splitlines() if step.replace("_", r"\_") in line
+            line for line in block.splitlines() if STEP_LABELS[step] in line
         )
         shown = [numeric_cell(cell) for cell in shown_row.split("&")[2:]]
         actual = [TIMING["cu"][case][mode][step] for mode in MODES]
@@ -342,7 +351,7 @@ for case, label in CASES:
             f"stage table {case}/{step}",
             all(round(a) == round(b) for a, b in zip(shown, actual)),
         )
-    sum_row = next(line for line in block.splitlines() if "component total" in line)
+    sum_row = next(line for line in block.splitlines() if r"\emph{total}" in line)
     shown_sum = [numeric_cell(cell) for cell in sum_row.split("&")[2:]]
     actual_sum = [stage_total(TIMING["cu"][case][mode]) for mode in MODES]
     check(
@@ -351,7 +360,17 @@ for case, label in CASES:
     )
 
 check("paper omits one-worker comparison", not re.search(r"one[- ]worker|R 1w", TEX, re.I))
-check("component totals are not bold", r"\textbf{component total}" not in stage_table)
+check("total labels are not bold", r"\textbf{total}" not in stage_table)
+for case, label in CASES:
+    start = stage_table.index(label + " &")
+    end = stage_table.find(r"\midrule", start)
+    block = stage_table[start : end if end >= 0 else None]
+    total_row = next(line for line in block.splitlines() if r"\emph{total}" in line)
+    best = min(stage_total(TIMING["cu"][case][mode]) for mode in MODES)
+    check(
+        f"stage table {case}/fastest total bold",
+        rf"\textbf{{{round(best)}}}" in total_row,
+    )
 
 
 # Sample-axis table has a clean, versioned primary artifact.
@@ -661,7 +680,6 @@ def fact_values(source: str) -> set[str]:
 
 facts = {value for value in fact_values(TEX) if not value.startswith("Reproduce:")}
 checked_facts = {
-    "8.5e-4",
     "0.99963",
     "0.99722",
     "3.6--35.1$\\times$",

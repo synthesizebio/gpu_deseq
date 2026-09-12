@@ -64,19 +64,12 @@ if [ "$CLEAN" = 1 ]; then
 fi
 
 if [ "$FIGURES" = 1 ]; then
-  echo ">> figure: make_schematic_figure.py"
-  MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/gpu-deseq-matplotlib}" \
-    "$PAPER_PYTHON" make_schematic_figure.py || {
-    echo "paper_build: make_schematic_figure.py FAILED" >&2
-    exit 1
-  }
-
   echo ">> figures: validation/make_paper_figures.py"
   if ! (
     cd "$REPO_ROOT"
     MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/gpu-deseq-matplotlib}" \
       PYTHONPATH="$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}" \
-      "$PAPER_PYTHON" validation/make_paper_figures.py
+      "$PAPER_PYTHON" validation/make_paper_figures.py --device cpu
   ); then
     echo "paper_build: validation/make_paper_figures.py FAILED" >&2
     exit 1

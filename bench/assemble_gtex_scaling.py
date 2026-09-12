@@ -272,14 +272,14 @@ def render_markdown(artifact: dict[str, Any]) -> str:
         "# Real-GTEx scaling and A100 memory boundary",
         "",
         "The gene axis is fixed at 54,922. Direct GPU times are medians of five "
-        "complete observations after one warm-up; component totals add independently "
+        "complete observations after one warm-up; totals add independently "
         "measured stage medians, and peak allocation is the maximum over the five "
         "staged repetitions. R endpoint rows are single cold observations and "
         "are not pooled with the main five-repetition headline benchmark.",
         "",
         "## Full-workflow GPU timing",
         "",
-        "| case | samples | P | direct (s) | component total (s) | peak allocated (GiB) |",
+        "| case | samples | P | total (s) | peak allocated (GiB) |",
         "|---|---:|---:|---:|---:|---:|",
     ]
     for case in TIMING_CASES:

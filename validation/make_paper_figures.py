@@ -18,12 +18,12 @@ Two figures are produced in paper/figures/:
 
 Inputs, per case:
   validation/data/<name>/{counts.csv,coldata.csv,meta.json}
-  bench/cache/<name>/{r_results.csv,r_shrink.csv,r_dispersions.csv,
-                      cu_reference_results.csv}
+  validation/data/<name>/r_disp_details.csv
+  bench/cache/<name>/{r_results.csv,r_shrink.csv,cu_reference_results.csv}
 
-The plotted values are therefore the same cached outputs used for the numerical
-parity and benchmark analyses. A fresh cuDESeq2 result can optionally be
-computed and cached as validation/data/<name>/ours.csv.
+The R dispersion details come from export_r_dispersion_details.R. When the
+detailed cuDESeq2 cache is absent, this script recomputes the selected
+diagnostic case and writes validation/data/<name>/ours.csv.
 
 Usage:
   PYTHONPATH=src python validation/make_paper_figures.py [--device cuda|cpu]
@@ -62,23 +62,16 @@ DEFAULT_CASE = "airway"
 CASE_ORDER = ["gtex_blood_muscle", "airway", "airway_cell", "airway_dex",
               "pasilla_2fac", "pasilla"]
 
-DISPLAY_NAMES = {
-    "gtex_blood_muscle": "GTEx blood–muscle",
-    "airway": "airway: cell + dex",
-    "airway_cell": "airway: cell",
-    "airway_dex": "airway: dex",
-    "pasilla_2fac": "pasilla: type + condition",
-    "pasilla": "pasilla: condition",
-}
-
 # --- palette -----------------------------------------------------------------
-# Categorical slots assigned in fixed order (never cycled); grey is context,
-# not a slot. Every series also has a distinct marker, so interpretation does
-# not depend on colour alone.
-SURFACE, PANEL = "#ffffff", "#fbfcfe"
-INK, INK2, MUTED = "#12233f", "#334155", "#64748b"
-GRID = "#e2e8f0"
-SLOTS = ["#2878d0", "#e77732", "#159a79", "#d28a00", "#a85586", "#6651b8"]
+# Categorical slots assigned in fixed order (never cycled); grey is context, not
+# a slot. Validated for the light/print surface with the dataviz validator: the
+# six-slot order clears the adjacent-pair CVD and normal-vision floors, and the
+# low-contrast slots (aqua/yellow/magenta) are always additionally carried by a
+# direct end label, never by colour alone.
+SURFACE = "#ffffff"
+INK, INK2, MUTED = "#0b0b0b", "#52514e", "#9b9a95"
+GRID = "#dedcd6"
+SLOTS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"]
 BLUE, ORANGE = SLOTS[0], SLOTS[1]
 
 ALPHA = 0.05          # significance threshold used in the MA / volcano panels
@@ -87,11 +80,9 @@ FS = 7.4              # base font size (figures are drawn at final print width)
 
 def _style():
     plt.rcParams.update({
-        "figure.facecolor": SURFACE, "axes.facecolor": PANEL,
+        "figure.facecolor": SURFACE, "axes.facecolor": SURFACE,
         "savefig.facecolor": SURFACE,
-        "font.family": "DejaVu Sans",
         "font.size": FS, "axes.titlesize": FS + 0.8, "axes.labelsize": FS,
-        "axes.titleweight": "bold",
         "xtick.labelsize": FS - 0.8, "ytick.labelsize": FS - 0.8,
         "legend.fontsize": FS - 1.0, "legend.frameon": False,
         "axes.edgecolor": INK2, "axes.linewidth": 0.6,
@@ -99,8 +90,7 @@ def _style():
         "xtick.color": INK2, "ytick.color": INK2,
         "xtick.major.width": 0.6, "ytick.major.width": 0.6,
         "xtick.major.size": 2.4, "ytick.major.size": 2.4,
-        "axes.grid": True, "axes.grid.axis": "y", "grid.color": GRID,
-        "grid.linewidth": 0.45,
+        "axes.grid": True, "grid.color": GRID, "grid.linewidth": 0.4,
         "axes.axisbelow": True, "axes.spines.top": False, "axes.spines.right": False,
         "lines.linewidth": 1.1, "pdf.fonttype": 42,
     })
@@ -117,22 +107,19 @@ def r_side(name):
     reference = BENCH_CACHE / name
     res = pd.read_csv(reference / "r_results.csv").set_index("gene")
     shr = pd.read_csv(reference / "r_shrink.csv").set_index("gene")
-    details_path = d / "r_disp_details.csv"
-    det = (pd.read_csv(details_path).set_index("gene")
-           if details_path.exists() else None)
-    final_disp = pd.read_csv(reference / "r_dispersions.csv").set_index("gene")
+    det = pd.read_csv(d / "r_disp_details.csv").set_index("gene")
     out = pd.DataFrame({
-        "baseMean": res["baseMean"],
-        "dispersion": final_disp["dispersion"],
+        "baseMean": det["baseMean"],
+        "dispGeneEst": det["dispGeneEst"],
+        "dispFit": det["dispFit"],
+        "dispersion": det["dispersion"],
+        "dispOutlier": det["dispOutlier"].astype(bool),
         "log2FoldChange": res["log2FoldChange"],
         "stat": res["stat"],
         "pvalue": res["pvalue"],
         "padj": res["padj"],
         "shrunkLFC": shr["log2FoldChange"],
     })
-    if det is not None:
-        for column in ("dispGeneEst", "dispFit", "dispOutlier"):
-            out[column] = det[column]
     return out
 
 
@@ -220,22 +207,34 @@ DISP_FLOOR = 1e-8
 
 
 def panel_dispersion(ax, df, lims=None, legend=False):
-    """Final dispersion against mean normalized count.
-
-    The final estimate is available in the standard reference cache for every
-    dataset, unlike the optional plotDispEsts-only MLE and trend export. Keeping
-    this panel to the final estimate makes the figure reproducible from the same
-    data used by the numerical parity checks.
-    """
-    del legend
-    m = (df["baseMean"] > 0) & np.isfinite(df["dispersion"])
+    """DESeq2's plotDispEsts: gene-wise MLE, fitted trend and final estimate
+    against the mean of normalized counts."""
+    m = (df["baseMean"] > 0) & np.isfinite(df["dispGeneEst"])
     x = df["baseMean"][m].to_numpy()
-    final = df["dispersion"][m].to_numpy()
-    ax.scatter(x, np.maximum(final, DISP_FLOOR), s=0.9, alpha=0.42,
-               linewidths=0, color=BLUE, rasterized=True)
+    ge, ft, fi = (df["dispGeneEst"][m].to_numpy(), df["dispFit"][m].to_numpy(),
+                  df["dispersion"][m].to_numpy())
+    out = df["dispOutlier"][m].to_numpy()
+    ax.scatter(x, np.maximum(ge, DISP_FLOOR), s=0.7, alpha=0.30, linewidths=0,
+               color=MUTED, rasterized=True)
+    ax.scatter(x, np.maximum(fi, DISP_FLOOR), s=0.7, alpha=0.45, linewidths=0,
+               color=BLUE, rasterized=True)
+    o = np.argsort(x)
+    ax.plot(x[o], ft[o], color=ORANGE, lw=1.2, solid_capstyle="round")
+    if out.any():
+        ax.scatter(x[out], np.maximum(fi[out], DISP_FLOOR), s=5.0, facecolors="none",
+                   edgecolors=INK, linewidths=0.3, alpha=0.5, rasterized=True)
     ax.set_xscale("log"); ax.set_yscale("log")
     ax.set_xlabel("mean of normalized counts")
-    ax.set_ylabel("final dispersion")
+    ax.set_ylabel("dispersion")
+    ax.text(0.96, 0.94, f"{out.sum():,} outliers", transform=ax.transAxes,
+            fontsize=FS - 1.4, color=INK2, ha="right", va="top")
+    if legend:
+        ax.legend(handles=[
+            Line2D([], [], ls="", marker="o", ms=2.6, mfc=MUTED, mec="none", label="gene-wise MLE"),
+            Line2D([], [], color=ORANGE, lw=1.2, label="fitted trend"),
+            Line2D([], [], ls="", marker="o", ms=2.6, mfc=BLUE, mec="none", label="final (MAP)"),
+            Line2D([], [], ls="", marker="o", ms=3.0, mfc="none", mec=INK, mew=0.4, label="MLE kept (outlier)"),
+        ], loc="lower left", handletextpad=0.3, borderpad=0.15, labelspacing=0.2)
     if lims:
         ax.set_xlim(lims[0]); ax.set_ylim(lims[1])
 
@@ -260,7 +259,7 @@ def panel_ma(ax, df, lims=None):
     ax.set_xscale("log")
     ax.set_xlabel("mean of normalized counts")
     ax.set_ylabel("shrunk log$_2$ fold change")
-    ax.text(0.03, 0.04, f"{sig.sum():,} significant genes", transform=ax.transAxes,
+    ax.text(0.03, 0.04, f"{sig.sum():,} at padj < {ALPHA}", transform=ax.transAxes,
             fontsize=FS - 1.4, color=BLUE, va="bottom")
     if lims:
         ax.set_xlim(lims[0]); ax.set_ylim(lims[1])
@@ -279,7 +278,7 @@ def panel_volcano(ax, df, lims=None, legend=False):
     for s, col, a in ((~sig, MUTED, 0.28), (sig, BLUE, 0.55)):
         ax.scatter(x[s], y[s], s=0.8, alpha=a, linewidths=0, color=col, rasterized=True)
     ax.set_xlabel("shrunk log$_2$ fold change")
-    ax.set_ylabel(r"$-\log_{10}$(adjusted p-value)")
+    ax.set_ylabel(r"$-\log_{10}$ padj")
     ax.text(0.97, 0.94, f"$\\alpha$ = {ALPHA}", transform=ax.transAxes,
             fontsize=FS - 1.4, color=INK2, ha="right", va="top")
     if legend:
@@ -287,9 +286,9 @@ def panel_volcano(ax, df, lims=None, legend=False):
         # where there is empty space.
         ax.legend(handles=[
             Line2D([], [], ls="", marker="o", ms=2.6, mfc=BLUE, mec="none",
-                   label=f"adjusted p < {ALPHA}"),
+                   label=f"padj < {ALPHA}"),
             Line2D([], [], ls="", marker="o", ms=2.6, mfc=MUTED, mec="none",
-                   label="not significant"),
+                   label="not called"),
             Line2D([], [], ls="", marker="^", ms=2.6, mfc=INK2, mec="none",
                    label="beyond axis"),
         ], loc="upper left", handletextpad=0.3, borderpad=0.15, labelspacing=0.2)
@@ -306,7 +305,8 @@ def _diagnostic_limits(r):
     to its own data."""
     bm = r["baseMean"][r["baseMean"] > 0].to_numpy()
     xlim = (10 ** (np.log10(bm.min()) - 0.15), 10 ** (np.log10(bm.max()) + 0.15))
-    disp = r["dispersion"].dropna().to_numpy()
+    disp = np.concatenate([r["dispGeneEst"].dropna().to_numpy(),
+                           r["dispersion"].dropna().to_numpy()])
     dlim = (DISP_FLOOR / 3, 10 ** (np.log10(max(disp.max(), 10)) + 0.3))
     # plotMA clamps the fold-change axis and puts the excess on the boundary.
     slfc = np.abs(r["shrunkLFC"].dropna().to_numpy())
@@ -321,38 +321,36 @@ def _diagnostic_limits(r):
 def fig_diagnostics(name, device, refresh):
     """Six panels: the three standard DESeq2 diagnostics, R over cuDESeq2."""
     r, o, meta = load(name, device, refresh)
+    detail_columns = {"dispGeneEst", "dispFit", "dispOutlier"}
+    if not detail_columns.issubset(o.columns):
+        # The compact benchmark cache contains final results but not the
+        # intermediate dispersion curves used by this figure. Recompute the
+        # selected diagnostic case when its detailed cache is absent.
+        o = our_side(name, device, refresh=True)
+        common = r.index.intersection(o.index)
+        r, o = r.loc[common], o.loc[common]
     lims = _diagnostic_limits(r)
-    fig, axes = plt.subplots(2, 3, figsize=(7.15, 4.75))
-    rows = [("R DESeq2", r), ("cuDESeq2", o)]
+    fig, axes = plt.subplots(2, 3, figsize=(6.9, 4.55))
+    rows = [("R DESeq2 1.52.0", r), ("cuDESeq2", o)]
     for i, (label, df) in enumerate(rows):
         top = i == 0
         panel_dispersion(axes[i, 0], df, lims["disp"], legend=top)
         panel_ma(axes[i, 1], df, lims["ma"])
         panel_volcano(axes[i, 2], df, lims["volcano"], legend=top)
     # Column titles once, on the top row; the pipeline is named per row instead.
-    for c, t in enumerate(["(a)  Dispersion estimates", "(b)  MA plot",
-                           "(c)  Volcano plot"]):
-        axes[0, c].set_title(t, color=INK, pad=5, loc="left")
+    for c, t in enumerate(["dispersion estimates", "MA plot", "volcano plot"]):
+        axes[0, c].set_title(t, color=INK, pad=4)
     for ax in axes[0, :]:
         ax.set_xlabel("")
-    fig.suptitle(f"Matched diagnostic views  ·  {DISPLAY_NAMES.get(name, name)}  ·  "
-                 f"{meta['design']}, n={meta['n_samples']}, "
-                 f"{meta['n_genes']:,} genes, P={meta['P']}",
-                 fontsize=FS + 0.5, color=MUTED, y=0.998)
-    fig.tight_layout(rect=(0.066, 0, 1, 0.955), h_pad=1.35, w_pad=1.25)
+    fig.suptitle(f"{name}   ({meta['design']}, n={meta['n_samples']}, "
+                 f"{meta['n_genes']:,} genes, P={meta['P']})",
+                 fontsize=FS + 0.6, color=INK2, y=0.997)
+    fig.tight_layout(rect=(0.045, 0, 1, 0.955), h_pad=1.2, w_pad=1.3)
     # Row labels, placed after layout so they track the final axes positions.
     for i, (label, _) in enumerate(rows):
         bb = axes[i, 0].get_position()
-        fill = "#eef2f7" if i == 0 else "#eaf3fc"
-        edge = MUTED if i == 0 else BLUE
-        fig.text(0.018, (bb.y0 + bb.y1) / 2, label, rotation=90, va="center",
-                 ha="center", fontsize=FS - 0.1, color=edge, fontweight="bold",
-                 bbox={"boxstyle": "round,pad=0.42", "facecolor": fill,
-                       "edgecolor": edge, "linewidth": 0.7})
-    top_bottom = axes[0, 0].get_position().y0
-    bottom_top = axes[1, 0].get_position().y1
-    fig.add_artist(Line2D([0.066, 0.995], [(top_bottom + bottom_top) / 2] * 2,
-                          transform=fig.transFigure, color=GRID, lw=0.7))
+        fig.text(0.012, (bb.y0 + bb.y1) / 2, label, rotation=90, va="center",
+                 ha="left", fontsize=FS + 0.8, color=INK)
     _save(fig, "de_diagnostics_parity")
 
 
@@ -400,7 +398,7 @@ def _floor_ylim(worst, pad=0.04):
 
 def fig_concordance(cases, device, refresh, focus):
     loaded = {n: load(n, device, refresh) for n in cases}
-    fig, axes = plt.subplots(2, 2, figsize=(7.15, 5.65))
+    fig, axes = plt.subplots(2, 2, figsize=(6.9, 5.3))
 
     # (a) p-value histograms, overlaid, on the focus dataset.
     ax = axes[0, 0]
@@ -409,11 +407,10 @@ def fig_concordance(cases, device, refresh, focus):
     ax.hist(r["pvalue"].dropna(), bins=bins, color=BLUE, alpha=0.5,
             label="R DESeq2 1.52.0", linewidth=0)
     ax.hist(o["pvalue"].dropna(), bins=bins, histtype="step", color=ORANGE,
-            lw=1.3, label="cuDESeq2")
+            lw=1.0, label="cuDESeq2")
     ax.set_xlabel("p-value"); ax.set_ylabel("genes")
-    ax.set_title("(a)  P-value distribution", color=INK, loc="left", pad=5)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.55, 0.97),
-              handletextpad=0.5, borderpad=0.2, labelspacing=0.25)
+    ax.set_title(f"(a) p-value distribution — {focus}", color=INK)
+    ax.legend(loc="upper center", handletextpad=0.5, borderpad=0.2, labelspacing=0.25)
 
     # (b) concordance at top N of the ranked gene lists, every dataset.
     ax = axes[0, 1]
@@ -424,13 +421,15 @@ def fig_concordance(cases, device, refresh, focus):
         ns = np.unique(np.round(np.logspace(1, np.log10(top), 14)).astype(int))
         c = concordance_at_top(r["stat"].to_numpy(), o["stat"].to_numpy(), ns)
         worst = min(worst, min(c))
-        ax.plot(ns, c, color=SLOTS[i], lw=1.25, marker=MARKERS[i], ms=2.7,
-                mew=0, label=DISPLAY_NAMES.get(name, name))
+        ax.plot(ns, c, color=SLOTS[i], lw=1.0, marker=MARKERS[i], ms=2.4,
+                mew=0, label=name)
     ax.set_xscale("log")
     ax.set_xlabel(r"top $N$ genes by $|$Wald statistic$|$")
-    ax.set_ylabel("top-$N$ overlap")
+    ax.set_ylabel("fraction of the top $N$ shared")
     ax.set_ylim(_floor_ylim(worst), 1.006)
-    ax.set_title("(b)  Ranked-gene agreement", color=INK, loc="left", pad=5)
+    ax.set_title("(b) agreement of the ranked gene lists", color=INK)
+    ax.legend(loc="lower right", ncol=2, handletextpad=0.4, columnspacing=0.9,
+              borderpad=0.2, labelspacing=0.25, fontsize=FS - 2.0)
 
     # (c) Bland-Altman of the shrunk LFC against expression, on the focus set.
     ax = axes[1, 0]
@@ -445,10 +444,8 @@ def fig_concordance(cases, device, refresh, focus):
     ax.scatter(x, d, s=0.7, alpha=0.30, linewidths=0, color=BLUE, rasterized=True)
     ax.set_xscale("log")
     ax.set_xlabel("mean of normalized counts")
-    ax.set_ylabel("shrunken-LFC difference\ncuDESeq2 $-$ R")
-    ax.set_title("(c)  Effect-size residual", color=INK, loc="left", pad=5)
-    ax.text(0.98, 0.96, DISPLAY_NAMES.get(focus, focus), transform=ax.transAxes,
-            fontsize=FS - 1.2, color=MUTED, ha="right", va="top")
+    ax.set_ylabel("shrunk LFC:  cuDESeq2 $-$ R")
+    ax.set_title(f"(c) shrunk-LFC residual — {focus}", color=INK)
     ax.text(0.03, 0.95, f"p95 $|\\Delta|$ = {p95:.1e}   (dashed)\n"
             f"max $|\\Delta|$ = {np.abs(d).max():.1e}", transform=ax.transAxes,
             fontsize=FS - 1.6, color=INK2, va="top")
@@ -460,19 +457,14 @@ def fig_concordance(cases, device, refresh, focus):
     ax = axes[1, 1]
     alphas = np.logspace(-3, np.log10(0.2), 28)
     worst = 1.0
-    dataset_handles = []
-    dataset_labels = []
     for i, name in enumerate(cases):
         r, o, _ = loaded[name]
         rp = r["padj"].to_numpy()
         n_r = int((np.isfinite(rp) & (rp < ALPHA)).sum())
         j = jaccard_vs_alpha(rp, o["padj"].to_numpy(), alphas)
         worst = min(worst, min(j))
-        ax.plot(alphas, j, color=SLOTS[i], lw=1.25, marker=MARKERS[i], ms=2.7,
-                mew=0)
-        dataset_handles.append(Line2D([], [], color=SLOTS[i], lw=1.25,
-                                      marker=MARKERS[i], ms=3.2, mew=0))
-        dataset_labels.append(f"{DISPLAY_NAMES.get(name, name)}  ($n$={n_r:,})")
+        ax.plot(alphas, j, color=SLOTS[i], lw=1.0, marker=MARKERS[i], ms=2.4,
+                mew=0, label=f"{name}  ($n$={n_r:,})")
     ax.axvline(ALPHA, color=INK2, lw=0.5, ls=(0, (3, 2)))
     lo = _floor_ylim(worst)
     # Blended transform: pinned to the threshold in x, to clear space in y.
@@ -480,16 +472,14 @@ def fig_concordance(cases, device, refresh, focus):
             color=INK2, va="bottom", ha="left",
             transform=ax.get_xaxis_transform())
     ax.set_xscale("log")
-    ax.set_xlabel(r"adjusted-p threshold $\alpha$")
-    ax.set_ylabel("Jaccard index")
+    ax.set_xlabel(r"significance threshold $\alpha$ on padj")
+    ax.set_ylabel("Jaccard index of the called sets")
     ax.set_ylim(lo, 1.006)
-    ax.set_title("(d)  Significant-set agreement", color=INK, loc="left", pad=5)
+    ax.set_title(r"(d) agreement of the called sets vs $\alpha$", color=INK)
+    ax.legend(loc="lower left", ncol=2, handletextpad=0.4, columnspacing=0.9,
+              borderpad=0.2, labelspacing=0.25, fontsize=FS - 2.2)
 
-    fig.legend(dataset_handles, dataset_labels, loc="lower center", ncol=3,
-               bbox_to_anchor=(0.5, 0.012), frameon=False,
-               handletextpad=0.45, columnspacing=1.1, labelspacing=0.35,
-               fontsize=FS - 1.7)
-    fig.tight_layout(rect=(0, 0.105, 1, 1), h_pad=1.65, w_pad=1.45)
+    fig.tight_layout(h_pad=1.7, w_pad=1.6)
     _save(fig, "de_parity_concordance")
 
 
@@ -502,25 +492,20 @@ def _save(fig, stem):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--device", default="cuda" if _cuda() else "cpu")
+    ap.add_argument("--device", default="cpu")
     ap.add_argument("--case", default=DEFAULT_CASE, help="dataset for the six-panel figure")
     ap.add_argument("--refresh", action="store_true", help="recompute cached cuDESeq2 output")
     args = ap.parse_args()
 
-    candidates = {p.name for p in DATA.iterdir() if (p / "meta.json").exists()}
-    have = {
-        name for name in candidates
-        if all((BENCH_CACHE / name / filename).exists() for filename in (
-            "r_results.csv", "r_shrink.csv", "r_dispersions.csv",
-            "cu_reference_results.csv",
-        ))
-    }
-    missing = candidates - have
+    have = {p.name for p in DATA.iterdir() if (p / "r_disp_details.csv").exists()}
+    missing = {p.name for p in DATA.iterdir() if (p / "meta.json").exists()} - have
     if missing:
-        print(f"  note: incomplete reference cache for {sorted(missing)} — skipping")
+        print(f"  note: no r_disp_details.csv for {sorted(missing)} "
+              f"(run validation/export_r_dispersion_details.R) — skipping")
     cases = [c for c in CASE_ORDER if c in have] + sorted(have - set(CASE_ORDER))
     if not cases:
-        sys.exit("No cases with complete reference results in bench/cache.")
+        sys.exit("No cases with R dispersion details. "
+                 "Run: Rscript validation/export_r_dispersion_details.R")
     focus = args.case if args.case in cases else cases[0]
 
     _style()

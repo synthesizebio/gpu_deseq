@@ -10,9 +10,10 @@ From the repository root:
 bash scripts/paper_build.sh
 ```
 
-Use `bash scripts/paper_build.sh --figures` to regenerate the workflow schematic
-and the parity figures before compiling. The parity figure generator reads the
-committed/reference benchmark caches; it does not rerun the timing benchmarks.
+Use `bash scripts/paper_build.sh --figures` to regenerate the data-driven parity
+figures on CPU before compiling. The two workflow schematics are tracked paper
+assets and are not overwritten by this command. Figure generation does not
+rerun the timing benchmarks.
 
 The build requires `pdflatex` and `bibtex`. Figure regeneration additionally
 requires the project Python environment and the validation data described in

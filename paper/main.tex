@@ -75,21 +75,19 @@ Max~Highsmith\,$^{1,\ast}$, Gregory~Koytiger\,$^{1,\ast}$\\[2pt]
 % --- Structured abstract: the fixed Bioinformatics headings. ----------------
 \begin{abstract}
 \noindent
-\textbf{Motivation:} DESeq2 is a standard method for bulk RNA-seq differential
-expression, but its iterative per-gene optimization makes repeated analyses
-computationally expensive. We asked whether this structure could be mapped to
-GPUs without changing the inferential workflow.\\[3pt]
-\textbf{Results:} We developed \cudeseq, which combines gene-batched PyTorch
-with CUDA-graph replay and a fused Triton dispersion kernel. Across six
-real-data designs (7--300 samples, $P=2$--$5$), median p95 relative dispersion
-error was \fact{8.5e-4}, significant-gene sets had Jaccard similarity of at
-least \fact{0.99963}, and shrunken LFCs had Pearson correlation of at least
-\fact{0.99722} relative to R~DESeq2~1.52.0. On one A100, the fastest mode was
-\fact{3.6--35.1$\times$} faster than 12-worker R in end-to-end measurements. A
-54{,}922-gene GTEx analysis with \fact{2{,}451} samples and $P=6$ completed in
-a \fact{22.936-s} median, \fact{28.0$\times$} faster than the 12-worker R
-endpoint. These results show that GPU execution can increase throughput while
-preserving DESeq2-style inference across the evaluated scope.\\[3pt]
+\textbf{Motivation:} DESeq2 is widely used for bulk RNA-seq analysis. Its
+statistical pipeline is rigorous but expensive to repeat at scale because it
+fits thousands of gene-level models. We asked whether those fits could run in
+parallel on a GPU without changing the analysis.\\[3pt]
+\textbf{Results:} We developed \cudeseq, a GPU implementation of the DESeq2
+workflow. It processes genes in batches and uses a fused kernel for the most
+costly dispersion calculations. Across six real-data designs, its intermediate
+estimates and final calls closely matched R~DESeq2~1.52.0. Significant-gene
+sets had Jaccard similarity of at least \fact{0.99963}. On one A100, complete
+analyses were \fact{3.6--35.1$\times$} faster than 12-worker R. The same
+implementation also handled a 2{,}451-sample, six-tissue GTEx model. These
+results show that DESeq2-style inference can be accelerated without replacing
+it with a different statistical test.\\[3pt]
 \textbf{Availability and implementation:} Open source under the MIT license at
 \url{https://github.com/synthesizebio/gpu_deseq}; PyTorch and a CUDA GPU are
 required for the reported acceleration.\\[3pt]
@@ -99,151 +97,124 @@ required for the reported acceleration.\\[3pt]
 
 % ===========================================================================
 \section{Introduction}
-Differential-expression analysis is a central step in interpreting RNA-seq
-experiments. DESeq2 \citep{love2014deseq2} is widely used because it combines a
-negative-binomial model of count variability with empirical-Bayes dispersion
-estimation, outlier handling, multiple-testing correction, and stable effect-size
-estimation. These features make it more than a gene-wise hypothesis test: the
-pipeline shares information across genes while retaining gene-specific means,
-dispersions, coefficients, and diagnostics.
+Differential-expression analysis turns RNA-seq counts into estimates of how
+gene expression changes between conditions. DESeq2 \citep{love2014deseq2} is a
+common choice for this task. It models count variability, shares information
+across genes, limits the influence of outliers, and corrects for multiple
+testing. It can also shrink noisy log fold changes (LFCs) with apeGLM
+\citep{zhu2019apeglm}. Together, these steps produce stable effect estimates
+and calibrated significance calls.
 
-This statistical structure also creates a distinctive computational problem.
-For tens of thousands of genes, dispersion estimation, generalized
-linear-model fitting, and log fold-change (LFC) shrinkage
-\citep{zhu2019apeglm} repeatedly solve related but independent optimization
-problems. R~DESeq2 executes this work on CPUs and distributes blocks of genes
-among workers. The independence across genes suggests GPU parallelism, but a
-faithful implementation cannot be obtained by replacing a single matrix
-operation. Per-gene convergence, line searches, small design-matrix solves,
-empirical-Bayes steps, and exceptional-gene fallbacks must all preserve the
-reference method's statistical decisions (Fig.~\ref{fig:schematic}).
+Most of the work is repeated for every gene. Dispersion estimation, GLM
+fitting, and LFC shrinkage each solve thousands of small optimization problems.
+R~DESeq2 can divide genes among CPU workers, but the calculations remain a good
+match for the much wider parallelism of a GPU. The challenge is fidelity.
+DESeq2 includes line searches, convergence tests, empirical-Bayes estimates,
+and fallbacks for unusual genes. A GPU port must preserve those decisions, not
+just the underlying model (Fig.~\ref{fig:schematic}).
 
-Wall time is often acceptable when differential expression is performed only a
-few times in an individual study. It becomes limiting when the analysis is
-repeated across many cell states, perturbations, contrasts, or model outputs.
-The bioinformatics community has recently seen growing interest in
-virtual-cell systems and foundation models for gene-expression data
+This cost matters when the analysis is repeated. Examples include perturbation
+screens, resampling studies, many planned contrasts, and evaluation of gene-
+expression models. Recent virtual-cell benchmarks sometimes use cheaper
+rank-based tests in place of count models
+\citep{roohani2025vcc,wei2026perturbench}. Faster DESeq2-style analysis would
+make that compromise less necessary. The need is growing alongside foundation
+models for gene expression
 \citep{theodoris2023geneformer,cui2024scgpt,bunne2024virtualcell,
 adduri2025state,koytiger2025gem}.
-Differential expression is a natural evaluation endpoint for such models, yet
-some recent benchmarks use rank-based tests on normalized expression as less
-expensive surrogates \citep{roohani2025vcc,wei2026perturbench}. Accelerating
-the established count model would allow statistical rigor and computational
-throughput to be improved together rather than traded against one another.
 
 
 
 \begin{figure}[t]\centering
-\includegraphics[width=\linewidth]{figures/gpt_schematic.pdf}
-\caption{Computational mapping of DESeq2 to \cudeseq. The statistical stages
-and their dependencies are unchanged (top). Independent gene-wise fits are
-expressed as batched tensor operations (A); dispersion estimation additionally
-supports CUDA-graph replay (B) and a fused Triton kernel (C); and apeGLM uses a
-batched L-BFGS optimizer with compiled loss, gradient, and Hessian evaluation
-(D). Dashed arrows map each optimization to the stage it accelerates.}
+\includegraphics[width=\linewidth]{figures/gpt_schematic.png}
+\caption{DESeq2 workflow and its GPU implementation. The upper path shows the
+statistical analysis. The lower path shows the two main acceleration ideas:
+process genes together on the GPU, and fuse the iterative dispersion fit into
+one Triton kernel. CUDA-graph replay provides a third dispersion mode.}
 \label{fig:schematic}
 \end{figure}
 
-Existing efforts to accelerate negative-binomial differential expression have
-largely been algorithmic or CPU-bound. glmGamPoi \citep{ahlmanneltze2020glmgampoi}
-accelerates Gamma--Poisson GLM fitting on large, sparse count matrices. However,
-replacing DESeq2 with glmGamPoi changes the inferential workflow and forgoes
-DESeq2's automatic outlier replacement, limiting comparability with established
-DESeq2 results and removing a safeguard against influential counts. PyDESeq2
-\citep{muzellec2023pydeseq2}, a Python
-reimplementation, improves interoperability and speed on large datasets, though by
-its authors' own account it yields results ``similar, but not identical'' to
-DESeq2; GPU acceleration has meanwhile transformed
-adjacent single-cell workflows, where rapids-singlecell and ScaleSC report
-$15$--$20\times$ end-to-end speedups \citep{hu2025scalesc}, but those gains come
-from the dense and sparse linear-algebra core: PCA, neighbor graphs, and
-clustering. Whether an iterative, empirically regularized workflow such as
-DESeq2 can achieve comparable acceleration without materially altering its
-outputs has therefore remained unresolved.
+Related tools solve different parts of the problem. glmGamPoi accelerates
+Gamma--Poisson GLMs on large sparse matrices \citep{ahlmanneltze2020glmgampoi}.
+PyDESeq2 provides a Python implementation with similar, but not identical,
+results \citep{muzellec2023pydeseq2}. GPU libraries have also sped up PCA,
+neighbor graphs, and clustering in single-cell workflows
+\citep{hu2025scalesc}. None of these efforts establishes whether the DESeq2
+workflow itself can move to a GPU while retaining close agreement with R.
 
-Here we test the hypothesis that DESeq2's gene axis can be treated as a batch
-dimension while retaining its model, optimizer decisions, and downstream
-inference. We introduce \cudeseq, which implements the complete supported
-workflow in PyTorch \citep{paszke2019pytorch}, including count-outlier
-replacement and apeGLM shrinkage. In addition to a general batched
-implementation, we develop CUDA-graph \citep{nvidia2024cudagraphs} and Triton
-\citep{tillet2019triton} dispersion paths that address launch overhead and
-irregular convergence. We evaluate both numerical agreement and end-to-end
-performance on published RNA-seq datasets, then use nested GTEx cohorts to
-characterize scaling with sample count, design width, and GPU memory.
+We address that question with \cudeseq. The implementation uses PyTorch
+\citep{paszke2019pytorch} to batch gene-level work. It includes outlier
+replacement and apeGLM shrinkage. We also add CUDA-graph
+\citep{nvidia2024cudagraphs} and Triton \citep{tillet2019triton} paths for
+dispersion estimation. We test agreement at each analysis stage, not only in
+the final gene list. We then measure end-to-end performance and GPU memory on
+published datasets and nested GTEx cohorts.
 
 % ===========================================================================
 \section{Methods}
 
 \subsection{Reference workflow and supported scope}
 \label{sec:pipeline}
-DESeq2 \citep{love2014deseq2} models each gene independently with a
-negative-binomial GLM. For gene $g$ with counts $K_{gi}$ over samples
-$i=1,\dots,S$, design matrix $X\in\mathbb{R}^{S\times P}$, and size factors
-$s_i$, it assumes $K_{gi}\sim\mathrm{NB}(\mu_{gi},\alpha_g)$ with
-$\mu_{gi}=s_i\exp(x_i^{\!\top}\beta_g)$ and variance
-$\mu_{gi}+\alpha_g\mu_{gi}^2$. Size-factor normalization accounts for library
-depth; gene-wise dispersions are moderated toward a mean--dispersion trend;
-negative-binomial GLMs estimate condition effects; Wald or likelihood-ratio
-tests quantify evidence against the null; and independent filtering and
-multiple-testing correction produce adjusted significance estimates. Optional
-apeGLM shrinkage regularizes noisy LFCs while leaving the hypothesis-test
-p-values unchanged. \cudeseq{} preserves this sequence and the information
-passed between stages.
+DESeq2 \citep{love2014deseq2} fits a negative-binomial GLM to each gene. For
+gene $g$, let $K_{gi}$ be the count in sample $i$, $s_i$ the sample's size
+factor, and $X\in\mathbb{R}^{S\times P}$ the design matrix. The model is
+$K_{gi}\sim\mathrm{NB}(\mu_{gi},\alpha_g)$, where
+$\mu_{gi}=s_i\exp(x_i^{\!\top}\beta_g)$ and the variance is
+$\mu_{gi}+\alpha_g\mu_{gi}^2$.
+
+The workflow has five main stages. It normalizes for library depth, estimates
+and moderates dispersion, fits the GLM, tests coefficients, and adjusts for
+multiple testing. Optional apeGLM shrinkage stabilizes noisy LFC estimates but
+does not change the test p-values. \cudeseq{} preserves this order and passes
+the same quantities from one stage to the next.
 
 \subsubsection{Normalization}
 \label{sec:normalization}
-Median-of-ratios normalization is implemented with GPU tensor reductions and
-quantiles. The default \texttt{sfType="ratio"} raises, as DESeq2 does, when
-every gene contains a zero. DESeq2's alternative
-\texttt{sfType="poscounts"} estimator is also implemented for such sparse
+Median-of-ratios normalization uses GPU reductions and quantiles. As in
+DESeq2, \texttt{sfType="ratio"} raises an error when every gene contains a
+zero. The \texttt{sfType="poscounts"} alternative supports such sparse
 matrices.
 
 \subsubsection{Dispersion estimation}
 \label{sec:disp-overview}
-Gene-wise dispersion fitting for both the MLE and MAP estimators
-is batched across genes. The optimization methods
-used for this stage are described in Sec.~\ref{sec:disp}.
+Both gene-wise dispersion fits---MLE and MAP---run as batches. Their execution
+modes are described in Sec.~\ref{sec:disp}.
 
 \subsubsection{GLM fitting and hypothesis testing}
 \label{sec:glm-overview}
-Negative-binomial IRLS fits and Wald or likelihood-ratio tests are batched over
-genes; the implementation details are given in Sec.~\ref{sec:glm}.
+Negative-binomial IRLS and the Wald or likelihood-ratio tests are also batched
+over genes (Sec.~\ref{sec:glm}).
 
 \subsubsection{Significance filtering and result assembly}
 \label{sec:significance}
-Cook's filtering, independent filtering, and multiple-testing adjustment are
-implemented as vectorized array operations. For CUDA analyses, the robust
-Cook's-distance calculation, thresholding, and count replacement operate on
-the resident GPU matrices. Independent filtering obtains the rejection counts
-for its 50 nested thresholds from one p-value ordering and performs the full
-Benjamini--Hochberg adjustment only at the selected threshold. The standard
-wrapper performs replacement and refitting when DESeq2's eligibility
-conditions are met.
+Cook's filtering, independent filtering, and multiple-testing adjustment use
+vectorized operations. In a CUDA run, Cook's distances and count replacement
+remain on the GPU. Independent filtering evaluates 50 nested thresholds from a
+single p-value ordering. It performs the full Benjamini--Hochberg adjustment
+only for the selected threshold. Eligible outliers are then replaced and the
+affected genes refitted, as in DESeq2.
 
 \subsubsection{LFC shrinkage}
 \label{sec:apeglm-overview}
-The apeGLM optimizer is batched across genes on the GPU; Sec.~\ref{sec:apeglm}
-describes the implementation.
+The apeGLM optimizer runs as a gene batch on the GPU
+(Sec.~\ref{sec:apeglm}).
 
 \subsection{Dispersion acceleration}
 \label{sec:disp}
-The dispersion stage is a batched port of DESeq2's \texttt{fitDisp} and the supporting
-\texttt{estimateDispersions} logic. Its gene-wise MLE maximizes the
-Cox--Reid adjusted profile log-likelihood
+The dispersion stage follows DESeq2's \texttt{fitDisp} and
+\texttt{estimateDispersions} logic. For each gene, it maximizes the Cox--Reid
+adjusted profile log-likelihood
 \begin{equation}
 \ell_{\mathrm{CR}}(\alpha_g)=\sum_{i=1}^{S}\log \mathrm{NB}\!\bigl(K_{gi};\mu_{gi},\alpha_g\bigr)
 \;-\;\tfrac12\log\det\!\bigl(X^{\!\top} W_g X\bigr),
 \label{eq:cr}
 \end{equation}
 where $W_g=\operatorname{diag}\!\bigl(\mu_{gi}/(1+\alpha_g\mu_{gi})\bigr)$.
-We retain DESeq2's initialization, line search, trend fit, MAP shrinkage, and
-outlier rule. Because dispersion is a significant source of pipeline compute
-time, we expand optimization beyond basic batching and provide three
-alternative implementations of the gradient-ascent loop: eager, CUDA-graph,
-and Triton.
-The three implementations use the same optimizer decisions
-and differ only in how those evaluations are scheduled.
+We retain DESeq2's initialization, line search, trend fit, MAP estimate, and
+outlier rule. Dispersion is often the most expensive stage, so \cudeseq{}
+provides three ways to run its gradient-ascent loop: eager PyTorch, CUDA-graph
+replay, and a fused Triton kernel. They make the same optimizer decisions but
+schedule the work differently.
 
 \begin{table}[htbp]\centering
 \caption{The three execution modes for the dispersion loop.}
@@ -264,149 +235,125 @@ Sec.~\ref{sec:parity}.}
 
 \paragraph{CUDA-graph chunked replay.}
 \label{sec:graph}
-In eager mode each gradient-ascent iteration launches a handful of tiny kernels
-over $1$--$10$\,MB arrays, so the loop is dominated by launch latency.
-Capturing the loop as a CUDA graph amortizes that cost
-into a single replay, but two obstacles must be overcome.
+Eager mode launches several small kernels for each gradient step. The arrays
+are only $1$--$10$\,MB, so launch latency can dominate the calculation. CUDA
+graphs reduce that overhead by replaying a captured sequence of operations.
+Two details require special handling.
 
-The first is early exit. A fixed full-length capture would force every gene to
-the maximum iteration count, which wastes the typical $15$--$40$-iteration case.
-To prevent this we capture a $K{=}10$-iteration graph that reads and writes a set of
-persistent state buffers in place, and replay it in a loop with a convergence
-check between chunks. A chunk always runs to its boundary, so a gene that
-converges partway through executes further iterations. We selected ten
-iterations per replay empirically to balance replay overhead against excess
-iterations after convergence.
+First, genes converge at different times. Capturing the full loop would force
+every gene to run for the maximum number of iterations. Instead, we capture a
+$K{=}10$-iteration chunk and check convergence between replays. State is kept
+in persistent buffers. Ten iterations balanced replay overhead against the
+extra work done by genes that converge within a chunk.
 
-The second is cuSOLVER. The Cox--Reid term needs $\log\det(b)$ and
-$\operatorname{tr}(b^{-1}\,\mathrm{d}b)$ with $b=X^{\!\top}WX$, but
-\texttt{slogdet}/\texttt{solve} host-synchronize and cannot be captured. Since $b$
-is symmetric positive-definite for full-rank $X$, we replace them with an unrolled
-no-pivot LU (\texttt{\_logdet\_and\_tr\_binv\_db}) returning both quantities from
-elementwise and indexing operations alone, matching the \texttt{linalg} path to
-$\sim$1e-15 for $P=2\dots6$.
+Second, PyTorch's \texttt{slogdet} and \texttt{solve} synchronize with the host
+and cannot be captured. The Cox--Reid term needs both $\log\det(b)$ and
+$\operatorname{tr}(b^{-1}\,\mathrm{d}b)$, where $b=X^{\!\top}WX$. We compute
+them with an unrolled, no-pivot LU routine. For $P=2\dots6$, it agrees with the
+standard \texttt{linalg} path to about $10^{-15}$.
 
-Before capture the chunk is run three times on a side stream, warming the caching
-allocator and any lazy kernel initialization. Captured graphs are cached on $G$,
-$S$, $P$, the chunk length $K$, whether a prior term is enabled, the dtype and the
-device. Only \emph{whether} there is a prior is selected on the device, because the prior
-variance lives in the buffer set as a scalar tensor the replay reads, so one graph
-serves datasets whose prior variances differ.
-Because the graph uses the same routine,
-it retains bit-identical parity with the eager mode implementation.
+We warm the chunk three times on a side stream before capture. Captured graphs
+are cached by tensor shape, chunk length, prior use, data type, and device. The
+prior variance is stored in a scalar buffer, so one graph can serve datasets
+with different values. Graph mode calls the same arithmetic routine as eager
+mode and is therefore bit-identical to it.
 
 \paragraph{Triton full-loop fusion.}
 \label{sec:triton}
 
 \begin{figure}[htbp]\centering
-\includegraphics[width=\linewidth]{figures/triton_dispersion_schematic.pdf}
-\caption{Fused Triton execution of dispersion estimation. The same kernel is
-invoked for the Cox--Reid MLE and the prior-regularized MAP estimate on either
-side of the shared trend fit. Each gene maps to one program, which loads
-$\mathbf{y}_g$, $\boldsymbol{\mu}_g$, and $\mathbf{X}$ once and retains the
-objective, gradient, Armijo update, and convergence state inside the kernel.
-Supplementary Algorithms~\ref{alg:triton-overview}--\ref{alg:triton-detail}
-provide pseudocode.}
+\includegraphics[width=\linewidth]{figures/triton_dispersion_schematic.png}
+\caption{Fused dispersion estimation in Triton. One program handles one gene.
+It loads the counts, fitted means, and design matrix once, then keeps the
+gradient-ascent loop inside the kernel. The kernel is used for both gene-wise
+fits; the shared trend fit remains outside Triton.}
 \label{fig:triton}
 \end{figure}
 
-Each Triton dispersion fit uses one kernel launch over a grid with one program
-instance per gene (Fig.~\ref{fig:triton}). Each instance loads its counts, $\mu$,
-and the design columns once into registers, then runs the iterative gradient-ascent
-loop register-resident: the
-Cox--Reid $P\times P$ solve (closed-form $2\times2$ for $P{=}2$, an unrolled
-no-pivot LU above that), the NB log-likelihood and $\log\alpha$-gradient
-(\texttt{lgamma} and \texttt{log1p} from \texttt{libdevice}, \texttt{digamma}
-hand-implemented to match ATen's \texttt{calc\_digamma} through a recurrence to
-$x\ge10$ followed by the Bernoulli asymptotic series), and the Armijo line
-search. A per-gene \texttt{while} loop lets each gene exit as soon as it
-converges, so the kernel does not run every gene to the batch maximum. The kernel
-is fp64 and covers $P\in\{2,\dots,6\}$; \texttt{fit\_dispersions} gates on the
-covered range and routes wider designs to the eager path, while the kernel's own
-launcher raises instead of fitting a truncated model, since it reads a fixed
-number of design columns. At the gene-wise step, non-converged and
-high-dispersion genes get the same noIncrease revert and grid fallback as the
-eager path, computed eagerly after the kernel returns; at the MAP step neither
-applies, in either mode, because R applies neither. The fused reduction order and
-the hand-written \texttt{digamma} move the last bits, so this mode is not
-bit-identical to eager, and Sec.~\ref{sec:parity} reports how far the two
-diverge on real data.
+Triton mode launches one program per gene (Fig.~\ref{fig:triton}). The program
+loads the gene's counts, fitted means, and design columns once. It then keeps
+the likelihood, gradient, and Armijo line search in registers. Each gene exits
+when it converges.
+
+Small design matrices are solved directly. We use a closed-form solution for
+$P=2$ and unrolled no-pivot LU for $P=3,\dots,6$. The kernel uses fp64
+arithmetic. Wider designs fall back to eager mode; the low-level launcher
+rejects them rather than silently truncating the model.
+
+After the kernel returns, non-converged and high-dispersion genes receive the
+same fallback treatment as in eager mode. Triton changes the floating-point
+reduction order and uses its own implementation of \texttt{digamma}. It is
+therefore not bit-identical to eager mode. We measure the resulting differences
+in Sec.~\ref{sec:parity}. Full pseudocode is given in Supplementary
+Algorithms~\ref{alg:triton-overview}--\ref{alg:triton-detail}.
 
 \subsection{GLM acceleration}
 \label{sec:glm}
-The GLM is implemented as a batched negative-binomial IRLS solve on the GPU,
-using one batched factorization across genes at each iteration. Genes that
-diverge or reach the DESeq2 iteration cap use the same host-side fallback as the
-reference; only those exceptional gene rows are transferred. Cook's robust
-dispersion, distance, count replacement, and the affected-gene refit remain on
-the GPU in CUDA workflows. Wald standard errors retain the $\mu\ge0.5$ floor in
-\texttt{fitBeta.cpp}; LRTs use the full--reduced deviance difference.
+The negative-binomial IRLS solve is batched across genes. Each iteration uses
+one batched factorization. Genes that diverge or reach DESeq2's iteration cap
+use the reference fallback; only those rows move to the host. Cook's distances,
+count replacement, and refitting stay on the GPU. Wald standard errors retain
+the $\mu\ge0.5$ floor used by DESeq2, and LRTs use the full--reduced deviance
+difference.
 
 \subsection{LFC shrinkage acceleration}
 \label{sec:apeglm}
-apeGLM \citep{zhu2019apeglm} is a per-gene optimization, so its L-BFGS state,
-line search, and convergence flags are batched on the GPU. We match the
-reference optimizer's initialization and stopping rules because extreme,
-low-count genes can have competing posterior modes. As in \texttt{lfcShrink},
-only the shrunken coefficient and its standard error are replaced; p-values
-remain those from the Wald fit. Loss and gradient share the same large
-gene--sample linear predictor, invariant count/dispersion terms are hoisted out
-of the optimizer loop, and fitted size factors and Wald inference are reused
-rather than reconstructed downstream. On CUDA, PyTorch compilation fuses the
-elementwise likelihood, score, and final-Hessian work surrounding the matrix
-products. This removes repeated gene--sample temporaries while retaining the
-same L-BFGS initialization, line search, stopping rules, and fp64 outputs; CPU
-execution keeps the eager implementation.
+apeGLM \citep{zhu2019apeglm} also optimizes one model per gene. \cudeseq{}
+batches its L-BFGS state, line search, and convergence flags. It keeps the
+reference initialization and stopping rules, which matter for extreme,
+low-count genes with competing posterior modes. As in \texttt{lfcShrink}, only
+the coefficient and its standard error are replaced. P-values still come from
+the Wald fit.
+
+Several changes reduce repeated work. The loss and gradient share one
+gene--sample linear predictor. Terms that do not change during optimization are
+computed once. Existing size factors and Wald results are reused. On CUDA,
+PyTorch compilation fuses the elementwise work around the matrix products. CPU
+execution keeps the eager path.
 
 \subsection{Validation and benchmark design}
 \label{sec:parity-method}
-Reference fixtures were generated with R~DESeq2~1.52.0: three single-factor
-designs at $12\times200$,
-$30\times500$ and $60\times2000$ (samples $\times$ genes, $P=2$), a
-$60\times1500$ two-factor design $\sim$\,batch\,$+$\,condition with a
-three-level batch ($P=4$), and a $60\times1000$ continuous-covariate design
-($P=2$), using the seeds 0, 0, 1, 2, and 3, respectively. Every intermediate
-is checked against R: size factors,
-\texttt{dispGeneEst}, \texttt{dispFit} (the parametric trend on every fixture,
-plus the \texttt{"local"} and \texttt{"mean"} trends on the single-factor
-ones), \texttt{dispMAP}, the final dispersion and its outlier set, $\beta$,
-$\mu$, the hat-matrix diagonals, Cook's distances, Wald SE, the LRT statistic on
-all five designs, the independent-filtering \texttt{padj}, and the apeGLM prior
-scale and shrunk LFC/SE. Errors are reported as p95 relative values, or absolute
-values where a quantity crosses zero. Sec.~\ref{sec:parity} reports the measured
-agreement for the principal quantities and tabulates the five pipeline stages on
-the real datasets (Table~\ref{tab:parity}). For real-data summaries, max
-relative error is used for positive size factors; p95 relative error for
-positive dispersions; p95 absolute error for LFCs, which cross zero; Jaccard
-similarity of finite $\mathrm{padj}<0.05$ sets; and Pearson correlation over
-finite pairs for shrunken LFCs. Empty called-set unions are assigned Jaccard
-similarity one. Eager, graph, and Triton modes were evaluated separately
-against the same reference and acceptance thresholds.
+We first tested numerical agreement on five simulated fixtures generated with
+R~DESeq2~1.52.0. Three use a single-factor design with $P=2$: 12 samples and
+200 genes, 30 and 500, and 60 and 2{,}000. A fourth has 60 samples, 1{,}500
+genes, and a two-factor design with $P=4$. The fifth has 60 samples, 1{,}000
+genes, and a continuous covariate. The respective random seeds are 0, 0, 1, 2,
+and 3.
 
-Performance was evaluated on one NVIDIA A100-SXM4-40GB under PyTorch~2.7.1,
-CUDA~12.6, and NVIDIA driver~580.126.20. The CPU reference was
-R~DESeq2~1.52.0 with apeglm~1.34.0 on a 12-vCPU virtual machine. The primary
-comparison used the ordinary \texttt{DESeq()}, \texttt{results()}, and
-\texttt{lfcShrink()} call sequence with \texttt{MulticoreParam(12)}.
-GPU times are medians of five complete, CUDA-synchronized measurements after
-one warm-up. The two long-running large-GTEx CPU endpoints are single cold
-observations and are interpreted as endpoint comparisons rather than sampling
-distributions. Memory-boundary experiments are single fresh-process
-feasibility tests.
+These fixtures test intermediate values throughout the pipeline. They include
+size factors; gene-wise, trend, MAP, and final dispersions; GLM coefficients and
+fitted means; Cook's distances; Wald standard errors; LRT statistics;
+independent filtering; and apeGLM outputs. Single-factor fixtures also test the
+local and mean dispersion trends.
 
-The study includes six designs derived from three published datasets:
-pasilla \citep{brooks2011pasilla} ($n{=}7$; one- and two-factor designs),
-airway \citep{himes2014airway} ($n{=}8$; three design slices), and a
-300-sample GTEx \citep{gtex2020atlas} whole-blood versus skeletal-muscle
-contrast with 54{,}922 genes. GTEx counts were obtained from recount2's
-uniform reprocessing of SRA study SRP012682
-\citep{colladotorres2017recount2}; the primary contrast contains 150 samples
-per tissue selected using R seed 1. Base coverage was converted to read counts
-using each sample's average read length, with 100 bases used for missing or
-non-positive values. A fixed-seed simulation independently varies sample count
-at 2{,}000 genes. Finally, nested cohorts from all 9{,}662 GTEx source samples
-and 54 tissue levels vary sample count and design width while holding the gene
-axis fixed.
+We then compared full results on real data. Positive quantities use relative
+error; values that cross zero use absolute error. Significant sets use Jaccard
+similarity at $\mathrm{padj}<0.05$, and shrunken LFCs use Pearson correlation.
+An empty union has Jaccard similarity one. Eager, graph, and Triton modes were
+tested separately against the same reference and acceptance thresholds.
+
+Performance was measured on one NVIDIA A100-SXM4-40GB with PyTorch~2.7.1 and
+CUDA~12.6. The host had 12 virtual CPUs. The reference used R~DESeq2~1.52.0,
+apeglm~1.34.0, and \texttt{MulticoreParam(12)}. Both implementations ran the
+ordinary \texttt{DESeq()}, \texttt{results()}, and \texttt{lfcShrink()}
+workflow.
+
+GPU results are medians of five synchronized runs after one warm-up. The two
+long GTEx CPU endpoints are single cold runs and are reported as endpoint
+comparisons. OOM tests are single runs in fresh processes.
+
+The real-data benchmark contains six designs from three published datasets.
+Pasilla contributes one- and two-factor designs with seven samples
+\citep{brooks2011pasilla}. Airway contributes three design slices with eight
+samples \citep{himes2014airway}. GTEx contributes a 300-sample contrast between
+whole blood and skeletal muscle at 54{,}922 genes \citep{gtex2020atlas}.
+
+The GTEx counts come from the recount2 reprocessing of SRP012682
+\citep{colladotorres2017recount2}. We selected 150 samples per tissue with R
+seed 1. Base coverage was divided by each sample's mean read length; missing or
+non-positive lengths were set to 100 bases. A separate fixed-seed simulation
+varies sample count while holding the gene count at 2{,}000. Nested cohorts
+drawn from all 9{,}662 source samples and 54 tissues test larger models.
 
 % ===========================================================================
 \section{Results}
@@ -425,81 +372,65 @@ pipeline stage.}
 \label{tab:parity}
 \begin{tabular}{llrr}
 \toprule
-Substep & Metric & Median & Worst \\\midrule
+Stage & Metric & Median & Worst \\\midrule
 normalization & max rel.\ $\Delta$ & 4.1e-15 & 5.7e-15 \\
 dispersion & p95 rel.\ $\Delta$ & 8.5e-4 & 4.4e-3 \\
-glm\_fit & p95 $|\Delta|$ (LFC) & 2.4e-5 & 8.1e-5 \\
+GLM fit & p95 $|\Delta|$ (LFC) & 2.4e-5 & 8.1e-5 \\
 significance & Jaccard@0.05 & 1.00000 & 0.99963 \\
-lfc\_shrink & Pearson $r$ & 0.99999 & 0.99722 \\\bottomrule
+LFC shrinkage & Pearson $r$ & 0.99999 & 0.99722 \\\bottomrule
 \end{tabular}
 \end{table}
 
-Every eager-mode pipeline stage met its predefined tolerance across all six
-real-data designs.
-Normalization was effectively identical to R, and the largest dispersion
-discrepancy was \fact{0.44\%} at the 95th percentile. Raw LFC estimates differed
-by at most \fact{$8.1\times10^{-5}$} at the 95th percentile, and
-significant-gene sets had Jaccard similarity of at least \fact{0.99963}.
-Shrunken LFCs had Pearson correlation of at least \fact{0.99722} with R.
+All five stages met their acceptance thresholds. Normalization was effectively
+identical to R. The worst p95 dispersion error was \fact{0.44\%}, and the worst
+p95 raw-LFC error was \fact{$8.1\times10^{-5}$}. Significant sets had Jaccard
+similarity of at least \fact{0.99963}; shrunken LFCs had Pearson correlation of
+at least \fact{0.99722}.
 
 \subsubsection{Parity in standard DE visualizations}
 \label{sec:deplots}
-In addition to summary statistics, we compare visualizations routinely used to
-interpret differential-expression analyses. Figure~\ref{fig:deplots} displays
-final dispersion, MA, and volcano plots from both pipelines on matched axes.
-The mean--dispersion relationship, shrunken effect-size pattern, and
-significance structure visually overlap; both implementations call
-\fact{3{,}993} genes at $\mathrm{padj}<0.05$ in this design.
+The standard diagnostic plots tell the same story (Fig.~\ref{fig:deplots}). The
+dispersion trends, shrunken effects, and significance patterns overlap. Both
+implementations call \fact{3{,}993} genes at $\mathrm{padj}<0.05$.
 
 \begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/de_diagnostics_parity.pdf}
-\caption{Matched differential-expression visualizations for \texttt{airway}
-($\sim$\,cell\,+\,dex, $n{=}8$, $P{=}5$). R~DESeq2~1.52.0 is shown above and
-\cudeseq{} below. Panels show final dispersion versus mean normalized count,
-the apeGLM-shrunken MA relationship, and adjusted-p-value volcano plots. The
-same code and R-derived axis limits are used for both rows.}
+\caption{Matched diagnostic plots for \texttt{airway}
+($\sim$\,cell\,+\,dex, $n{=}8$, $P{=}5$). R~DESeq2 is shown above and
+\cudeseq{} below. Columns show dispersion estimates, the apeGLM-shrunken MA
+plot, and the volcano plot. Both rows use the same code and axes.}
 \label{fig:deplots}
 \end{figure}
 
-The two pipelines also produce comparable ranked genes
-(Fig.~\ref{fig:concordance}). At the prespecified $\alpha{=}0.05$ threshold,
-four of the six called sets agree exactly and the other two reach
-\fact{0.99963} and \fact{0.99997}.
+Ranked genes also agree (Fig.~\ref{fig:concordance}). At the prespecified
+$\alpha{=}0.05$, four called sets are identical. The remaining two have
+Jaccard indices of \fact{0.99963} and \fact{0.99997}.
 
 
 \begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/de_parity_concordance.pdf}
-\caption{Quantitative agreement across all six designs. \emph{(a)} p-value
-distributions on \texttt{airway}, overlaid. \emph{(b)} Fraction of the top $N$
-genes shared by the two rankings, ranked by $|$Wald statistic$|$ to avoid
-comparing tie-breaks among genes whose p-value has underflowed in R.
-\emph{(c)} apeGLM-shrunk LFC residual against expression, showing no
-mean-dependent bias; dashed lines mark p95 $|\Delta|$. \emph{(d)} Jaccard index
-of the called sets as the significance threshold moves, with the number of genes
-R calls at $\alpha{=}0.05$ in the legend. The index is granular to $\sim1/n$, so
-the small called sets move in visible steps. The \texttt{gtex} curve now includes
-count replacement and refitting in both pipelines.}
+\caption{Agreement across the six real-data designs. \emph{(a)} Overlaid
+p-value distributions for \texttt{airway}. \emph{(b)} Overlap among the top
+$N$ genes ranked by absolute Wald statistic. \emph{(c)} Difference in shrunken
+LFC versus expression. \emph{(d)} Jaccard index of significant sets across
+adjusted-p thresholds.}
 \label{fig:concordance}
 \end{figure}
 
 \subsection{GPU acceleration reduces end-to-end wall time}
 
-Across the six real-data designs, every GPU mode reduced wall time relative to
-12-worker R~DESeq2, although the magnitude depended on the model and dataset
-(Table~\ref{tab:realtiming}). Graph and Triton execution alter only the
-scheduling of dispersion estimation relative to eager \cudeseq{}. The
-controlled stage breakdown in Table~\ref{tab:realsubstep} therefore isolates
-the source of their additional gains.
+Every GPU mode was faster than 12-worker R~DESeq2 on all six designs
+(Table~\ref{tab:realtiming}). The gain depended on the design. Graph and Triton
+modes change only dispersion execution, so the stage timings show where their
+extra speed comes from (Table~\ref{tab:realsubstep}).
 
 
 \label{sec:realtiming}
 \begin{table}[htbp]\centering
-\caption{End-to-end wall time on the real datasets. R uses 12
-\texttt{BiocParallel} workers; GPU columns are the three \cudeseq{} modes.
-Values are medians of five complete observations and include data-object
-construction, inference, result assembly, LFC shrinkage, and any required
-count-outlier refitting. Bold values identify the fastest implementation in
-each row.}
+\caption{End-to-end wall time on real data. R uses 12
+\texttt{BiocParallel} workers. GPU values are medians of five complete runs.
+All timings include setup, inference, LFC shrinkage, and outlier refitting.
+The fastest time in each row is bold.}
 \label{tab:realtiming}
 {\footnotesize
 \begin{tabular}{lrrrrrrr}
@@ -515,60 +446,53 @@ gtex          & 2 & 300 & 63.445 & 5.284 & 4.910 & \textbf{1.807} & 35.1$\times$
 \end{tabular}}
 \end{table}
 
-Against the practical 12-worker CPU baseline, the best direct GPU mode is
-\fact{3.6--35.1$\times$} faster, with \texttt{airway\_cell} and \texttt{gtex}
-as the endpoints. Triton is the fastest total mode and has the fastest
-dispersion substep on all six designs:
-fusing the wider Cox--Reid solve (Sec.~\ref{sec:triton}) cuts the dispersion
-substep by \fact{8.9$\times$} on \texttt{pasilla\_2fac} ($P{=}3$) and
-\fact{2.8$\times$} on \texttt{airway} ($P{=}5$) against the eager loop
-(\fact{777}$\to$\fact{87}\,ms and \fact{1660}$\to$\fact{585}\,ms, same run).
-\texttt{airway}'s dispersion substep also includes
-the CPU R-stream replay of Sec.~\ref{sec:disp} in every mode.
-Although it typically lags Triton, graph is bit-identical to eager
-(Sec.~\ref{sec:parity}).
+The fastest GPU mode was \fact{3.6--35.1$\times$} faster than the CPU baseline.
+Triton had the lowest end-to-end time and the fastest dispersion stage on every
+design. For example, it reduced dispersion time from \fact{777} to \fact{87}\,ms
+on \texttt{pasilla\_2fac}, an \fact{8.9$\times$} gain. On \texttt{airway}, the
+reduction was \fact{1660} to \fact{585}\,ms, or \fact{2.8$\times$}. Graph mode
+was slower than Triton but remained bit-identical to eager mode.
 
 \begin{table}[htbp]\centering
 \caption{Pipeline-stage wall time (ms) for the three GPU execution modes.
-Bold values identify the fastest mode for each measured stage. \texttt{glm\_fit}
-includes the initial Wald fit and count-outlier replacement/refitting;
-\emph{component total} is the sum of the stage medians rather than a separately
-observed end-to-end duration.}
+Bold values identify the fastest mode for each stage and total. GLM fitting
+includes the initial Wald fit and count-outlier replacement/refitting. The
+\emph{total} is the sum of stage medians, not a separate end-to-end measurement.}
 \label{tab:realsubstep}
 {\footnotesize
-\begin{tabular}{llrrr}
+\begin{tabular}{ll@{\hspace{18pt}}rrr}
 \toprule
-Dataset & Substep & eager & graph & Triton \\\midrule
+Dataset & Stage & eager & graph & Triton \\\midrule
 pasilla & dispersion & 463 & 78 & \textbf{21} \\
-        & glm\_fit & 42 & 42 & \textbf{41} \\
+        & GLM fit & 42 & 42 & \textbf{41} \\
         & significance & 40 & \textbf{40} & 40 \\
-        & lfc\_shrink & \textbf{420} & 422 & 421 \\
-        & \emph{component total} & 966 & 583 & 524 \\\midrule
+        & LFC shrinkage & \textbf{420} & 422 & 421 \\
+        & \emph{total} & 966 & 583 & \textbf{524} \\\midrule
 pasilla\_2fac & dispersion & 777 & 174 & \textbf{87} \\
-        & glm\_fit & 354 & 354 & \textbf{352} \\
+        & GLM fit & 354 & 354 & \textbf{352} \\
         & significance & 50 & 50 & \textbf{49} \\
-        & lfc\_shrink & 347 & \textbf{346} & 347 \\
-        & \emph{component total} & 1528 & 925 & 837 \\\midrule
+        & LFC shrinkage & 347 & \textbf{346} & 347 \\
+        & \emph{total} & 1528 & 925 & \textbf{837} \\\midrule
 airway\_dex & dispersion & 581 & 141 & \textbf{56} \\
-        & glm\_fit & 58 & 59 & \textbf{57} \\
+        & GLM fit & 58 & 59 & \textbf{57} \\
         & significance & \textbf{82} & 109 & 82 \\
-        & lfc\_shrink & \textbf{573} & 578 & 576 \\
-        & \emph{component total} & 1296 & 888 & 773 \\\midrule
+        & LFC shrinkage & \textbf{573} & 578 & 576 \\
+        & \emph{total} & 1296 & 888 & \textbf{773} \\\midrule
 airway\_cell & dispersion & 801 & 198 & \textbf{62} \\
-        & glm\_fit & 39 & \textbf{38} & 39 \\
+        & GLM fit & 39 & \textbf{38} & 39 \\
         & significance & 78 & 78 & \textbf{75} \\
-        & lfc\_shrink & 2675 & \textbf{2667} & 2674 \\
-        & \emph{component total} & 3593 & 2982 & 2852 \\\midrule
+        & LFC shrinkage & 2675 & \textbf{2667} & 2674 \\
+        & \emph{total} & 3593 & 2982 & \textbf{2852} \\\midrule
 airway & dispersion & 1660 & 723 & \textbf{585} \\
-        & glm\_fit & 62 & \textbf{62} & 64 \\
+        & GLM fit & 62 & \textbf{62} & 64 \\
         & significance & 74 & 74 & \textbf{73} \\
-        & lfc\_shrink & 673 & 685 & \textbf{663} \\
-        & \emph{component total} & 2470 & 1545 & 1386 \\\midrule
+        & LFC shrinkage & 673 & 685 & \textbf{663} \\
+        & \emph{total} & 2470 & 1545 & \textbf{1386} \\\midrule
 gtex & dispersion & 3574 & 3612 & \textbf{217} \\
-        & glm\_fit & 849 & 491 & \textbf{432} \\
+        & GLM fit & 849 & 491 & \textbf{432} \\
         & significance & 85 & \textbf{73} & 95 \\
-        & lfc\_shrink & 570 & \textbf{569} & 929 \\
-        & \emph{component total} & 5081 & 4749 & 1678 \\\bottomrule
+        & LFC shrinkage & 570 & \textbf{569} & 929 \\
+        & \emph{total} & 5081 & 4749 & \textbf{1678} \\\bottomrule
 \end{tabular}}
 \\[3pt]
 {\footnotesize \texttt{normalization} omitted ($\le$\fact{4\,ms} cuDESeq2 on
@@ -576,13 +500,10 @@ every set). All GPU values come from the same A100 session.}
 \end{table}
 
 \subsection{Fused dispersion remains efficient as sample count grows}
-To distinguish scaling in sample count from scaling in gene count, we fixed 2{,}000
-simulated genes and varied the balanced two-group design from 4 to 2{,}000
-samples (Table~\ref{tab:samplescaling}). The full dispersion stage includes
-gene-wise estimation, trend fitting, and MAP shrinkage. Iteration counts vary
-with the simulated input, so wall time need not increase monotonically with
-sample count. Graph replay is most useful while launch overhead dominates,
-whereas the fused Triton path remains fastest throughout this sweep.
+We next fixed the gene count at 2{,}000 and varied the sample count from 4 to
+2{,}000 (Table~\ref{tab:samplescaling}). Triton was fastest throughout. Times
+were not monotonic because the simulated inputs required different numbers of
+optimizer iterations. Graph replay helped most when launch overhead dominated.
 
 \begin{table}[htbp]\centering
 \caption{Sample-count scaling of the full dispersion stage (ms) at 2{,}000
@@ -603,14 +524,11 @@ Samples & eager & graph & Triton \\\midrule
 \end{table}
 
 \subsection{Real GTEx cohorts reveal scaling and memory limits}
-The synthetic sweep isolates the sample axis but does not measure the complete
-workflow on a large real matrix. We therefore analyzed all 9{,}662 samples in
-the recount2 GTEx study at a fixed 54{,}922 genes. A nested $P=2$ series
-increases sample count within whole blood and skeletal muscle, whereas a second
-series adds abundant tissues to increase both cohort size and design width.
-This construction exposes two distinct scaling regimes: the number of
-observations contributing to each gene-wise objective, and the size of the
-per-gene linear-algebra problem.
+The synthetic sweep covers only dispersion. To test the complete workflow, we
+built nested cohorts from the 9{,}662-sample recount2 GTEx study. Every cohort
+contains 54{,}922 genes. One series keeps $P=2$ and adds blood and muscle
+samples. A second series adds tissues, increasing both sample count and design
+width.
 
 \begin{table}[htbp]\centering
 \caption{Full-workflow real-GTEx scaling on one A100 at 54{,}922 genes. Direct
@@ -633,23 +551,21 @@ paper-equivalent       & 300   & 2 & 1.753  & 1.98 \\
 \end{tabular}}
 \end{table}
 
-For the nested P=2 series, tripling the real sample count from 300 to 912
-increases direct GPU time from 1.753 to 5.430 seconds and peak allocation from
-1.98 to 5.99 GiB. The widest fused case uses all samples from the six largest
-tissues: \fact{2{,}451} samples at $P=6$ complete in a \fact{22.936-s} direct
-median with \fact{20.10 GiB} peak allocation. We also measured the same direct
-workflow with 12-worker R~DESeq2 (Table~\ref{tab:gtexrendpoint}). The GPU is
-\fact{39.4$\times$} faster at 912 samples/$P=2$ and \fact{28.0$\times$} faster
-at 2{,}451 samples/$P=6$. Because the complete CPU calls require 3.6--10.7
-minutes, each R value is a single observation; these ratios are endpoint
-comparisons rather than estimates with repeated-sampling uncertainty.
+At $P=2$, increasing the cohort from 300 to 912 samples raised GPU time from
+1.753 to 5.430 seconds. Peak allocation rose from 1.98 to 5.99 GiB. The largest
+fused model used all \fact{2{,}451} samples from six tissues. It completed in a
+\fact{22.936-s} median and used \fact{20.10 GiB} at peak.
+
+We also ran the 912- and 2{,}451-sample endpoints with 12-worker R~DESeq2
+(Table~\ref{tab:gtexrendpoint}). The GPU was \fact{39.4$\times$} and
+\fact{28.0$\times$} faster, respectively. Each CPU value is one cold run, so
+these ratios should be read as endpoint comparisons rather than estimates of a
+timing distribution.
 
 \begin{table}[htbp]\centering
-\caption{Large-GTEx direct endpoint observations against the practical
-12-worker R baseline. R is one cold observation in a fresh process; GPU is the
-direct median of five warm observations. All columns include dataset
-construction and the complete workflow. ``GPU vs.'' reports R time divided by
-GPU time. Bold values identify the faster implementation.}
+\caption{Large-GTEx endpoints against 12-worker R. R values are single cold
+runs; GPU values are medians of five warm runs. Both include dataset
+construction and the complete workflow. The faster time is bold.}
 \label{tab:gtexrendpoint}
 {\footnotesize
 \begin{tabular}{lrrrr}
@@ -660,22 +576,16 @@ Samples & $P$ & GPU (s) & R 12w (s) & GPU vs. R 12w \\\midrule
 \end{tabular}}
 \end{table}
 
-The independent GPU--R endpoint parity checks use the same five predefined
-tolerances as Table~\ref{tab:parity}. At P=6,
-dispersion p95 relative error is
-\fact{0.00212}, raw-LFC p95 absolute error is $3.18\times10^{-5}$,
-significant-set Jaccard is \fact{0.99896}, and shrunken-LFC Pearson correlation
-is \fact{0.999994}; all five stages pass. Dispersion agreement was evaluated
-at the same point in both workflows, immediately after dispersion estimation
-and before count-outlier refitting.
+The large endpoints also passed all five parity checks. At $P=6$, the p95
+dispersion error was \fact{0.00212}. The significant-set Jaccard index was
+\fact{0.99896}, and shrunken-LFC correlation was \fact{0.999994}. Dispersion
+was compared immediately after estimation and before outlier refitting.
 
-Finally, nested all-sample tissue models were extended beyond the fused
-kernel's $P\leq6$ limit, where \cudeseq{} uses the eager dispersion path
-(Table~\ref{tab:gtexoom}). A $P=9$ model with
-3{,}478 samples passes at \fact{37.09 GiB} peak allocation, while P=10 with
-3{,}784 samples fails during dispersion. Thus the observed boundary on this
-40-GB A100 lies between those two nested cohorts; it is not a universal
-sample-count limit because both sample count and design width change.
+Finally, we increased design width beyond Triton's $P\leq6$ limit. These models
+use eager dispersion (Table~\ref{tab:gtexoom}). A $P=9$ model with 3{,}478
+samples completed at \fact{37.09 GiB} peak allocation. The next model, $P=10$
+with 3{,}784 samples, failed during dispersion. This is an observed boundary
+for these nested cohorts, not a general limit on sample count.
 
 \begin{table}[htbp]\centering
 \caption{Observed A100 feasibility boundary for nested all-sample GTEx tissue
@@ -696,75 +606,51 @@ Tissues & Samples & $P$ & Peak GiB & Status & Failed stage \\\midrule
 % ===========================================================================
 \section{Discussion}
 \label{sec:discussion}
-The principal finding is that the full supported DESeq2 workflow can exploit
-GPU parallelism without substituting a different statistical test. Across six
-real-data designs, \cudeseq{} preserved normalization, dispersion estimation,
-GLM coefficients, significance calls, and apeGLM-shrunken effects while
-reducing observed end-to-end wall time by \fact{3.6--35.1$\times$} relative to
-12-worker R~DESeq2. Agreement at intermediate stages is important here: similar
-final gene lists alone could conceal compensating differences in dispersion,
-standard-error, or multiple-testing calculations.
+\cudeseq{} shows that the DESeq2 workflow can use GPU parallelism without
+switching to a different test. It matched R at each pipeline stage and was
+\fact{3.6--35.1$\times$} faster end to end. Checking intermediate values was
+important. Agreement in the final gene list alone could hide errors in
+dispersion, standard errors, or multiple-testing correction.
 
-The results identify the gene axis as the useful unit of parallelism for this
-class of count model. Basic batching exposes thousands of independent fits to
-the GPU, but dispersion estimation also illustrates why batching alone is
-insufficient. Its small matrix operations and variable-length optimization
-loops can be limited by dispatch overhead rather than arithmetic throughput.
-CUDA-graph replay reduces that overhead without changing eager arithmetic,
-whereas the Triton implementation fuses the complete per-gene loop and permits
-independent convergence. The relative benefit varies with design width and
-sample count because the balance shifts among dispersion, GLM fitting,
-significance processing, and LFC shrinkage. This explains why stage-level
-acceleration does not translate into a constant end-to-end speedup and points
-to shrinkage as an important target for further optimization in some designs.
+The useful unit of parallelism is the gene. Basic batching sends thousands of
+independent fits to the GPU at once. Dispersion estimation needs more than
+batching because it consists of small operations inside variable-length loops.
+CUDA graphs reduce launch overhead while preserving eager arithmetic. Triton
+goes further by fusing each gene's loop into one kernel. The best choice depends
+on the size of the design and the number of samples.
 
-A broader methodological observation is that reference compatibility depends
-on both the statistical specification and details of its numerical realization.
-The dispersion prior, Wald standard errors, and apeGLM optimization each expose
-choices that are not fully determined by the model equations. For example, the
-minimum fitted-mean convention used in the Wald weight matrix affects genes
-with near-zero fitted counts and can change their standard errors. Conversely,
-the Triton kernel evaluates the same dispersion objective as eager execution
-but changes floating-point reduction order and the implementation of the
-digamma function. Its maximum absolute eager--Triton dispersion difference is
-\fact{0.2604} on GTEx and no more than \fact{$3.8 \times 10^{-7}$} across the
-five smaller designs. The downstream agreement reported here indicates that
-these numerical differences do not constitute a practically meaningful change
-to inference on the evaluated data, but it does not imply bitwise identity.
+Numerical details matter when matching a reference implementation. The model
+equations do not specify every optimizer decision or floating-point operation.
+Triton, for example, changes reduction order and supplies its own
+\texttt{digamma}. The largest eager--Triton dispersion difference was
+\fact{0.2604} on GTEx, compared with at most
+\fact{$3.8 \times 10^{-7}$} on the five smaller designs. These differences did
+not materially change downstream results in our tests, but Triton is not
+bit-identical to eager mode.
 
-The GTEx experiments extend the conclusion beyond the small public examples.
-At 54{,}922 genes, the fused path supported a 2{,}451-sample, six-tissue model
-in less than half the memory of the 40-GB A100, while wider eager models reached
-the memory boundary between $P=9$ and $P=10$ in the nested cohorts. This result
-separates computational feasibility from statistical scope: adding samples can
-improve the information available to a model, but increasing design width also
-raises the cost of every per-gene solve and the size of resident intermediates.
-Chunking, mixed precision where statistically acceptable, or a wider fused
-kernel may move this boundary, but each would require renewed parity analysis.
+GTEx shows both the reach and the present memory limit. The fused path handled
+2{,}451 samples and six tissues using about half of a 40-GB A100. Wider eager
+models reached the boundary between $P=9$ and $P=10$. Both sample count and
+design width increase memory use, so this boundary is specific to the tested
+cohorts. Chunking or a wider fused kernel could move it. Either change would
+need a new parity analysis.
 
-The practical value is greatest when the same reference analysis is applied
-repeatedly, including perturbation screens, resampling studies, and evaluation
-of generated expression profiles. \cudeseq{} is therefore complementary to
-methods that change the inferential model for scalability: it provides a path
-for retaining DESeq2 semantics when compatibility with established analyses is
-the priority. For isolated small experiments, GPU availability, transfer
-costs, and software complexity may outweigh the wall-time benefit.
+The strongest use case is repeated analysis: perturbation screens, resampling,
+many contrasts, or evaluation of generated expression profiles. For one small
+experiment, access to a GPU and added software complexity may outweigh the
+time saved. \cudeseq{} is most useful when compatibility with existing DESeq2
+analyses matters and the same workflow must run many times.
 
-Several limitations bound the present conclusions. Measurements use one A100
-and one 12-vCPU host, so absolute time, speedup, energy use, and cost cannot be
-generalized to other hardware. Five of the six primary designs contain only
-seven or eight samples, and the larger scaling study derives from a single
-GTEx source rather than independent cohorts. Interactions, observation weights,
-the \texttt{ashr} and normal shrinkage estimators, and the \texttt{glmGamPoi}
-dispersion backend remain outside the validated scope. The fused Triton path
-supports $P\in\{2,\dots,6\}$; wider designs use eager dispersion. Finally, the
-large-GTEx CPU endpoints and memory-boundary points are single observations,
-and the tissue series changes sample count and design width together.
+This study has several limits. All timings come from one A100 and one 12-vCPU
+host. Five of the six primary designs have only seven or eight samples, and the
+large-scale study uses one GTEx source. Interactions, observation weights,
+\texttt{ashr}, normal shrinkage, and the \texttt{glmGamPoi} dispersion backend
+were not validated. Triton supports $P=2,\dots,6$; wider designs use eager
+dispersion. The large-GTEx CPU endpoints and OOM probes are single observations.
 
-In conclusion, gene-batched GPU execution can substantially accelerate
-reference-compatible negative-binomial differential expression. The findings
-support the use of DESeq2-style inference in high-throughput settings where
-computational cost might otherwise motivate a less comparable surrogate.
+Within this scope, gene-batched GPU execution preserves DESeq2-style results
+while cutting analysis time. It offers a practical alternative to replacing a
+count model with a cheaper surrogate in high-throughput settings.
 
 
 
@@ -792,15 +678,12 @@ data for SRA study SRP012682
 (\url{https://recount-opendata.s3.amazonaws.com/recount2/v2/SRP012682/rse_gene.Rdata})
 \citep{gtex2020atlas,colladotorres2017recount2}.
 
-Source code, deterministic data-preparation procedures, source and prepared
-file checksums, benchmark records, and the digest-pinned software environment
-are archived at \url{https://github.com/synthesizebio/gpu_deseq} under the MIT
-license. The archive includes the exact GTEx source-column selections, raw
-timing observations, memory and OOM records, endpoint timings, parity metrics,
-and an executable reproducibility guide. The 1.37-GB recount2 source object is
-retrieved from the public URL above and is not redistributed in the repository.
-The archived provenance record contains source URLs, byte lengths, checksums,
-software versions, and cohort identifiers for the reported analyses.
+Code and the reproducibility guide are available at
+\url{https://github.com/synthesizebio/gpu_deseq} under the MIT license. The
+repository records input checksums, GTEx sample selections, raw timings, parity
+metrics, memory use, software versions, and container digests. The 1.37-GB
+recount2 object is downloaded from the public URL above rather than copied into
+the repository.
 \end{sloppypar}
 
 \bibliographystyle{plainnat}
@@ -809,26 +692,24 @@ software versions, and cohort identifiers for the reported analyses.
 % ===========================================================================
 \clearpage
 \section*{Supplementary benchmark details}
-The benchmark host was a KVM virtual machine with an Intel Xeon CPU at
-2.20\,GHz, 6 physical cores and 12 logical CPUs, 83\,GiB RAM, and Linux~5.10.
-GPU measurements used one NVIDIA A100-SXM4-40GB. The software environment was
-PyTorch~2.7.1 with CUDA~12.6 and NVIDIA driver~580.126.20; the R environment was
-R~4.6.0 with DESeq2~1.52.0 and apeglm~1.34.0. OMP, OpenBLAS, and MKL thread
-counts were pinned to one for the R measurements. Main-suite and real-GTEx GPU
-timings are medians of five measured repetitions following an untimed warm-up.
-The two practical 12-worker large-GTEx R endpoints and four OOM-boundary probes
-are explicitly single-run measurements. The separate synthetic sample-axis sweep uses seven measured
-repetitions after three warm-ups and records its software stack in its artifact.
+The benchmark host was a KVM virtual machine with a 2.20-GHz Intel Xeon CPU,
+6 physical cores, 12 logical CPUs, 83\,GiB RAM, and Linux~5.10. GPU runs used
+one NVIDIA A100-SXM4-40GB. The software stack was PyTorch~2.7.1, CUDA~12.6,
+and NVIDIA driver~580.126.20. The R stack was R~4.6.0, DESeq2~1.52.0, and
+apeglm~1.34.0.
+
+OMP, OpenBLAS, and MKL were pinned to one thread per R worker. Main-suite and
+real-GTEx GPU values are medians of five runs after one warm-up. The two large
+GTEx CPU endpoints and four OOM probes are single runs. The synthetic sample
+sweep uses seven measurements after three warm-ups.
 
 \section*{Supplementary algorithms}
 \addcontentsline{toc}{section}{Supplementary algorithms}
 \label{sec:supplementary}
 
-Supplementary Algorithm~\ref{alg:triton-overview} gives a high-level view of the
-fused Triton dispersion fit sketched in Fig.~\ref{fig:triton}; Supplementary
-Algorithm~\ref{alg:triton-detail} gives the full kernel, including the Armijo
-line search, the step-size adaptation, and the Cox--Reid objective/gradient
-routine shared by the CR--MLE and MAP passes.
+Supplementary Algorithm~\ref{alg:triton-overview} summarizes the fused Triton
+fit. Supplementary Algorithm~\ref{alg:triton-detail} gives the full kernel,
+including its Armijo line search, step-size update, and Cox--Reid calculations.
 
 \input{triton_dispersion_overview_algorithm}
 \input{triton_dispersion_algorithm}

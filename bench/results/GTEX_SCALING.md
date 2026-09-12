@@ -1,10 +1,10 @@
 # Real-GTEx scaling and A100 memory boundary
 
-The gene axis is fixed at 54,922. Direct GPU times are medians of five complete observations after one warm-up; component totals add independently measured stage medians, and peak allocation is the maximum over the five staged repetitions. R endpoint rows are single cold observations and are not pooled with the main five-repetition headline benchmark.
+The gene axis is fixed at 54,922. Direct GPU times are medians of five complete observations after one warm-up; totals add independently measured stage medians, and peak allocation is the maximum over the five staged repetitions. R endpoint rows are single cold observations and are not pooled with the main five-repetition headline benchmark.
 
 ## Full-workflow GPU timing
 
-| case | samples | P | direct (s) | component total (s) | peak allocated (GiB) |
+| case | samples | P | direct (s) | total (s) | peak allocated (GiB) |
 |---|---:|---:|---:|---:|---:|
 | p2_300 | 300 | 2 | 1.753 | 1.686 | 1.98 |
 | p2_600 | 600 | 2 | 2.740 | 2.501 | 3.95 |

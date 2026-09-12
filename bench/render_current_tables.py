@@ -10,10 +10,21 @@ RESULTS = ROOT / "bench/results"
 VALIDATION_RESULTS = ROOT / "validation/results"
 MODES = ("eager", "graph", "triton")
 STEPS = ("normalization", "dispersion", "glm_fit", "significance", "lfc_shrink")
+STEP_LABELS = {
+    "normalization": "normalization",
+    "dispersion": "dispersion",
+    "glm_fit": "GLM fit",
+    "significance": "significance",
+    "lfc_shrink": "LFC shrinkage",
+}
 
 
 def number(value: float) -> str:
     return f"{value:.0f}"
+
+
+def display_step(step: str) -> str:
+    return STEP_LABELS.get(step, step.replace("_", " "))
 
 
 def main() -> None:
@@ -68,10 +79,10 @@ def main() -> None:
         "## GPU pipeline-stage measurements (ms)",
         "",
         "Bold values identify the fastest GPU mode for each measured stage. "
-        "Component totals sum independently measured stage medians and are not "
+        "Totals sum independently measured stage medians and are not "
         "direct end-to-end observations.",
         "",
-        "| dataset | substep | eager | graph | Triton |",
+        "| dataset | stage | eager | graph | Triton |",
         "|---|---|--:|--:|--:|",
     ]
     for case in cases:
@@ -79,7 +90,7 @@ def main() -> None:
             gpu = {mode: timings["cu"][case][mode][step] for mode in MODES}
             best_mode = min(gpu, key=gpu.get)
             lines.append(
-                f"| {case} | {step} | "
+                f"| {case} | {display_step(step)} | "
                 + " | ".join(
                     f"**{number(gpu[mode])}**" if mode == best_mode
                     else number(gpu[mode])
@@ -93,9 +104,14 @@ def main() -> None:
             )
             for mode in MODES
         }
+        best_mode = min(totals, key=totals.get)
         lines.append(
-            f"| {case} | *component total* | "
-            + " | ".join(number(totals[mode]) for mode in MODES)
+            f"| {case} | *total* | "
+            + " | ".join(
+                f"**{number(totals[mode])}**" if mode == best_mode
+                else number(totals[mode])
+                for mode in MODES
+            )
             + " |"
         )
 
@@ -106,7 +122,7 @@ def main() -> None:
         "The retained reference-parity artifact scores eager mode; graph and Triton "
         "differences are retained separately in `parity.json`.",
         "",
-        "| dataset | substep | metric | eager vs. R | tolerance | verdict |",
+        "| dataset | stage | metric | eager vs. R | tolerance | verdict |",
         "|---|---|---|--:|--:|:--:|",
     ]
     for case in cases:
@@ -114,7 +130,7 @@ def main() -> None:
             comparison = "≥" if metric["higher_better"] else "≤"
             verdict = "PASS" if metric["pass"] else "FAIL"
             lines.append(
-                f"| {case} | {metric['substep']} | {metric['metric']} | "
+                f"| {case} | {display_step(metric['substep'])} | {metric['metric']} | "
                 f"{metric['value']:.6g} | {comparison}{metric['tol']:g} | "
                 f"{verdict} |"
             )
