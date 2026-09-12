@@ -171,6 +171,30 @@ PYTHONPATH=src python bench/score_gtex_scaling.py \
   /tmp/p6_all_gpu.npz /tmp/p6_all_r --output /tmp/p6_all_parity.json
 ```
 
+For direct one-versus-12-worker comparisons, run the public standard DESeq2
+pipeline in separate fresh processes. Both settings include
+`DESeqDataSetFromMatrix + DESeq + results + lfcShrink` and use the exact same
+source columns:
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+GTEX_R_WORKERS=1 GTEX_R_WARMUPS=0 GTEX_R_REPS=1 \
+Rscript bench/run_gtex_scaling_r_direct.R \
+  validation/sources/SRP012682_rse_gene.Rdata \
+  bench/cache/gtex_scaling/matrix /tmp/p6_all_gpu.json /tmp/p6_all_r_direct_1
+
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+GTEX_R_WORKERS=12 GTEX_R_WARMUPS=0 GTEX_R_REPS=1 \
+Rscript bench/run_gtex_scaling_r_direct.R \
+  validation/sources/SRP012682_rse_gene.Rdata \
+  bench/cache/gtex_scaling/matrix /tmp/p6_all_gpu.json /tmp/p6_all_r_direct_12
+```
+
+The worker count applies through `BiocParallel::SerialParam` or
+`MulticoreParam`; BLAS/OpenMP threads remain pinned to one to prevent nested
+oversubscription. These long endpoint measurements are single observations,
+not five-repetition headline timings.
+
 For a reference directory produced by an older run of this script, regenerate
 only the pre-Wald dispersion-stage capture without repeating Wald fitting or
 shrinkage:
