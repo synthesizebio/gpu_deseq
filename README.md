@@ -6,16 +6,22 @@ Cook's-distance count replacement and refitting when a design cell has at least
 seven replicates.
 
 The current reference suite uses R 4.6.0, DESeq2 1.52.0, and apeglm 1.34.0.
+The real-data source URLs and checksums are tracked in
+[`validation/data_sources.json`](validation/data_sources.json); generated input
+hashes and the exact GTEx sample selection are in
+[`validation/prepared_data_manifest.json`](validation/prepared_data_manifest.json).
 
 ## Reproducible environment
 
 The supported reproduction path is the pinned container in
 [`docker/`](docker/README.md). It combines the current R/Bioconductor reference,
-the PyTorch 2.6.0/CUDA 12.4 implementation environment, and the LaTeX toolchain:
+the PyTorch 2.7.1/CUDA 12.6 implementation environment used by the current
+timing artifact, and the LaTeX toolchain:
 
 ```bash
 make container-build
 make container-check
+make container-data
 make container-test
 make container-paper
 ```
@@ -27,13 +33,24 @@ On a host configured with the NVIDIA Container Toolkit,
 ## Performance
 
 > **Authoritative, reproducible benchmarks live in [`bench/`](bench/).** Run
-> `make container-r-reference && make container-gpu-benchmark` to regenerate
+> `make container-data && make container-r-reference && make
+> container-gpu-benchmark` to regenerate
 > the three tables in [`bench/results/TABLES.md`](bench/results/TABLES.md):
 > total-pipeline timing, per-substep timing, and output parity — for R DESeq2,
 > cuDESeq2 (eager / CUDA-graph / Triton), and a PyDESeq2 competitor, across six
-> real RNA-seq datasets (7–300 samples) on an A100. Across all six current
-> standard-pipeline measurements, the best GPU mode is 3.1–13.8× faster than
-> the faster of one-worker and 12-worker R DESeq2.
+> real RNA-seq datasets (7–300 samples) on an A100. The primary comparison uses
+> direct end-to-end medians and a practical 12-worker R DESeq2 baseline; the
+> best GPU mode is 3.6–35.1× faster. Per-stage tables compare the three GPU
+> execution modes and use the 12-worker CPU only for end-to-end acceleration.
+
+The separate [real-GTEx scaling record](bench/results/GTEX_SCALING.md) holds
+the gene axis at 54,922 and measures complete workflows through 2,451 samples
+and a six-tissue design. The largest fused-Triton case has a 22.936-second
+direct median and 20.10 GiB peak CUDA allocation. Matched direct endpoints
+show GPU speedups of 39.4× and 28.0× against 12-worker R at 912 samples/P=2
+and 2,451 samples/P=6, respectively. All five GPU--R parity gates pass.
+Fresh-process feasibility probes place the observed 40-GB A100 boundary
+between 3,478 samples/P=9 (pass) and 3,784 samples/P=10 (OOM during dispersion).
 
 ## What's tested vs R DESeq2
 
@@ -82,7 +99,7 @@ These exist as code paths but aren't validated against R, or aren't implemented 
 
 **Just need a fixture + test (cheap to add):**
 - Interaction designs `~ a*b`, `~ a + b + a:b`
-- Factors with 4+ levels, deep nesting
+- Factors with 7+ levels against R, interactions, and deep nesting
 - Edge cases: n < 6, all-zero genes mixed with normal genes, very sparse counts
 
 **Real porting work needed:**
@@ -121,17 +138,19 @@ fit = lrt_test(dds, reduced_design="~ batch")
 res = results(fit)
 ```
 
-`counts` is genes × samples (non-negative integers). `coldata` is a pandas DataFrame indexed by samples. `design` is a formulaic-style string. Backend is `"torch"`; device is auto-selected (CUDA if available).
+`counts` is genes × samples (non-negative integers). `coldata` is a pandas DataFrame indexed by samples. `design` is a formulaic-style string. Backend is `"torch"`; device is auto-selected (CUDA if available). The default size-factor estimator matches DESeq2's `sfType="ratio"`. For sparse matrices in which every gene contains a zero, pass `sf_type="poscounts"` to `deseq()` explicitly.
 
 ## Implementation notes
 
 The implementation is a faithful port, not an approximation:
 
 - **Dispersion estimation** is the analytical port of `DESeq2/src/DESeq2.cpp::fitDisp`: gradient ascent on the Cox-Reid log-posterior with Armijo line search, periodic kappa halving every 5 acceptances, [-30, 10] clamping in log α via kappa adjustment, and the same `noIncrease` revert + grid fallback that `estimateDispersionsGeneEst` applies. Used for both gene-wise MLE and MAP (with `usePrior=TRUE`).
-- **IRLS** is batched per gene with a CPU L-BFGS-B fallback for non-convergence, matching DESeq2's per-gene GLM fit.
-- **Cook's distance** uses DESeq2's trimmed robust method-of-moments dispersion estimator.
+- **IRLS** is batched per gene with a CPU L-BFGS-B fallback for non-convergence, matching DESeq2's per-gene GLM fit. Only exceptional genes are transferred for fallback.
+- **Cook's distance** uses DESeq2's trimmed robust method-of-moments dispersion estimator and keeps its large matrices and count-replacement path on the GPU for CUDA workflows.
+- **Independent filtering** evaluates DESeq2's 50 candidate thresholds from one p-value ordering, then performs BH adjustment once at the selected threshold.
 - **apeGLM** uses a batched port of the reference L-BFGS optimizer with an
-  empirical-Bayes Cauchy prior scale.
+  empirical-Bayes Cauchy prior scale; loss and gradient share their large
+  linear-predictor evaluation.
 
 Repo layout:
 
@@ -139,7 +158,7 @@ Repo layout:
 src/gpu_deseq/
   api.py              # public DESeqDataset, fit_*, wald_test, lrt_test, lfc_shrink, results
   _deseq2_core.py     # batched dispersion + IRLS kernels (the bit-exact-with-R port)
-  _shrink.py          # apeGLM batched Newton
+  _shrink.py          # apeGLM batched reference-compatible L-BFGS
   _filters.py         # Cook's distance, independent filtering
 scripts/
   generate_r_fixtures.R  # produces all R intermediates for parity testing

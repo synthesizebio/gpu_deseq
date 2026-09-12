@@ -1,7 +1,7 @@
 name: gpu-deseq
 
 x-gpu-deseq: &gpu-deseq
-  image: gpu-deseq:bioc3.23-cu124
+  image: gpu-deseq:bioc3.23-cu126
   build:
     context: ..
     dockerfile: docker/Dockerfile

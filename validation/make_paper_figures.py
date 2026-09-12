@@ -16,11 +16,14 @@ Two figures are produced in paper/figures/:
       the shrunk LFC against expression, and the Jaccard index of the called sets
       as a function of the significance threshold.
 
-Inputs, per case in validation/data/<name>/:
-  counts.csv, coldata.csv, meta.json      (written by fetch_and_reference.R)
-  r_results.csv, r_shrink.csv             (      "                        )
-  r_disp_details.csv                      (written by export_r_dispersion_details.R)
-cuDESeq2's own output is computed here and cached as ours.csv next to them.
+Inputs, per case:
+  validation/data/<name>/{counts.csv,coldata.csv,meta.json}
+  validation/data/<name>/r_disp_details.csv
+  bench/cache/<name>/{r_results.csv,r_shrink.csv,cu_reference_results.csv}
+
+The R dispersion details come from export_r_dispersion_details.R. When the
+detailed cuDESeq2 cache is absent, this script recomputes the selected
+diagnostic case and writes validation/data/<name>/ours.csv.
 
 Usage:
   PYTHONPATH=src python validation/make_paper_figures.py [--device cuda|cpu]
@@ -318,6 +321,14 @@ def _diagnostic_limits(r):
 def fig_diagnostics(name, device, refresh):
     """Six panels: the three standard DESeq2 diagnostics, R over cuDESeq2."""
     r, o, meta = load(name, device, refresh)
+    detail_columns = {"dispGeneEst", "dispFit", "dispOutlier"}
+    if not detail_columns.issubset(o.columns):
+        # The compact benchmark cache contains final results but not the
+        # intermediate dispersion curves used by this figure. Recompute the
+        # selected diagnostic case when its detailed cache is absent.
+        o = our_side(name, device, refresh=True)
+        common = r.index.intersection(o.index)
+        r, o = r.loc[common], o.loc[common]
     lims = _diagnostic_limits(r)
     fig, axes = plt.subplots(2, 3, figsize=(6.9, 4.55))
     rows = [("R DESeq2 1.52.0", r), ("cuDESeq2", o)]
@@ -481,7 +492,7 @@ def _save(fig, stem):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--device", default="cuda" if _cuda() else "cpu")
+    ap.add_argument("--device", default="cpu")
     ap.add_argument("--case", default=DEFAULT_CASE, help="dataset for the six-panel figure")
     ap.add_argument("--refresh", action="store_true", help="recompute cached cuDESeq2 output")
     args = ap.parse_args()

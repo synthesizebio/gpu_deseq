@@ -36,8 +36,11 @@ GRID_LENGTH = 100
 # ---------------------------------------------------------------------------
 
 
-def fit_size_factors(counts: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    """Median-of-ratios size factors, with poscounts fallback.
+def fit_size_factors(
+    counts: torch.Tensor,
+    method: str = "ratio",
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """DESeq2-compatible median-of-ratios size factors.
 
     Args:
         counts: (n_genes, n_samples) non-negative raw counts.
@@ -46,13 +49,22 @@ def fit_size_factors(counts: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         size_factors: (n_samples,) positive float64.
         normed_counts: (n_genes, n_samples) float64, counts / size_factors.
 
-    Implements DESeq2's median-of-ratios normalization (default "ratio" mode),
-    falling back to "poscounts" when every gene has at least one zero.
+    ``method="ratio"`` matches DESeq2's default and raises when every gene
+    contains a zero. ``method="poscounts"`` is the explicit alternative used
+    by DESeq2 for such sparse matrices.
     """
     counts = counts.to(dtype=torch.float64)
+    if method not in ("ratio", "poscounts"):
+        raise ValueError("method must be 'ratio' or 'poscounts'")
+    if method == "poscounts":
+        return _poscounts_size_factors(counts)
+
     any_zero_per_gene = torch.any(counts == 0, dim=1)
     if torch.all(any_zero_per_gene):
-        return _poscounts_size_factors(counts)
+        raise ValueError(
+            "every gene contains at least one zero; use method='poscounts' "
+            "to select DESeq2's positive-count estimator"
+        )
 
     # Ratio mode: logmeans per gene = mean(log(counts_g)); filter genes with
     # any zero (=> -inf logmean).
@@ -73,12 +85,13 @@ def _poscounts_size_factors(counts: torch.Tensor) -> tuple[torch.Tensor, torch.T
     # log of positive counts; treat zeros as "missing" via mask.
     positive = counts > 0
     safe_log = torch.where(positive, torch.log(counts.clamp_min(1.0)), torch.zeros_like(counts))
-    count_positive_per_gene = positive.sum(dim=1).clamp_min(1)
-    logmeans = safe_log.sum(dim=1) / count_positive_per_gene
-    # log of counts with zeros left at 0, mean over ALL samples (including
-    # zeros), then filter to genes with logmean > 0 AND finite.
-    logmeans_all = torch.where(positive, torch.log(counts.clamp_min(1.0)), torch.zeros_like(counts)).mean(dim=1)
-    filtered_genes = torch.isfinite(logmeans_all) & (logmeans_all > 0)
+    # DESeq2's ``geoMeanNZ`` takes the n-th root, where n is the total number
+    # of samples, of the product of the non-zero counts. On the log scale this
+    # is the sum of positive log-counts divided by all samples; all-zero genes
+    # alone are excluded. Genes whose modified geometric mean is exactly one
+    # remain eligible, matching ``estimateSizeFactorsForMatrix``.
+    logmeans_all = safe_log.mean(dim=1)
+    filtered_genes = positive.any(dim=1) & torch.isfinite(logmeans_all)
 
     sf = torch.zeros(n_samples, dtype=torch.float64, device=counts.device)
     for j in range(n_samples):
@@ -87,7 +100,10 @@ def _poscounts_size_factors(counts: torch.Tensor) -> tuple[torch.Tensor, torch.T
             log_ratio = torch.log(counts[mask, j]) - logmeans_all[mask]
             sf[j] = torch.exp(torch.quantile(log_ratio, 0.5))
         else:
-            sf[j] = 1.0
+            raise ValueError(
+                "cannot estimate a positive size factor for a sample with no "
+                "positive counts"
+            )
     sf = sf / torch.exp(torch.log(sf).mean())  # geom mean 1
     normed = counts / sf[None, :]
     return sf, normed
@@ -1298,31 +1314,37 @@ def irls_batched(
 
     # CPU fallback for non-converged genes (should be rare)
     if (~converged).any():
-        bad_idx = torch.nonzero(~converged, as_tuple=False).squeeze(-1).cpu().numpy()
-        beta_np = beta.detach().cpu().numpy()
-        counts_np = counts.detach().cpu().numpy()
-        dispersions_np = dispersions.detach().cpu().numpy()
+        bad_idx_t = torch.nonzero(~converged, as_tuple=False).squeeze(-1)
+        bad_idx = bad_idx_t.cpu().numpy()
+        # Transfer only the exceptional rows.  The previous fallback copied the
+        # complete G x S count matrix to the host when even one gene failed to
+        # converge, which made rare fallbacks disproportionately expensive.
+        beta_np = beta[bad_idx_t].detach().cpu().numpy()
+        beta_init_np = beta_init[bad_idx_t].detach().cpu().numpy()
+        counts_np = counts[bad_idx_t].detach().cpu().numpy()
+        dispersions_np = dispersions[bad_idx_t].detach().cpu().numpy()
         design_np = design.detach().cpu().numpy()
         size_factors_np = size_factors.detach().cpu().numpy()
         ridge_mat = RIDGE * np.eye(P)
-        for g in bad_idx:
-            b_init = beta_init[g].detach().cpu().numpy()
-            def f(b, g=g):
+        for local_idx, gene_idx in enumerate(bad_idx):
+            b_init = beta_init_np[local_idx]
+            def f(b, local_idx=local_idx):
                 mu_ = np.maximum(size_factors_np * np.exp(design_np @ b), min_mu)
-                return _nb_nll_np(counts_np[g], mu_, dispersions_np[g]) + 0.5 * (ridge_mat @ b**2).sum()
-            def df(b, g=g):
+                return _nb_nll_np(counts_np[local_idx], mu_, dispersions_np[local_idx]) + 0.5 * (ridge_mat @ b**2).sum()
+            def df(b, local_idx=local_idx):
                 mu_ = np.maximum(size_factors_np * np.exp(design_np @ b), min_mu)
                 return (
-                    -design_np.T @ counts_np[g]
-                    + ((1.0 / dispersions_np[g] + counts_np[g]) * mu_ / (1.0 / dispersions_np[g] + mu_)) @ design_np
+                    -design_np.T @ counts_np[local_idx]
+                    + ((1.0 / dispersions_np[local_idx] + counts_np[local_idx]) * mu_ / (1.0 / dispersions_np[local_idx] + mu_)) @ design_np
                     + ridge_mat @ b
                 )
             res = minimize(f, b_init, jac=df, method="L-BFGS-B",
                            bounds=[(min_beta, max_beta)] * P)
-            beta_np[g] = res.x
+            beta_np[local_idx] = res.x
             if res.success:
-                converged[g] = True
-        beta = torch.from_numpy(beta_np).to(device=device, dtype=dtype)
+                converged[gene_idx] = True
+        beta = beta.clone()
+        beta[bad_idx_t] = torch.from_numpy(beta_np).to(device=device, dtype=dtype)
 
     # Recompute H diagonal on final beta using UN-thresholded mu, per
     # irls_solver lines 427-438.

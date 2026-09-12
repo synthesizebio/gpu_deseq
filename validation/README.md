@@ -1,52 +1,63 @@
 # Real-data validation
 
-This directory compares cuDESeq2 with the current R/Bioconductor reference on
-six designs from pasilla, airway, and GTEx. The current committed reference was
-generated with R 4.6.0, DESeq2 1.52.0, and apeglm 1.34.0.
+This directory compares cuDESeq2 with R 4.6.0, DESeq2 1.52.0, and apeglm
+1.34.0 on six designs derived from pasilla, airway, and GTEx/recount2.
 
-Both implementations run the standard Wald pipeline:
+Both implementations run the standard Wald pipeline: size-factor estimation,
+dispersion estimation, Wald fitting and Cook's-distance calculation, eligible
+count-outlier replacement and refitting, independent filtering and BH
+adjustment, and apeGLM shrinkage. The replacement branch is active for the
+300-sample GTEx contrast and inactive for the five 7- or 8-sample designs.
 
-1. size-factor estimation;
-2. gene-wise, trend, and MAP dispersion estimation;
-3. Wald fitting and Cook's-distance calculation;
-4. eligible count-outlier replacement and affected-gene refitting;
-5. independent filtering, multiple-testing correction, and apeGLM shrinkage.
+## Reconstruct the inputs
 
-The replacement branch requires at least seven replicates in a design cell. It
-is therefore inactive for the five 7- or 8-sample designs and active for the
-300-sample GTEx contrast.
-
-## Reproduce
-
-The benchmark cache is the reference source used by the paper:
+The prepared matrices are derived and intentionally not checked into Git. A
+clean checkout can download and reconstruct them exactly:
 
 ```bash
-R_BIN=.r46/bin/Rscript PYTHONPATH=src .venv/bin/python bench/bench.py
-PYTHONPATH=src .venv/bin/python bench/reference_parity.py --device cuda
+make container-build
+make container-data
 ```
 
-The second command must run on the A100 to refresh execution-mode comparisons.
-For a version-only reference update on a machine without CUDA, use
-`--device cpu`; this updates DESeq2 parity but is not a GPU timing run.
+[`data_sources.json`](data_sources.json) pins the exact airway 1.32.0 and
+pasilla 1.40.0 source archives and the recount2 SRP012682 R object by URL, byte
+length, and SHA-256. `scripts/fetch_validation_data.py` refuses a mismatched
+download. `prepare_inputs.R` applies the versioned conversion and sample
+selection rules, including R seed 1 for the 150+150 GTEx tissue sample.
+[`prepared_data_manifest.json`](prepared_data_manifest.json) records the
+resulting file hashes and selected GTEx identifiers.
 
-Export the R dispersion components used by the diagnostic figure and redraw the
-figures:
+Raw downloads occupy approximately 1.4 GB in ignored `validation/sources/`.
+Prepared CSVs are written to ignored `validation/data/`. Either set can be
+deleted and regenerated from the two tracked manifests.
+
+## Regenerate the measurements
 
 ```bash
-PATH="$PWD/.r46/bin:$PATH" .r46/bin/Rscript \
-  validation/export_r_dispersion_details.R
-PYTHONPATH=src .venv/bin/python validation/make_paper_figures.py --device cpu
+make container-r-reference
+make container-r-parallel
+make container-gpu-benchmark
 ```
 
-Refresh the compact per-case reports from the committed captures without
-rerunning timing loops:
+The GPU command must run on an A100 to reproduce the reported hardware
+measurement. For a version-only parity refresh without CUDA, run:
 
 ```bash
-PYTHONPATH=src .venv/bin/python validation/validate.py \
-  --from-cache --skip-timing
+PYTHONPATH=src python bench/reference_parity.py --device cpu
 ```
 
-## Current datasets
+This is a correctness run, not a GPU timing run. The benchmark cache under
+`bench/cache/` is also derived and ignored; the paper audit reads only committed
+artifacts.
+
+To export the R dispersion components and redraw the diagnostic figures:
+
+```bash
+Rscript validation/export_r_dispersion_details.R
+PYTHONPATH=src python validation/make_paper_figures.py --device cpu
+```
+
+## Cases
 
 | case | design | P | samples × genes |
 |---|---|---:|---:|
@@ -57,16 +68,11 @@ PYTHONPATH=src .venv/bin/python validation/validate.py \
 | airway | `~ cell + dex` | 5 | 8 × 33,469 |
 | gtex_blood_muscle | `~ tissue` | 2 | 300 × 54,922 |
 
-The authoritative current metrics are
-[`bench/results/reference_parity.json`](../bench/results/reference_parity.json);
-the paper-ready summary is
-[`bench/results/TABLES.md`](../bench/results/TABLES.md). At adjusted
-`p < 0.05`, four designs reproduce the R called set exactly. Airway/dex and
-GTEx differ by one boundary gene each, with Jaccard indices 0.99963 and
-0.99997. The worst dispersion p95 relative error is 0.00427, and the worst
-apeGLM-shrunk-LFC Pearson correlation is 0.99722.
-
-`validation/results/*.json` contains the same standard-pipeline comparison in a
-legacy per-case schema. The timing fields are intentionally omitted when those
-files are refreshed with `--skip-timing`; GPU timing belongs in
-`bench/results/timings.json`.
+The authoritative parity record is
+[`bench/results/reference_parity.json`](../bench/results/reference_parity.json),
+with a human-readable summary in
+[`bench/results/TABLES.md`](../bench/results/TABLES.md). At adjusted p < 0.05,
+four called sets match R exactly. Airway/dex and GTEx differ by one boundary
+gene each, with Jaccard indices 0.99963 and 0.99997. The worst dispersion p95
+relative error is 0.0044, and the worst apeGLM-shrunk-LFC Pearson correlation is
+0.99722.

@@ -1,6 +1,22 @@
 {
-  "device": "cuda",
-  "pipeline": "standard_wald_with_outlier_refit",
+  "provenance": {
+    "pipeline": "standard_wald_with_outlier_refit",
+    "device_argument": "cuda",
+    "reference_modes": [
+      "eager",
+      "graph",
+      "triton"
+    ],
+    "input_reconstruction": {
+      "source_manifest_sha256": "79f3a506bd6fd31586e3f7512872205b42f1b2bf58750536da4a77dc2e6174ed",
+      "prepared_manifest_sha256": "c5fd93872ab417d947b042334ad1643f037e17648bb3417d410ef80968dd74c8"
+    },
+    "git_commit": "09feffd5276fd30037e8caffabd71c1d5ae4df25",
+    "working_tree_dirty": false,
+    "python_version": "3.12.3",
+    "torch_version": "2.7.1+cu126",
+    "torch_cuda_version": "12.6"
+  },
   "cases": {
     "airway": {
       "r_version": "4.6.0",
@@ -13,23 +29,53 @@
           "value": 4.1416183048968446e-15,
           "tol": 1e-06,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 4.1416183048968446e-15,
+            "graph": 4.1416183048968446e-15,
+            "triton": 4.1416183048968446e-15
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "dispersion",
           "metric": "p95 rel",
-          "value": 0.0004488752584457424,
+          "value": 0.0004488752694170091,
           "tol": 0.1,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 0.0004488752694170091,
+            "graph": 0.0004488752694170091,
+            "triton": 0.0004488747591482284
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "glm_fit",
           "metric": "p95 |\u0394|",
-          "value": 3.0378423092081138e-05,
+          "value": 3.037844343123372e-05,
           "tol": 0.01,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 3.037844343123372e-05,
+            "graph": 3.037844343123372e-05,
+            "triton": 3.0379127595958594e-05
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "significance",
@@ -37,15 +83,35 @@
           "value": 1.0,
           "tol": 0.95,
           "higher_better": true,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 1.0,
+            "graph": 1.0,
+            "triton": 1.0
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "lfc_shrink",
           "metric": "Pearson r",
-          "value": 0.9999981357435558,
+          "value": 0.9999981357316287,
           "tol": 0.9,
           "higher_better": true,
           "pass": true,
+          "values_vs_r": {
+            "eager": 0.9999981357316287,
+            "graph": 0.9999981357316287,
+            "triton": 0.9999981357416992
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          },
           "aux": "\u03c1=1.000"
         }
       ]
@@ -61,23 +127,53 @@
           "value": 4.1416183048968446e-15,
           "tol": 1e-06,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 4.1416183048968446e-15,
+            "graph": 4.1416183048968446e-15,
+            "triton": 4.1416183048968446e-15
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "dispersion",
           "metric": "p95 rel",
-          "value": 0.002835590907321941,
+          "value": 0.002835590915599773,
           "tol": 0.1,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 0.002835590915599773,
+            "graph": 0.002835590915599773,
+            "triton": 0.0028355859376491097
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "glm_fit",
           "metric": "p95 |\u0394|",
-          "value": 8.088202775407004e-05,
+          "value": 8.088202824634293e-05,
           "tol": 0.01,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 8.088202824634293e-05,
+            "graph": 8.088202824634293e-05,
+            "triton": 8.088194783036906e-05
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "significance",
@@ -85,15 +181,35 @@
           "value": 1.0,
           "tol": 0.95,
           "higher_better": true,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 1.0,
+            "graph": 1.0,
+            "triton": 1.0
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "lfc_shrink",
           "metric": "Pearson r",
-          "value": 0.9972238129366802,
+          "value": 0.9972238119254658,
           "tol": 0.9,
           "higher_better": true,
           "pass": true,
+          "values_vs_r": {
+            "eager": 0.9972238119254658,
+            "graph": 0.9972238119254658,
+            "triton": 0.9972238132208234
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          },
           "aux": "\u03c1=0.996"
         }
       ]
@@ -109,23 +225,53 @@
           "value": 4.1416183048968446e-15,
           "tol": 1e-06,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 4.1416183048968446e-15,
+            "graph": 4.1416183048968446e-15,
+            "triton": 4.1416183048968446e-15
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "dispersion",
           "metric": "p95 rel",
-          "value": 0.0010405662545795254,
+          "value": 0.0010405661517850088,
           "tol": 0.1,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 0.0010405661517850088,
+            "graph": 0.0010405661517850088,
+            "triton": 0.0010405452586551502
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "glm_fit",
           "metric": "p95 |\u0394|",
-          "value": 2.5037063102703592e-05,
+          "value": 2.5037060583905227e-05,
           "tol": 0.01,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 2.5037060583905227e-05,
+            "graph": 2.5037060583905227e-05,
+            "triton": 2.5036522425041228e-05
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "significance",
@@ -133,15 +279,35 @@
           "value": 0.9996297667530544,
           "tol": 0.95,
           "higher_better": true,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 0.9996297667530544,
+            "graph": 0.9996297667530544,
+            "triton": 0.9996297667530544
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "lfc_shrink",
           "metric": "Pearson r",
-          "value": 0.9985925562323493,
+          "value": 0.9985925562325403,
           "tol": 0.9,
           "higher_better": true,
           "pass": true,
+          "values_vs_r": {
+            "eager": 0.9985925562325403,
+            "graph": 0.9985925562325403,
+            "triton": 0.9985925562311948
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          },
           "aux": "\u03c1=1.000"
         }
       ]
@@ -157,23 +323,53 @@
           "value": 5.690190868151395e-15,
           "tol": 1e-06,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 5.690190868151395e-15,
+            "graph": 5.690190868151395e-15,
+            "triton": 5.690190868151395e-15
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "dispersion",
           "metric": "p95 rel",
-          "value": 0.004395942472197017,
+          "value": 0.004395942472560784,
           "tol": 0.1,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 0.004395942472560784,
+            "graph": 0.004395942472560784,
+            "triton": 0.004235457106849591
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "glm_fit",
           "metric": "p95 |\u0394|",
-          "value": 1.7970189517652056e-05,
+          "value": 1.797018951214535e-05,
           "tol": 0.01,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 1.797018951214535e-05,
+            "graph": 1.797018951214535e-05,
+            "triton": 1.772459480490207e-05
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "significance",
@@ -181,15 +377,35 @@
           "value": 0.9999705388445335,
           "tol": 0.95,
           "higher_better": true,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 0.9999705388445335,
+            "graph": 0.9999705388445335,
+            "triton": 0.9999705388445335
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "lfc_shrink",
           "metric": "Pearson r",
-          "value": 0.9999982314064358,
+          "value": 0.999998231405958,
           "tol": 0.9,
           "higher_better": true,
           "pass": true,
+          "values_vs_r": {
+            "eager": 0.999998231405958,
+            "graph": 0.999998231405958,
+            "triton": 0.9999982350036823
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          },
           "aux": "\u03c1=1.000"
         }
       ]
@@ -205,23 +421,53 @@
           "value": 2.926098047964346e-15,
           "tol": 1e-06,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 2.926098047964346e-15,
+            "graph": 2.926098047964346e-15,
+            "triton": 2.926098047964346e-15
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "dispersion",
           "metric": "p95 rel",
-          "value": 0.0006671983827313886,
+          "value": 0.0006671983827298401,
           "tol": 0.1,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 0.0006671983827298401,
+            "graph": 0.0006671983827298401,
+            "triton": 0.0006672010597270761
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "glm_fit",
           "metric": "p95 |\u0394|",
-          "value": 2.3421167925174998e-05,
+          "value": 2.3421167927051274e-05,
           "tol": 0.01,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 2.3421167927051274e-05,
+            "graph": 2.3421167927051274e-05,
+            "triton": 2.342131697135595e-05
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "significance",
@@ -229,15 +475,35 @@
           "value": 1.0,
           "tol": 0.95,
           "higher_better": true,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 1.0,
+            "graph": 1.0,
+            "triton": 1.0
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "lfc_shrink",
           "metric": "Pearson r",
-          "value": 0.9999966667737589,
+          "value": 0.999996666773682,
           "tol": 0.9,
           "higher_better": true,
           "pass": true,
+          "values_vs_r": {
+            "eager": 0.999996666773682,
+            "graph": 0.999996666773682,
+            "triton": 0.9999966667736266
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          },
           "aux": "\u03c1=1.000"
         }
       ]
@@ -253,15 +519,35 @@
           "value": 2.926098047964346e-15,
           "tol": 1e-06,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 2.926098047964346e-15,
+            "graph": 2.926098047964346e-15,
+            "triton": 2.926098047964346e-15
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "dispersion",
           "metric": "p95 rel",
-          "value": 0.0002353977466255918,
+          "value": 0.00023539774663887094,
           "tol": 0.1,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 0.00023539774663887094,
+            "graph": 0.00023539774663887094,
+            "triton": 0.00023540079401444325
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "glm_fit",
@@ -269,7 +555,17 @@
           "value": 1.4553944597373025e-05,
           "tol": 0.01,
           "higher_better": false,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 1.4553944597373025e-05,
+            "graph": 1.4553944597373025e-05,
+            "triton": 1.4553944597373025e-05
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "significance",
@@ -277,15 +573,35 @@
           "value": 1.0,
           "tol": 0.95,
           "higher_better": true,
-          "pass": true
+          "pass": true,
+          "values_vs_r": {
+            "eager": 1.0,
+            "graph": 1.0,
+            "triton": 1.0
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          }
         },
         {
           "substep": "lfc_shrink",
           "metric": "Pearson r",
-          "value": 0.9999906699409427,
+          "value": 0.9999906699409135,
           "tol": 0.9,
           "higher_better": true,
           "pass": true,
+          "values_vs_r": {
+            "eager": 0.9999906699409135,
+            "graph": 0.9999906699409135,
+            "triton": 0.999990669940609
+          },
+          "pass_by_mode": {
+            "eager": true,
+            "graph": true,
+            "triton": true
+          },
           "aux": "\u03c1=1.000"
         }
       ]

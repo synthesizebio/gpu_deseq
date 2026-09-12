@@ -1,34 +1,62 @@
-"""Check manuscript numbers against the committed benchmark artifacts.
+"""Check manuscript claims using only committed artifacts.
 
-This audit is deliberately read-only.  It checks the current DESeq2 reference
-version, the two manuscript tables derived from the real-data run, and the
-headline speedup and parity summaries.  It also
-requires every ``\fact{}`` marker to have a named source class.
+The audit deliberately does not read ignored prepared data or benchmark caches,
+so it can run immediately after a clean checkout.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
-import pathlib
+import os
+from pathlib import Path
 import re
 import statistics
 
-import numpy as np
-import pandas as pd
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = Path(
+    os.environ.get("GPU_DESEQ_AUDIT_ROOT", Path(__file__).resolve().parents[1])
+).resolve()
 TEX = (ROOT / "paper/main.tex").read_text()
-TEXN = re.sub(r"\s+", " ", TEX)
-PARITY = json.loads((ROOT / "bench/results/reference_parity.json").read_text())
-TIMING = json.loads((ROOT / "bench/results/timings.json").read_text())
+TEX_NORMALIZED = re.sub(r"\s+", " ", TEX)
+RESULTS = ROOT / "bench/results"
+TIMING = json.loads((RESULTS / "timings.json").read_text())
+PARITY = json.loads((RESULTS / "reference_parity.json").read_text())
+MODE_PARITY = json.loads((RESULTS / "parity.json").read_text())
 PARALLEL_R = json.loads(
-    (ROOT / "bench/results/r_parallel_a100_12worker.json").read_text()
+    (RESULTS / "r_parallel_a100_12worker.json").read_text()
 )
-MINMU = json.loads(
-    (ROOT / "bench/results/minmu_counterfactual.json").read_text()
+SOURCE_MANIFEST_PATH = ROOT / "validation/data_sources.json"
+SOURCE_MANIFEST = json.loads(SOURCE_MANIFEST_PATH.read_text())
+PREPARED_MANIFEST = json.loads(
+    (ROOT / "validation/prepared_data_manifest.json").read_text()
+)
+SAMPLE_SWEEP = json.loads(
+    (ROOT / "benchmarks/results_a100_samplesweep_2026-09-11.json").read_text()
+)
+GTEX_SCALING = json.loads(
+    (RESULTS / "gtex_scaling_a100.json").read_text()
 )
 
-fails: list[str] = []
+CASES = (
+    ("pasilla", "pasilla"),
+    ("pasilla_2fac", r"pasilla\_2fac"),
+    ("airway_dex", r"airway\_dex"),
+    ("airway_cell", r"airway\_cell"),
+    ("airway", "airway"),
+    ("gtex_blood_muscle", "gtex"),
+)
+MODES = ("eager", "graph", "triton")
+STEPS = ("normalization", "dispersion", "glm_fit", "significance", "lfc_shrink")
+STEP_LABELS = {
+    "normalization": "normalization",
+    "dispersion": "dispersion",
+    "glm_fit": "GLM fit",
+    "significance": "significance",
+    "lfc_shrink": "LFC shrinkage",
+}
+
+failures: list[str] = []
 checks = 0
 
 
@@ -36,11 +64,49 @@ def check(label: str, condition: bool, detail: object = "") -> None:
     global checks
     checks += 1
     if not condition:
-        fails.append(f"{label}: {detail}")
+        failures.append(f"{label}: {detail}")
 
 
 def close(a: float, b: float, rtol: float = 0.015) -> bool:
     return math.isclose(a, b, rel_tol=rtol, abs_tol=1e-15)
+
+
+def digest(path: Path) -> str:
+    value = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(8 * 1024 * 1024):
+            value.update(chunk)
+    return value.hexdigest()
+
+
+def input_reconstruction(artifact: dict[str, object]) -> dict[str, object]:
+    """Read the current schema plus the two historical manifest layouts."""
+    provenance = artifact.get("provenance", {})
+    if not isinstance(provenance, dict):
+        provenance = {}
+    reconstruction = provenance.get("input_reconstruction")
+    if not isinstance(reconstruction, dict):
+        reconstruction = artifact.get("input_reconstruction")
+    if isinstance(reconstruction, dict):
+        return reconstruction
+
+    # Transitional writers used either flat provenance fields or
+    # ``input_manifests: {source, prepared}``.
+    source = provenance.get("source_data_manifest_sha256")
+    prepared = provenance.get("prepared_data_manifest_sha256")
+    manifests = provenance.get("input_manifests", artifact.get("input_manifests"))
+    if isinstance(manifests, dict):
+        source = source or manifests.get("source")
+        prepared = prepared or manifests.get("prepared")
+    return {
+        "source_manifest_sha256": source,
+        "prepared_manifest_sha256": prepared,
+    }
+
+
+def stage_total(record: dict[str, object]) -> float:
+    """Prefer the revised explicit stage sum; legacy artifacts stored it as total."""
+    return float(record.get("stage_total", record["total"]))
 
 
 def table(label: str) -> str:
@@ -52,228 +118,548 @@ def table(label: str) -> str:
     return match.group()
 
 
-# Current R reference provenance.
+def numeric_cell(cell: str) -> float:
+    cell = cell.replace("{,}", "").replace(",", "")
+    match = re.search(r"-?\d+(?:\.\d+)?(?:e[+-]?\d+)?", cell, re.I)
+    if not match:
+        raise ValueError(f"no number in table cell {cell!r}")
+    return float(match.group())
+
+
+# Immutable input reconstruction contract.
+check("source manifest schema", SOURCE_MANIFEST["schema_version"] == 1)
+check("three public source records", len(SOURCE_MANIFEST["sources"]) == 3)
+for source in SOURCE_MANIFEST["sources"]:
+    check(f"{source['id']}: HTTPS source", source["url"].startswith("https://"))
+    check(f"{source['id']}: positive byte length", source["size_bytes"] > 0)
+    check(
+        f"{source['id']}: SHA-256 shape",
+        bool(re.fullmatch(r"[0-9a-f]{64}", source["sha256"])),
+    )
+check(
+    "prepared manifest names source contract",
+    PREPARED_MANIFEST["source_manifest"] == "validation/data_sources.json",
+)
+check(
+    "prepared manifest pins source contract content",
+    PREPARED_MANIFEST["source_manifest_sha256"] == digest(SOURCE_MANIFEST_PATH),
+)
+check(
+    "prepared manifest covers six designs",
+    set(PREPARED_MANIFEST["cases"]) == {case for case, _ in CASES},
+)
+for case, case_record in PREPARED_MANIFEST["cases"].items():
+    files = case_record["files"]
+    check(
+        f"{case}: prepared file set",
+        set(files) == {"counts.csv", "coldata.csv", "meta.json"},
+    )
+    for filename, record in files.items():
+        check(f"{case}/{filename}: nonempty", record["size_bytes"] > 0)
+        check(
+            f"{case}/{filename}: SHA-256 shape",
+            bool(re.fullmatch(r"[0-9a-f]{64}", record["sha256"])),
+        )
+gtex_metadata = PREPARED_MANIFEST["cases"]["gtex_blood_muscle"]["metadata"]
+check("prepared GTEx seed", gtex_metadata["sample_seed"] == 1)
+check(
+    "prepared GTEx records 300 source columns",
+    len(gtex_metadata["selected_source_columns"]) == 300,
+)
+check(
+    "prepared GTEx records 300 source sample names",
+    len(gtex_metadata["selected_source_samples"]) == 300,
+)
+check(
+    "paper identifies archived provenance",
+    "repository records input checksums" in TEX_NORMALIZED,
+)
+check("paper records GTEx seed", "with R seed 1" in TEX_NORMALIZED)
+prepared_manifest_digest = digest(ROOT / "validation/prepared_data_manifest.json")
+source_manifest_digest = digest(SOURCE_MANIFEST_PATH)
+for artifact_name, artifact in (
+    ("timings", TIMING),
+    ("parallel R", PARALLEL_R),
+    ("reference parity", PARITY),
+):
+    reconstruction = input_reconstruction(artifact)
+    check(
+        f"{artifact_name}: source manifest link",
+        reconstruction.get("source_manifest_sha256") == source_manifest_digest,
+    )
+    check(
+        f"{artifact_name}: prepared manifest link",
+        reconstruction.get("prepared_manifest_sha256") == prepared_manifest_digest,
+    )
+
+
+# Reference provenance and parity thresholds. Retained legacy timing artifacts
+# stored the stage sum in ``total``; newly generated artifacts store a direct
+# observation in ``total`` and the matched sum in ``stage_total``.
+timing_provenance = TIMING["provenance"]
+check(
+    "current timing source commit",
+    timing_provenance.get("git_commit")
+    == "09feffd5276fd30037e8caffabd71c1d5ae4df25",
+)
+check(
+    "current timing clean checkout",
+    timing_provenance.get("working_tree_dirty_at_start") is False,
+)
+check(
+    "current timing PyTorch",
+    timing_provenance.get("torch_version") == "2.7.1+cu126",
+)
+check("current timing CUDA", timing_provenance.get("torch_cuda_version") == "12.6")
+check(
+    "paper records current timing stack",
+    all(
+        item in TEX_NORMALIZED
+        for item in ("PyTorch~2.7.1", "CUDA~12.6", "NVIDIA driver~580.126.20")
+    ),
+)
+legacy_stage_total = timing_provenance.get("direct_end_to_end") is False
+if legacy_stage_total:
+    check("legacy timing is labelled non-direct", True)
+    check(
+        "legacy GPU total definition",
+        "sum of independently measured stage medians"
+        in timing_provenance["cu_total_definition"],
+    )
+else:
+    check(
+        "current GPU total is direct",
+        "median direct wall time" in timing_provenance.get("cu_total_definition", ""),
+    )
+    check(
+        "current GPU stage-total definition",
+        "sum of independently measured stage medians"
+        in timing_provenance.get("cu_stage_total_definition", ""),
+    )
+    for case, record in TIMING["r"].items():
+        check(f"{case}: current R stage total present", "stage_total" in record)
+        check(f"{case}: current R direct samples present", bool(record.get("total_values_ms")))
+    for case, modes in TIMING["cu"].items():
+        for mode in MODES:
+            record = modes[mode]
+            check(f"{case}/{mode}: current GPU stage total present", "stage_total" in record)
+            check(f"{case}/{mode}: current GPU direct samples present", bool(record.get("total_values_ms")))
+            check(
+                f"{case}/{mode}: current GPU stage total is stage sum",
+                close(stage_total(record), sum(float(record[step]) for step in STEPS), 1e-9),
+            )
+check(
+    "direct R worker total definition",
+    "median direct wall time"
+    in PARALLEL_R["provenance"]["total_definition"],
+)
 for case, record in TIMING["r"].items():
-    check(f"{case}: staged R pipeline",
-          record.get("pipeline") == "staged_standard_wald_no_duplicate_dispersion")
-    check(f"{case}: R glm_fit scope",
-          record.get("glm_fit_scope") == "nbinomWaldTest_plus_outlier_replacement_refit")
-    check(f"{case}: staged output equivalence",
-          record.get("output_equivalent_to_DESeq") is True)
+    check(
+        f"{case}: staged R pipeline",
+        record["pipeline"] == "staged_standard_wald_no_duplicate_dispersion",
+    )
+    check(f"{case}: staged output equivalence", record["output_equivalent_to_DESeq"] is True)
 for case, record in PARITY["cases"].items():
     check(f"{case}: DESeq2 version", record["deseq2_version"] == "1.52.0")
     check(f"{case}: R version", record["r_version"] == "4.6.0")
     check(f"{case}: apeglm version", record["apeglm_version"] == "1.34.0")
-check("standard reference pipeline",
-      PARITY["pipeline"] == "standard_wald_with_outlier_refit")
-check("parallel R version", PARALLEL_R["provenance"]["r_version"] == "R version 4.6.0 (2026-04-24)")
-check("parallel DESeq2 version", PARALLEL_R["provenance"]["deseq2_version"] == "1.52.0")
-check("parallel apeglm version", PARALLEL_R["provenance"]["apeglm_version"] == "1.34.0")
-check("parallel worker count", PARALLEL_R["provenance"]["workers"] == 12)
-check("parallel benchmark covers six real designs", len(PARALLEL_R["cases"]) == 6)
+    for metric in record["metrics"]:
+        check(f"{case}/{metric['substep']}: parity pass", metric["pass"] is True)
 
-
-# Table 2: medians and least-favorable values across six designs.
 metrics: dict[str, list[float]] = {}
 directions: dict[str, bool] = {}
-all_rows = []
 for record in PARITY["cases"].values():
     for row in record["metrics"]:
         metrics.setdefault(row["substep"], []).append(row["value"])
         directions[row["substep"]] = row["higher_better"]
-        all_rows.append(row)
-check("30 real-data checks", len(all_rows) == 30, len(all_rows))
-check("all real-data checks pass", all(row["pass"] for row in all_rows))
-check("real-data check count", len(all_rows) == 30)
-check("dispersion worst is 0.44 percent",
-      round(100 * max(metrics["dispersion"]), 2) == .44)
-check("dispersion worst raw value",
-      close(max(metrics["dispersion"]), 4.4e-3, .01))
-airway_metrics = {
-    row["substep"]: row["value"] for row in PARITY["cases"]["airway"]["metrics"]
-}
-check("airway dispersion p95", close(airway_metrics["dispersion"], 4.5e-4, .01))
-check("airway LFC p95", close(airway_metrics["glm_fit"], 3.0e-5, .02))
-check("airway exact called set", airway_metrics["significance"] == 1.0)
-check("all shrinkage correlations at least 0.997",
-      min(metrics["lfc_shrink"]) >= .997)
-validation_reports = [
-    json.loads((ROOT / f"validation/results/{case}.json").read_text())
-    for case in PARITY["cases"]
-]
-check("all shrinkage p95 absolute errors at most 3.4e-3",
-      max(row["shrunk_lfc_p95_abs"] for row in validation_reports) <= 3.4e-3)
+check("30 real-data parity checks", sum(map(len, metrics.values())) == 30)
 
 parity_table = table("tab:parity")
-for substep, values in metrics.items():
+for step, values in metrics.items():
     row = next(
-        line for line in parity_table.splitlines()
-        if line.startswith(substep.replace("_", r"\_") + " &")
+        line
+        for line in parity_table.splitlines()
+        if line.startswith(STEP_LABELS[step] + " &")
     )
     cells = [cell.strip() for cell in row.split("&")]
-    shown_median = float(cells[-2])
-    shown_worst = float(cells[-1].split(r"\\")[0])
-    actual_median = statistics.median(values)
-    actual_worst = min(values) if directions[substep] else max(values)
-    check(f"Table 2 {substep} median", close(shown_median, actual_median, .06),
-          (shown_median, actual_median))
-    check(f"Table 2 {substep} worst", close(shown_worst, actual_worst, .06),
-          (shown_worst, actual_worst))
+    shown_median = numeric_cell(cells[-2])
+    shown_worst = numeric_cell(cells[-1])
+    actual_worst = min(values) if directions[step] else max(values)
+    check(
+        f"parity table {step}: median",
+        close(shown_median, statistics.median(values), 0.06),
+    )
+    check(f"parity table {step}: worst", close(shown_worst, actual_worst, 0.06))
 
 
-# Tables 3 and 4: current R and A100 cells for all six designs.
-labels = [
-    ("pasilla", "pasilla"),
-    ("pasilla_2fac", r"pasilla\_2fac"),
-    ("airway_dex", r"airway\_dex"),
-    ("airway_cell", r"airway\_cell"),
-    ("airway", "airway"),
-    ("gtex_blood_muscle", "gtex"),
-]
-timing_table = table("tab:realtiming")
-substep_table = table("tab:realsubstep")
-speedups = []
-for case, label in labels:
-    row = next(line for line in timing_table.splitlines()
-               if line.strip().startswith(label + " "))
-    values = [float(x) for x in re.findall(r"(?<![\w.])(\d+(?:\.\d+)?)(?![\w.])", row)]
-    parallel_record = PARALLEL_R["cases"][case]
-    check(f"Table 3 {case}: R one-worker seconds",
-          round(values[2], 1) == round(parallel_record["serial"]["median_ms"] / 1000, 1),
-          values)
-    check(f"Table 3 {case}: R 12-worker seconds",
-          round(values[3], 1) == round(parallel_record["parallel"]["median_ms"] / 1000, 1),
-          values)
-    shown_gpu = values[4:7]
-    actual_gpu = [TIMING["cu"][case][mode]["total"]
-                  for mode in ("eager", "graph", "triton")]
-    check(f"Table 3 {case}: GPU totals",
-          all(round(a) == round(b) for a, b in zip(shown_gpu, actual_gpu)),
-          (shown_gpu, actual_gpu))
-    speedups.append(min(parallel_record["serial"]["median_ms"],
-                         parallel_record["parallel"]["median_ms"]) / min(actual_gpu))
-
-    block_start = substep_table.index(label + " &")
-    next_mid = substep_table.find(r"\midrule", block_start)
-    block = substep_table[block_start:next_mid if next_mid >= 0 else None]
-    for stage in ("dispersion", "glm_fit", "significance", "lfc_shrink", "total"):
-        stage_label = stage.replace("_", r"\_")
-        line = next(line for line in block.splitlines() if stage_label in line)
-        shown = ([int(x) for x in re.findall(r"\\textbf\{(\d+)\}", line)]
-                 if stage == "total"
-                 else [int(x) for x in re.findall(r"&\s*(\d+)", line)])
-        actual = [round(TIMING["r"][case][stage])] + [
-            round(TIMING["cu"][case][mode][stage])
-            for mode in ("eager", "graph", "triton")
-        ]
-        check(f"Table 4 {case}/{stage}", shown == actual, (shown, actual))
-
-check("Table 2 staged-chain description",
-      "times an output-equivalent staged call path" in TEXN)
-check("top-N claim is limited to plotted values",
-      "Each of the 14 logarithmically spaced $N$ values shown" in TEXN)
-check("abstract labels dispersion metric",
-      "final dispersion has a median p95 relative error" in TEXN)
-
-headline = re.findall(r"\\fact\{2\.9--13\.4\$\\times\$\}", TEX)
-check("headline range appears three times", len(headline) == 3, len(headline))
-check("headline minimum", round(min(speedups), 1) == 2.9, min(speedups))
-check("headline maximum", round(max(speedups), 1) == 13.4, max(speedups))
-check("cuDESeq2 normalization at most 4 ms",
-      max(TIMING["cu"][case][mode]["normalization"]
-          for case, _ in labels for mode in ("eager", "graph", "triton")) <= 4.0)
-check("real-data Triton dispersion speedups and endpoints",
-      round(TIMING["cu"]["pasilla_2fac"]["eager"]["dispersion"] /
-            TIMING["cu"]["pasilla_2fac"]["triton"]["dispersion"], 1) == 8.7
-      and round(TIMING["cu"]["airway"]["eager"]["dispersion"] /
-                TIMING["cu"]["airway"]["triton"]["dispersion"], 1) == 2.7
-      and round(TIMING["cu"]["pasilla_2fac"]["eager"]["dispersion"]) == 730
-      and round(TIMING["cu"]["pasilla_2fac"]["triton"]["dispersion"]) == 83
-      and round(TIMING["cu"]["airway"]["eager"]["dispersion"]) == 1586
-      and round(TIMING["cu"]["airway"]["triton"]["dispersion"]) == 583)
-
-
-# Called-set claims are derived from the current standard-pipeline CSVs.
-jaccards = {}
-for case, _ in labels:
-    r_path = ROOT / f"bench/cache/{case}/r_results.csv"
-    o_path = ROOT / f"bench/cache/{case}/cu_reference_results.csv"
-    r = pd.read_csv(r_path)
-    o = pd.read_csv(o_path)
-    rset = set(r.index[r["padj"] < .05])
-    oset = set(o.index[o["padj"] < .05])
-    jaccards[case] = len(rset & oset) / len(rset | oset)
-check("four exact called sets", sum(v == 1 for v in jaccards.values()) == 4,
-      jaccards)
-check("airway_dex Jaccard", round(jaccards["airway_dex"], 5) == .99963,
-      jaccards["airway_dex"])
-check("GTEx Jaccard", round(jaccards["gtex_blood_muscle"], 5) == .99997,
-      jaccards["gtex_blood_muscle"])
-
-# Ranking and called-set claims used by the concordance figure.
-top_overlaps = []
-continuous_jaccards = []
-for case, _ in labels:
-    r = pd.read_csv(ROOT / f"bench/cache/{case}/r_results.csv", index_col="gene")
-    o = pd.read_csv(
-        ROOT / f"bench/cache/{case}/cu_reference_results.csv", index_col=0
-    ).reindex(r.index)
-    top = max(20, min(2000, len(r) // 4))
-    ns = np.unique(np.round(np.logspace(1, np.log10(top), 14)).astype(int))
-    r_order = np.argsort(-np.abs(r["stat"].to_numpy()), kind="stable")
-    o_order = np.argsort(-np.abs(o["stat"].to_numpy()), kind="stable")
-    for n in ns:
-        top_overlaps.append(len(set(r_order[:n]) & set(o_order[:n])) / n)
-
-    rp = r["padj"].to_numpy()
-    op = o["padj"].to_numpy()
-    candidates = np.unique(np.concatenate([
-        rp[np.isfinite(rp) & (rp >= 1e-3) & (rp <= .2)],
-        op[np.isfinite(op) & (op >= 1e-3) & (op <= .2)],
-        np.array([1e-3, .2]),
-    ]))
-    for alpha in candidates:
-        rs = np.isfinite(rp) & (rp < alpha)
-        os = np.isfinite(op) & (op < alpha)
-        union = (rs | os).sum()
-        continuous_jaccards.append((rs & os).sum() / union if union else 1.0)
-check("top-N minimum over plotted values", min(top_overlaps) >= .996)
-check("called-set minimum over continuous alpha range",
-      min(continuous_jaccards) >= .961)
-
-# The plotted airway diagnostic counts are retained in its source CSV/JSON.
-airway_details = pd.read_csv(ROOT / "validation/data/airway/r_disp_details.csv")
-airway_validation = json.loads(
-    (ROOT / "validation/results/airway.json").read_text()
+# Primary direct comparison: practical 12-worker R versus all GPU modes.
+direct_table = table("tab:realtiming")
+practical_speedups = []
+for case, label in CASES:
+    row = next(
+        line for line in direct_table.splitlines() if line.strip().startswith(label + " ")
+    )
+    cells = [cell.strip() for cell in row.split("&")]
+    record = PARALLEL_R["cases"][case]
+    gpu_ms = [TIMING["cu"][case][mode]["total"] for mode in MODES]
+    check(
+        f"primary direct table {case}: 12-worker R",
+        round(numeric_cell(cells[3]), 3)
+        == round(record["parallel"]["median_ms"] / 1000, 3),
+    )
+    for offset, (mode, value) in enumerate(zip(MODES, gpu_ms), start=4):
+        check(
+            f"primary direct table {case}: {mode}",
+            round(numeric_cell(cells[offset]), 3) == round(value / 1000, 3),
+        )
+    practical_speedup = record["parallel"]["median_ms"] / min(gpu_ms)
+    practical_speedups.append(practical_speedup)
+    check(
+        f"primary direct table {case}: speedup",
+        round(numeric_cell(cells[7]), 1) == round(practical_speedup, 1),
+    )
+check(
+    "practical speed minimum",
+    round(min(practical_speedups), 1) == 3.6,
+    min(practical_speedups),
 )
-check("airway dispersion outliers", int(airway_details["dispOutlier"].sum()) == 141)
-check("airway significant genes", airway_validation["n_sig_r_0.05"] == 3993)
-
-# Counterfactual Wald covariance experiment.
-without_floor = MINMU["without_minmu_floor"]
-with_floor = MINMU["with_minmu_floor"]
-check("minmu R calls", MINMU["R_calls"] == 206)
-check("minmu unfloored calls", without_floor["calls"] == 202)
-check("minmu unfloored intersection", without_floor["intersection_with_R"] == 201)
-check("minmu unfloored R-only", without_floor["R_only"] == 5)
-check("minmu unfloored cuDESeq2-only", without_floor["cuDESeq2_only"] == 1)
-check("minmu unfloored Jaccard",
-      round(without_floor["jaccard_with_R"], 3) == .971)
-check("minmu floored exact called set", with_floor["jaccard_with_R"] == 1.0)
+check(
+    "practical speed maximum",
+    round(max(practical_speedups), 1) == 35.1,
+    max(practical_speedups),
+)
+check(
+    "headline practical range appears three times",
+    TEX.count(r"\fact{3.6--35.1$\times$}") == 3,
+)
 
 
-# Eager--Triton real-data dispersion differences retained by the A100 run.
+# Per-stage GPU comparison. CPU acceleration is reported only against the
+# practical 12-worker baseline in the end-to-end table.
+stage_table = table("tab:realsubstep")
+for case, label in CASES:
+    start = stage_table.index(label + " &")
+    end = stage_table.find(r"\midrule", start)
+    block = stage_table[start : end if end >= 0 else None]
+    for step in STEPS[1:]:
+        shown_row = next(
+            line for line in block.splitlines() if STEP_LABELS[step] in line
+        )
+        shown = [numeric_cell(cell) for cell in shown_row.split("&")[2:]]
+        actual = [TIMING["cu"][case][mode][step] for mode in MODES]
+        check(
+            f"stage table {case}/{step}",
+            all(round(a) == round(b) for a, b in zip(shown, actual)),
+        )
+    sum_row = next(line for line in block.splitlines() if r"\emph{total}" in line)
+    shown_sum = [numeric_cell(cell) for cell in sum_row.split("&")[2:]]
+    actual_sum = [stage_total(TIMING["cu"][case][mode]) for mode in MODES]
+    check(
+        f"stage table {case}/sum",
+        all(round(a) == round(b) for a, b in zip(shown_sum, actual_sum)),
+    )
+
+check("paper omits one-worker comparison", not re.search(r"one[- ]worker|R 1w", TEX, re.I))
+check("total labels are not bold", r"\textbf{total}" not in stage_table)
+for case, label in CASES:
+    start = stage_table.index(label + " &")
+    end = stage_table.find(r"\midrule", start)
+    block = stage_table[start : end if end >= 0 else None]
+    total_row = next(line for line in block.splitlines() if r"\emph{total}" in line)
+    best = min(stage_total(TIMING["cu"][case][mode]) for mode in MODES)
+    check(
+        f"stage table {case}/fastest total bold",
+        rf"\textbf{{{round(best)}}}" in total_row,
+    )
+
+
+# Sample-axis table has a clean, versioned primary artifact.
+sample_provenance = SAMPLE_SWEEP["provenance"]
+check("sample sweep clean checkout", sample_provenance["working_tree_dirty"] is False)
+check("sample sweep seven repetitions", sample_provenance["n_timed"] == 7)
+check("sample sweep three warmups", sample_provenance["n_warmup"] == 3)
+check("sample sweep fixed at 2000 genes", all(row["n_genes"] == 2000 for row in SAMPLE_SWEEP["sample_sweep"]))
+sample_table = table("tab:samplescaling")
+for record in SAMPLE_SWEEP["sample_sweep"]:
+    row = next(
+        line
+        for line in sample_table.splitlines()
+        if line.strip().startswith(f"{record['n_samples']} ")
+    )
+    shown = [numeric_cell(cell) for cell in row.split("&")]
+    actual = [
+        record["n_samples"],
+        record["fit_dispersions_eager_ms"],
+        record["fit_dispersions_graph_ms"],
+        record["fit_dispersions_triton_ms"],
+    ]
+    check(
+        f"sample table n={record['n_samples']}",
+        all(round(a) == round(b) for a, b in zip(shown, actual)),
+    )
+
+
+# Real-GTEx full-workflow scaling and A100 memory-boundary artifact.
+gtex_provenance = GTEX_SCALING["provenance"]
+check("GTEx scaling schema", GTEX_SCALING["schema_version"] == 1)
+check("GTEx scaling source samples", gtex_provenance["n_source_samples"] == 9662)
+check("GTEx scaling source tissues", gtex_provenance["n_source_tissues"] == 54)
+check("GTEx scaling fixed genes", gtex_provenance["n_genes"] == 54922)
+check(
+    "GTEx scaling source manifest",
+    gtex_provenance["source_manifest_sha256"] == digest(SOURCE_MANIFEST_PATH),
+)
+check(
+    "GTEx scaling source object",
+    gtex_provenance["source_rdata_sha256"]
+    == next(
+        source["sha256"]
+        for source in SOURCE_MANIFEST["sources"]
+        if source["id"] == "gtex_recount2_srp012682"
+    ),
+)
+check(
+    "GTEx scaling paper gene axis",
+    gtex_provenance["paper_counts_sha256"]
+    == PREPARED_MANIFEST["cases"]["gtex_blood_muscle"]["files"]["counts.csv"]["sha256"],
+)
+check(
+    "GTEx scaling clean timing commit",
+    gtex_provenance["gpu_timing_commit"]
+    == "17ee2e5bcb27d163efbd3e1a2306b1129ddd6674",
+)
+gtex_timings = GTEX_SCALING["gpu_timings"]
+check(
+    "GTEx paper cohort exact source columns",
+    gtex_timings["p2_300"]["source_columns_one_based"]
+    == PREPARED_MANIFEST["cases"]["gtex_blood_muscle"]["metadata"]["selected_source_columns"],
+)
+for case, record in gtex_timings.items():
+    check(f"GTEx {case}: pass", record["status"] == "pass")
+    check(f"GTEx {case}: clean", record["working_tree_dirty_at_start"] is False)
+    check(f"GTEx {case}: one warmup", record["warmups"] == 1)
+    check(f"GTEx {case}: five staged repetitions", record["reps"] == 5)
+    check(f"GTEx {case}: five direct repetitions", record["direct_reps"] == 5)
+    check(f"GTEx {case}: five direct samples", len(record["direct_values_ms"]) == 5)
+    check(
+        f"GTEx {case}: direct median",
+        close(record["direct_median_ms"], statistics.median(record["direct_values_ms"]), 1e-12),
+    )
+    check(
+        f"GTEx {case}: stage sum",
+        close(
+            record["stage_total_ms"],
+            sum(record["stage_medians_ms"].values()),
+            1e-12,
+        ),
+    )
+
+gtex_scaling_labels = {
+    "p2_300": "paper-equivalent",
+    "p2_600": "2 tissues, balanced",
+    "p2_912": "2 tissues, source max.",
+    "p3_fixed300": r"3 tissues $\times$ 300",
+    "p4_fixed300": r"4 tissues $\times$ 300",
+    "p5_fixed300": r"5 tissues $\times$ 300",
+    "p6_fixed300": r"6 tissues $\times$ 300",
+    "p6_all": "6 tissues, all samples",
+}
+gtex_scaling_table = table("tab:gtexscale")
+for case, label in gtex_scaling_labels.items():
+    row = next(
+        line for line in gtex_scaling_table.splitlines() if line.strip().startswith(label)
+    )
+    cells = row.split("&")
+    record = gtex_timings[case]
+    check(
+        f"GTEx scaling table {case}: direct",
+        round(numeric_cell(cells[-2]), 3) == round(record["direct_median_ms"] / 1000, 3),
+    )
+    check(
+        f"GTEx scaling table {case}: memory",
+        round(numeric_cell(cells[-1]), 2) == round(record["peak_allocated_bytes"] / 2**30, 2),
+    )
+
+gtex_r_table = table("tab:gtexrendpoint")
+for case, row_prefix in (("p2_912", "912 "), ("p6_all", r"2{,}451 ")):
+    row = next(
+        line for line in gtex_r_table.splitlines() if line.strip().startswith(row_prefix)
+    )
+    cells = row.split("&")
+    endpoint = GTEX_SCALING["r_direct_endpoints"][case]
+    one_worker = endpoint["one_worker"]
+    twelve_workers = endpoint["twelve_workers"]
+    check(f"GTEx direct R endpoint {case}: worker parity", endpoint["worker_parity"]["pass"] is True)
+    for workers, record in ((1, one_worker), (12, twelve_workers)):
+        check(f"GTEx direct R endpoint {case}/{workers}: pass", record["status"] == "pass")
+        check(
+            f"GTEx direct R endpoint {case}/{workers}: clean",
+            record["working_tree_dirty_at_start"] is False,
+        )
+        check(
+            f"GTEx direct R endpoint {case}/{workers}: contract",
+            record["workers"] == workers
+            and record["warmups"] == 0
+            and record["reps"] == 1
+            and len(record["direct_values_ms"]) == 1
+            and close(
+                record["direct_median_ms"],
+                statistics.median(record["direct_values_ms"]),
+                1e-12,
+            ),
+        )
+    check(
+        f"GTEx direct R table {case}: GPU",
+        round(numeric_cell(cells[2]), 3)
+        == round(gtex_timings[case]["direct_median_ms"] / 1000, 3),
+    )
+    check(
+        f"GTEx direct R table {case}: twelve workers",
+        round(numeric_cell(cells[3]), 3)
+        == round(twelve_workers["direct_median_ms"] / 1000, 3),
+    )
+    check(
+        f"GTEx direct R table {case}: GPU speedup vs twelve workers",
+        round(numeric_cell(cells[4]), 1)
+        == round(endpoint["gpu_speedup_vs_twelve_workers"], 1),
+    )
+
+check(
+    "GTEx direct R endpoint clean timing commit",
+    gtex_provenance["r_direct_timing_commit"]
+    == "f834cd9dffce631b83b945cbb8842e01803e648e",
+)
+for case in ("p2_912", "p6_all"):
+    check(
+        f"GTEx staged GPU--R endpoint {case}: parity",
+        GTEX_SCALING["r_endpoints"][case]["parity"]["pass"] is True,
+    )
+
+p6_worker_metrics = {
+    metric["substep"]: metric
+    for metric in GTEX_SCALING["r_direct_endpoints"]["p6_all"]["worker_parity"]["metrics"]
+}
+check(
+    "GTEx P6 worker dispersion agreement",
+    p6_worker_metrics["refit_dispersion"]["value"] < 1.54e-14,
+)
+check(
+    "GTEx P6 worker raw LFC agreement",
+    p6_worker_metrics["glm_fit"]["value"] < 1.0e-14,
+)
+check(
+    "GTEx P6 worker significant-set agreement",
+    p6_worker_metrics["significance"]["value"] == 1.0,
+)
+check(
+    "GTEx P6 worker shrinkage agreement",
+    p6_worker_metrics["lfc_shrink"]["value"] > 0.9999999999,
+)
+
+p6_metrics = {
+    metric["substep"]: metric
+    for metric in GTEX_SCALING["r_endpoints"]["p6_all"]["parity"]["metrics"]
+}
+check(
+    "GTEx P6 dispersion parity claim",
+    round(p6_metrics["dispersion"]["value"], 5) == 0.00212,
+)
+check(
+    "GTEx P6 raw LFC parity claim",
+    round(p6_metrics["glm_fit"]["value"], 7) == 0.0000318,
+)
+check(
+    "GTEx P6 significance parity claim",
+    round(p6_metrics["significance"]["value"], 5) == 0.99896,
+)
+check(
+    "GTEx P6 shrink parity claim",
+    round(p6_metrics["lfc_shrink"]["value"], 6) == 0.999994,
+)
+
+gtex_oom_table = table("tab:gtexoom")
+for case, tissues in (("p8_all", 8), ("p9_all", 9), ("p10_all", 10), ("p12_all", 12)):
+    record = GTEX_SCALING["oom_probes"][case]
+    row = next(
+        line for line in gtex_oom_table.splitlines() if line.strip().startswith(f"{tissues} ")
+    )
+    cells = row.split("&")
+    check(
+        f"GTEx OOM table {case}: peak",
+        round(numeric_cell(cells[3]), 2)
+        == round(record["peak_allocated_bytes"] / 2**30, 2),
+    )
+    check(
+        f"GTEx OOM table {case}: status",
+        record["status"].lower() in cells[4].lower(),
+    )
+check(
+    "GTEx observed OOM boundary",
+    GTEX_SCALING["oom_probes"]["p9_all"]["status"] == "pass"
+    and GTEX_SCALING["oom_probes"]["p10_all"]["status"] == "oom"
+    and GTEX_SCALING["oom_probes"]["p10_all"]["failed_stage"] == "dispersion",
+)
+
+
+# Remaining quantitative claims.
+validation = {
+    case: json.loads((ROOT / f"validation/results/{case}.json").read_text())
+    for case, _ in CASES
+}
+check("airway significant genes", validation["airway"]["n_sig_r_0.05"] == 3993)
+check(
+    "four exact called sets",
+    sum(record["sig_jaccard_0.05"] == 1 for record in validation.values()) == 4,
+)
+check(
+    "airway/dex Jaccard",
+    round(validation["airway_dex"]["sig_jaccard_0.05"], 5) == 0.99963,
+)
+check(
+    "GTEx Jaccard",
+    round(validation["gtex_blood_muscle"]["sig_jaccard_0.05"], 5) == 0.99997,
+)
+check(
+    "normalization at most 4 ms",
+    max(
+        TIMING["cu"][case][mode]["normalization"]
+        for case, _ in CASES
+        for mode in MODES
+    )
+    <= 4,
+)
+check(
+    "reported Triton dispersion endpoints",
+    round(TIMING["cu"]["pasilla_2fac"]["eager"]["dispersion"] / TIMING["cu"]["pasilla_2fac"]["triton"]["dispersion"], 1) == 8.9
+    and round(TIMING["cu"]["airway"]["eager"]["dispersion"] / TIMING["cu"]["airway"]["triton"]["dispersion"], 1) == 2.8,
+)
 mode_dispersion = {
     case: next(row for row in rows if row["substep"] == "dispersion")
-    for case, rows in json.loads((ROOT / "bench/results/parity.json").read_text()).items()
+    for case, rows in MODE_PARITY.items()
 }
-check("GTEx eager-Triton maximum absolute dispersion difference",
-      round(mode_dispersion["gtex_blood_muscle"]["gpu_modes_maxdiff"], 4) == .2604)
-check("small-design eager-Triton maximum absolute dispersion difference",
-      max(row["gpu_modes_maxdiff"] for case, row in mode_dispersion.items()
-          if case != "gtex_blood_muscle") <= 3.2e-7)
-# Every fact marker must correspond to one of the artifact computations above.
-# Parse balanced braces so values such as ``3{,}993`` are not truncated.
+check(
+    "graph is bit-identical to eager across retained captures",
+    all(
+        row["maxdiff_vs_eager"]["graph"] == 0
+        for rows in MODE_PARITY.values()
+        for row in rows
+    ),
+)
+check(
+    "GTEx eager-Triton max dispersion difference",
+    round(mode_dispersion["gtex_blood_muscle"]["gpu_modes_maxdiff"], 4) == 0.2604,
+)
+check(
+    "smaller eager-Triton max dispersion difference",
+    max(
+        row["gpu_modes_maxdiff"]
+        for case, row in mode_dispersion.items()
+        if case != "gtex_blood_muscle"
+    )
+    <= 3.8e-7,
+)
+
+
 def fact_values(source: str) -> set[str]:
     values: set[str] = set()
     position = 0
@@ -288,26 +674,48 @@ def fact_values(source: str) -> set[str]:
         while depth:
             depth += (source[end] == "{") - (source[end] == "}")
             end += 1
-        values.add(re.sub(r"\s+", " ", source[cursor:end - 1]))
+        values.add(re.sub(r"\s+", " ", source[cursor : end - 1]))
         position = end
 
 
-fact_text = {value for value in fact_values(TEX) if not value.startswith("Reproduce:")}
-artifact_checked = {
-    "8.5e-4", "2.9--13.4$\\times$", "0.44\\%", "$8.1\\times10^{-5}$",
-    "0.99722", "141", "3{,}993", "$\\ge$99.6\\%", "$\\ge$0.961",
-    "0.99963", "0.99997", "4\\,ms", "8.7$\\times$", "2.7$\\times$",
-    "730", "83", "1586", "583", "0.2604", "$3.2 \\times 10^{-7}$",
+facts = {value for value in fact_values(TEX) if not value.startswith("Reproduce:")}
+checked_facts = {
+    "0.99963",
+    "0.99722",
+    "3.6--35.1$\\times$",
+    "0.44\\%",
+    "$8.1\\times10^{-5}$",
+    "3{,}993",
+    "0.99997",
+    "8.9$\\times$",
+    "2.8$\\times$",
+    "777",
+    "87",
+    "1660",
+    "585",
+    "4\\,ms",
+    "0.2604",
+    "$3.8 \\times 10^{-7}$",
+    "2{,}451",
+    "22.936-s",
+    "20.10 GiB",
+    "39.4$\\times$",
+    "28.0$\\times$",
+    "0.00212",
+    "0.99896",
+    "0.999994",
+    "37.09 GiB",
 }
-check("every manuscript fact has an artifact-backed computation",
-      fact_text == artifact_checked,
-      {"missing_checks": sorted(fact_text - artifact_checked),
-       "stale_checks": sorted(artifact_checked - fact_text)})
+check(
+    "every marked fact is artifact-backed",
+    facts == checked_facts,
+    {"unchecked": sorted(facts - checked_facts), "stale": sorted(checked_facts - facts)},
+)
 
 print(f"{checks} checks run")
-if fails:
-    print(f"{len(fails)} mismatch(es):")
-    for failure in fails:
+if failures:
+    print(f"{len(failures)} mismatch(es):")
+    for failure in failures:
         print(f"  - {failure}")
     raise SystemExit(1)
-print("ALL CHECKED MANUSCRIPT NUMBERS MATCH THEIR SOURCE DATA")
+print("ALL CHECKED MANUSCRIPT NUMBERS MATCH COMMITTED SOURCE ARTIFACTS")

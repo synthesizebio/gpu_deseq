@@ -38,7 +38,7 @@ optional MAP prior.
 \par
 \noindent
 \textbf{Ensure:}\;
-optimized log dispersions $\mathbf{a}$.
+optimized log dispersions $\mathbf{a}$ and iteration counts $\mathbf{c}$.
 \par
 \vspace{4pt}
 
@@ -59,7 +59,8 @@ optimized log dispersions $\mathbf{a}$.
 \tritonOverviewLine[2.4em]{Accept or reject $\widetilde a$ using the Armijo
   condition; adapt $\kappa$.}
 \tritonOverviewLine[1.2em]{\textbf{until} converged or \textit{maxit} is reached.}
-\tritonOverviewLine[1.2em]{Store the final $a_g$ once in global memory.}
+\tritonOverviewLine[1.2em]{Store the final $a_g$ and iteration count $c_g$ once
+  in global memory.}
 
 \vspace{3pt}
 \noindent\rule{\linewidth}{0.8pt}

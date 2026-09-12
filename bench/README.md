@@ -27,8 +27,8 @@ Cook's-outlier replacement/refit where eligible),
 ## Run
 
 ```bash
-# inputs must exist under validation/data/<case>/ (counts.csv, coldata.csv,
-# meta.json) — produced once by validation/fetch_and_reference.R + prepare_gtex.R
+# Download checksum-pinned sources and reconstruct validation/data/<case>/.
+make container-data
 Rscript bench/run_r.R                      # R timings + intermediates -> bench/cache/
 PYTHONPATH=src python bench/bench.py       # cuDESeq2 timings + parity -> bench/results/
 ```
@@ -102,14 +102,17 @@ historical synthetic and CPU-only-host experiments.
   is exact). Both are shown so nothing is hidden.
 
 - **Timing method.** cuDESeq2 substeps are timed with `cuda.synchronize()` around
-  each, median of 5 reps (3 on the 300-sample cohort). R substeps call the five
-  DESeq2 stages as `estimateSizeFactors → estimateDispersions → DESeq → results
-  → lfcShrink`; because size factors and dispersions already exist, `DESeq`
-  times the Wald and replacement/refit work. R uses three reps (one on the
-  300-sample cohort) and is single-threaded. The separate end-to-end worker
-  comparison uses `DESeq() + results() + lfcShrink()` at one and 12
-  `MulticoreParam` workers, with standard count-outlier replacement/refitting;
-  its record is `bench/results/r_parallel_a100_12worker.json`.
+  each, with five measured repetitions after an untimed warm-up. R substeps call
+  `estimateSizeFactors → estimateDispersions → nbinomWaldTest` plus eligible
+  outlier refitting `→ results → lfcShrink`. R also uses five measured
+  repetitions and one worker for a controlled stage-attribution diagnostic. Current harness
+  output keeps `stage_total` (the sum of independently measured stage medians)
+  separate from `total` (the median of direct observations including dataset
+  construction and, for CUDA, host-to-device transfer). The primary acceleration
+  comparison uses direct `DESeq() + results() + lfcShrink()` observations with
+  12 `MulticoreParam` workers and standard count-outlier
+  replacement/refitting. One-worker measurements remain available as controlled
+  diagnostics, not as the practical baseline.
 
 ## Files
 
@@ -118,3 +121,120 @@ historical synthetic and CPU-only-host experiments.
   (importable; also runnable standalone for one case/mode).
 - `bench.py` — orchestrator: runs both sides, verifies parity, renders the three
   tables to `bench/results/`.
+
+## Real-GTEx sample, design-width, and memory scaling
+
+The main six-case suite deliberately fixes GTEx at 300 samples. The separate
+scaling harness uses all 9,662 samples in the same checksum-pinned recount2
+source while holding the gene axis fixed at the paper's 54,922 genes. It tests
+nested two-tissue cohorts, balanced P=3--6 designs, all-sample designs, and the
+A100 OOM boundary.
+
+Materialize the source matrix once (the 2.1 GB output remains under ignored
+`bench/cache/`):
+
+```bash
+Rscript bench/extract_gtex_scaling.R \
+  validation/sources/SRP012682_rse_gene.Rdata \
+  validation/data/gtex_blood_muscle/counts.csv \
+  bench/cache/gtex_scaling/matrix
+
+PYTHONPATH=src python bench/gtex_scaling.py --list
+```
+
+Run one case per clean process. Paper-grade timing uses one warm-up, five
+stage-timed repetitions, and five independent direct repetitions. Feasibility
+probes use no warm-up, one staged repetition, and no separate direct run:
+
+```bash
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True PYTHONPATH=src \
+  python bench/gtex_scaling.py --case p6_all --mode triton \
+  --warmups 1 --reps 5 --direct-reps 5 --verify-matrix \
+  --capture /tmp/p6_all_gpu.npz --output /tmp/p6_all_gpu.json
+
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True PYTHONPATH=src \
+  python bench/gtex_scaling.py --case p10_all --mode triton \
+  --warmups 0 --reps 1 --direct-reps 0 --output /tmp/p10_all_probe.json
+```
+
+The JSON records the exact one-based source columns, their sample-ID hash,
+matrix hashes, software/commit provenance, every raw timing, and peak CUDA
+allocated/reserved memory. Designs wider than P=6 explicitly report the eager
+fallback. Use the exact GPU case JSON for the one-worker R reference:
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+Rscript bench/run_gtex_scaling_r.R \
+  validation/sources/SRP012682_rse_gene.Rdata \
+  bench/cache/gtex_scaling/matrix /tmp/p6_all_gpu.json /tmp/p6_all_r
+
+PYTHONPATH=src python bench/score_gtex_scaling.py \
+  /tmp/p6_all_gpu.npz /tmp/p6_all_r --output /tmp/p6_all_parity.json
+```
+
+For the practical direct comparison, run the public standard DESeq2 pipeline
+with 12 workers in a fresh process. A corresponding one-worker run may be kept
+as a controlled scaling and output-parity diagnostic. Both settings include
+`DESeqDataSetFromMatrix + DESeq + results + lfcShrink` and use the exact same
+source columns:
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+GTEX_R_WORKERS=1 GTEX_R_WARMUPS=0 GTEX_R_REPS=1 \
+Rscript bench/run_gtex_scaling_r_direct.R \
+  validation/sources/SRP012682_rse_gene.Rdata \
+  bench/cache/gtex_scaling/matrix /tmp/p6_all_gpu.json /tmp/p6_all_r_direct_1
+
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+GTEX_R_WORKERS=12 GTEX_R_WARMUPS=0 GTEX_R_REPS=1 \
+Rscript bench/run_gtex_scaling_r_direct.R \
+  validation/sources/SRP012682_rse_gene.Rdata \
+  bench/cache/gtex_scaling/matrix /tmp/p6_all_gpu.json /tmp/p6_all_r_direct_12
+```
+
+The worker count applies through `BiocParallel::SerialParam` or
+`MulticoreParam`; BLAS/OpenMP threads remain pinned to one to prevent nested
+oversubscription. These long endpoint measurements are single observations,
+not five-repetition headline timings. Only the 12-worker endpoint is used as
+the practical CPU baseline.
+
+Confirm that the worker count does not change the result tables:
+
+```bash
+PYTHONPATH=src:. python bench/score_gtex_r_workers.py \
+  /tmp/p6_all_r_direct_1 /tmp/p6_all_r_direct_12 \
+  --output /tmp/p6_all_r_worker_parity.json
+```
+
+For a reference directory produced by an older run of this script, regenerate
+only the pre-Wald dispersion-stage capture without repeating Wald fitting or
+shrinkage:
+
+```bash
+GTEX_R_DISPERSION_ONLY=1 Rscript bench/run_gtex_scaling_r.R \
+  validation/sources/SRP012682_rse_gene.Rdata \
+  bench/cache/gtex_scaling/matrix /tmp/p6_all_gpu.json /tmp/p6_all_r
+```
+
+After all raw case files are complete, assemble the committed artifact and
+human-readable table:
+
+```bash
+PYTHONPATH=src python bench/assemble_gtex_scaling.py /path/to/run \
+  bench/results/gtex_scaling_a100.json \
+  --markdown bench/results/GTEX_SCALING.md
+```
+
+When a code change affects only GPU execution, previously measured R endpoints
+can be reused without copying or relabeling them:
+
+```bash
+PYTHONPATH=src python bench/assemble_gtex_scaling.py /path/to/new-gpu-run \
+  bench/results/gtex_scaling_a100.json \
+  --r-run-directory /path/to/prior-r-reference-run \
+  --markdown bench/results/GTEX_SCALING.md
+```
+
+The assembler accepts this only when sample count, design width, contrast,
+exact source columns, sample-ID hash, and both matrix hashes match. New GPU
+captures must still be rescored against the retained R outputs.

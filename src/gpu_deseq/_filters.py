@@ -1,8 +1,9 @@
 """Cook's-distance and independent-filtering, validated against R DESeq2 1.52.0.
 
-Both run per DE task (typically ~5k genes), so the filtering is implemented on
-CPU via numpy/scipy. The hot work (dispersions, IRLS) stays in the batched GPU
-kernels in `_deseq2_core`.
+The NumPy implementations remain the CPU reference path.  CUDA workflows use
+equivalent torch operations for the large Cook's-distance and replacement
+matrices, while independent filtering uses one CPU p-value sort plus vectorized
+rank calculations for its 50 candidate thresholds.
 
 The trimmed method-of-moments dispersion, the ``n_or_more_replicates`` cohort
 rule, and the ``lowess`` smoother used by independent filtering are all
@@ -16,6 +17,7 @@ from math import ceil, floor
 
 import numpy as np
 import pandas as pd
+import torch
 from scipy.stats import f as _f_dist
 from scipy.stats import false_discovery_control
 
@@ -190,17 +192,89 @@ def cooks_distance(
     return cooks, alpha_rob
 
 
+def _trimmed_mean_tensor(
+    values: torch.Tensor,
+    trim: float,
+    *,
+    dim: int,
+) -> torch.Tensor:
+    """Torch equivalent of ``_trimmed_mean`` for resident GPU matrices."""
+    n = values.shape[dim]
+    ntrim = floor(n * trim)
+    ordered = torch.sort(values, dim=dim).values
+    return ordered.narrow(dim, ntrim, n - 2 * ntrim).mean(dim=dim)
+
+
+def robust_method_of_moments_disp_tensor(
+    normed_counts: torch.Tensor,  # (n_genes_nz, n_samples)
+    design_matrix: pd.DataFrame,
+) -> torch.Tensor:
+    """Device-resident equivalent of ``robust_method_of_moments_disp``."""
+    three_or_more = n_or_more_replicates(design_matrix, 3)
+    if three_or_more.any():
+        sample_mask = three_or_more.to_numpy()
+        filtered_design = design_matrix.loc[three_or_more, :]
+        cell_id = pd.Series(
+            filtered_design.groupby(filtered_design.columns.values.tolist()).ngroup(),
+            index=filtered_design.index,
+        )
+        original_positions = np.flatnonzero(sample_mask)
+        variances: list[torch.Tensor] = []
+        for level in cell_id.unique():
+            positions = original_positions[cell_id.to_numpy() == level]
+            position_t = torch.as_tensor(
+                positions, dtype=torch.long, device=normed_counts.device
+            )
+            group = normed_counts[:, position_t]
+            n_group = len(positions)
+            trim_index = 2 if n_group >= 23.5 else 1 if n_group >= 3.5 else 0
+            trim = (1 / 3, 1 / 4, 1 / 8)[trim_index]
+            scale = (2.04, 1.86, 1.51)[trim_index]
+            center = _trimmed_mean_tensor(group, trim, dim=1)
+            squared_error = (group - center.unsqueeze(1)).square()
+            variances.append(
+                scale * _trimmed_mean_tensor(squared_error, trim, dim=1)
+            )
+        variance = torch.stack(variances, dim=1).amax(dim=1)
+    else:
+        center = _trimmed_mean_tensor(normed_counts, 0.125, dim=1)
+        squared_error = (normed_counts - center.unsqueeze(1)).square()
+        variance = 1.51 * _trimmed_mean_tensor(squared_error, 0.125, dim=1)
+
+    mean = normed_counts.mean(dim=1)
+    return ((variance - mean) / mean.square()).clamp_min(0.04)
+
+
+def cooks_distance_tensor(
+    counts: torch.Tensor,         # (n_genes_nz, n_samples)
+    normed_counts: torch.Tensor,  # (n_genes_nz, n_samples)
+    mu: torch.Tensor,             # (n_genes_nz, n_samples)
+    hat_diag: torch.Tensor,       # (n_genes_nz, n_samples)
+    design_df: pd.DataFrame,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Device-resident Cook's distances, with genes as the leading axis."""
+    alpha_rob = robust_method_of_moments_disp_tensor(normed_counts, design_df)
+    variance = mu.square() * alpha_rob.unsqueeze(1) + mu
+    squared_pearson = (counts - mu).square() / variance / design_df.shape[1]
+    leverage = hat_diag / (1.0 - hat_diag).square()
+    return squared_pearson * leverage, alpha_rob
+
+
 def cooks_outlier_mask(
     cooks: np.ndarray,              # (n_samples, n_genes_nz)
     counts: np.ndarray,             # (n_samples, n_genes_nz)
     design_df: pd.DataFrame,
     num_vars: int,
+    *,
+    apply_low_count_heuristic: bool = False,
 ) -> np.ndarray:
     """Return per-gene bool outlier mask, matching DESeq2's Cook's outlier rule.
 
-    A gene is flagged when: (a) max Cooks across samples belonging to cohorts
-    with ≥3 replicates exceeds F(0.99, p, n-p), AND (b) fewer than 3 samples
-    have more counts than the sample holding that max.
+    A gene is flagged when its max Cook's distance across samples belonging to
+    cohorts with ≥3 replicates exceeds F(0.99, p, n-p). DESeq2's additional
+    low-count exemption (three samples have more counts than the max-Cook's
+    sample) is restricted to one-factor, two-level categorical designs and is
+    enabled by ``apply_low_count_heuristic``.
     """
     n_samples = cooks.shape[0]
     cutoff = _f_dist.ppf(0.99, num_vars, n_samples - num_vars)
@@ -211,7 +285,7 @@ def cooks_outlier_mask(
         use_for_max = np.ones(n_samples, dtype=bool)
 
     cooks_exceeds = (cooks[use_for_max, :] > cutoff).any(axis=0)  # (n_genes,)
-    if not cooks_exceeds.any():
+    if not cooks_exceeds.any() or not apply_low_count_heuristic:
         return cooks_exceeds
 
     # For flagged genes: require fewer than 3 other samples exceed the max-Cooks sample.
@@ -243,15 +317,30 @@ def independent_filtering(
     theta = np.linspace(lower_q, upper_q, 50)
     cutoffs = np.quantile(base_mean, theta)
 
-    # (n_genes, 50) padj table, NaN by default
-    padj_table = np.full((n_genes, len(theta)), np.nan)
     not_nan_p = ~np.isnan(pvalues)
-    for i, cutoff in enumerate(cutoffs):
-        use = (base_mean >= cutoff) & not_nan_p
-        if use.any():
-            padj_table[use, i] = false_discovery_control(pvalues[use], method="bh")
-
-    num_rej = (padj_table < alpha).sum(axis=0).astype(int)
+    # Every filter produces a subset of the same globally p-value-sorted list.
+    # For Benjamini-Hochberg, the rejection count is the largest selected rank
+    # k satisfying p[k] * m / k < alpha.  Compute all 50 nested-filter ranks in
+    # one vectorized pass, then perform the full BH adjustment only once for the
+    # selected cutoff.  The former implementation sorted and materialized a
+    # complete n_genes x 50 adjusted-p-value table.
+    valid_p = pvalues[not_nan_p]
+    valid_base_mean = base_mean[not_nan_p]
+    order = np.argsort(valid_p)
+    sorted_p = valid_p[order]
+    sorted_base_mean = valid_base_mean[order]
+    included = sorted_base_mean[None, :] >= cutoffs[:, None]
+    ranks = np.cumsum(included, axis=1)
+    subset_sizes = ranks[:, -1] if ranks.shape[1] else np.zeros(len(theta), dtype=int)
+    scaled = (
+        sorted_p[None, :]
+        * subset_sizes[:, None]
+        / np.maximum(ranks, 1)
+    )
+    passes = included & (scaled < alpha)
+    num_rej = np.max(
+        np.where(passes, ranks, 0), axis=1, initial=0
+    ).astype(int)
     lowess_res = _lowess(theta, num_rej, frac=1 / 5)
 
     if num_rej.max() <= 10:
@@ -263,4 +352,8 @@ def independent_filtering(
         above = np.where(num_rej > thresh)[0]
         j = int(above[0]) if len(above) > 0 else 0
 
-    return padj_table[:, j]
+    adjusted = np.full(n_genes, np.nan, dtype=np.float64)
+    use = (base_mean >= cutoffs[j]) & not_nan_p
+    if use.any():
+        adjusted[use] = false_discovery_control(pvalues[use], method="bh")
+    return adjusted

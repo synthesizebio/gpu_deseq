@@ -128,6 +128,11 @@ the key finding that motivated chunked replay.
 varying `n_samples` from a 2-vs-2 pilot to biobank scale. Median of 7. Raw:
 [`results_a100_samplesweep.json`](results_a100_samplesweep.json).
 
+> The manuscript now uses the clean-checkout rerun in
+> [`results_a100_samplesweep_2026-09-11.json`](results_a100_samplesweep_2026-09-11.json).
+> The earlier file is retained because its recorded worktree was dirty; see the
+> result manifest in `bench/results/README.md` for primary-source routing.
+
 | n_samples | eager iters | NR loop speedup | full stage speedup | max&#124;Δ&#124; |
 |---:|---:|---:|---:|:--|
 | 4 (2v2)   | 100 | **7.59×** | **1.61×** | 0.0 |

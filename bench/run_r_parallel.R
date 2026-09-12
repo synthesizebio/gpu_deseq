@@ -12,11 +12,34 @@ OUT <- Sys.getenv("BENCH_PARALLEL_OUTPUT",
                   unset = "bench/results/r_parallel_a100_12worker.json")
 WORKERS <- as.integer(Sys.getenv("BENCH_R_WORKERS", unset = "12"))
 if (is.na(WORKERS) || WORKERS < 2) stop("BENCH_R_WORKERS must be at least 2")
+REPS <- as.integer(Sys.getenv("BENCH_R_REPS", unset = "5"))
+if (is.na(REPS) || REPS < 1) stop("BENCH_R_REPS must be at least 1")
 
 args <- commandArgs(trailingOnly = TRUE)
 cases <- if (length(args)) args else list.dirs(DATA, recursive = FALSE, full.names = FALSE)
 cases <- sort(Filter(function(case) file.exists(file.path(DATA, case, "meta.json")), cases))
 if (!length(cases)) stop("no benchmark cases found")
+
+command_output <- function(command, args) {
+  tryCatch(
+    suppressWarnings(system2(command, args, stdout = TRUE, stderr = FALSE)),
+    error = function(error) character()
+  )
+}
+git_commit <- command_output("git", c("rev-parse", "HEAD"))
+git_status <- command_output("git", c("status", "--porcelain"))
+file_sha256 <- function(path) {
+  if (!file.exists(path)) return(NA_character_)
+  output <- command_output("sha256sum", path)
+  if (!length(output)) return(NA_character_)
+  strsplit(output[[1]], " ", fixed = TRUE)[[1]][[1]]
+}
+manifest_path <- "validation/prepared_data_manifest.json"
+manifest_sum <- file_sha256(manifest_path)
+source_manifest_sum <- file_sha256("validation/data_sources.json")
+cpu_lines <- if (file.exists("/proc/cpuinfo")) readLines("/proc/cpuinfo") else character()
+cpu_match <- grep("^model name", cpu_lines, value = TRUE)
+cpu_model <- if (length(cpu_match)) trimws(sub("^[^:]+:", "", cpu_match[[1]])) else NA_character_
 
 read_meta <- function(path) {
   txt <- paste(readLines(path), collapse = " ")
@@ -61,7 +84,7 @@ for (case in cases) {
   coldata <- read.csv(file.path(path, "coldata.csv"), row.names = 1)
   coldata[[meta$factor]] <- relevel(factor(coldata[[meta$factor]]), ref = meta$ref)
   make_dds <- function() DESeqDataSetFromMatrix(counts, coldata, as.formula(meta$design))
-  reps <- 5L
+  reps <- REPS
   serial <- timed(function() run_pipeline(make_dds, meta$coef, FALSE, serial_bp), reps)
   parallel <- timed(function() run_pipeline(make_dds, meta$coef, TRUE, parallel_bp), reps)
   records[[case]] <- list(n_samples = meta$n_samples, design = meta$design, reps = reps,
@@ -79,6 +102,15 @@ output <- list(
     workers = WORKERS,
     backend = "BiocParallel::MulticoreParam",
     blas_threads = Sys.getenv("OPENBLAS_NUM_THREADS", unset = "unset"),
+    total_definition = "median direct wall time including DESeqDataSet construction",
+    git_commit = if (length(git_commit)) git_commit[[1]] else NA_character_,
+    working_tree_dirty = length(git_status) > 0,
+    input_reconstruction = list(
+      source_manifest_sha256 = source_manifest_sum,
+      prepared_manifest_sha256 = manifest_sum
+    ),
+    cpu_model = cpu_model,
+    logical_cpu_count = parallel::detectCores(logical = TRUE),
     measured_utc = format(Sys.time(), tz = "UTC", usetz = TRUE)
   ),
   cases = records
@@ -112,6 +144,18 @@ json <- c(
   paste0("    \"workers\": ", output$provenance$workers, ","),
   paste0("    \"backend\": ", json_string(output$provenance$backend), ","),
   paste0("    \"blas_threads\": ", json_string(output$provenance$blas_threads), ","),
+  paste0("    \"total_definition\": ", json_string(output$provenance$total_definition), ","),
+  paste0("    \"git_commit\": ", json_string(output$provenance$git_commit), ","),
+  paste0("    \"working_tree_dirty\": ",
+         if (output$provenance$working_tree_dirty) "true," else "false,"),
+  "    \"input_reconstruction\": {",
+  paste0("      \"source_manifest_sha256\": ",
+         json_string(output$provenance$input_reconstruction$source_manifest_sha256), ","),
+  paste0("      \"prepared_manifest_sha256\": ",
+         json_string(output$provenance$input_reconstruction$prepared_manifest_sha256)),
+  "    },",
+  paste0("    \"cpu_model\": ", json_string(output$provenance$cpu_model), ","),
+  paste0("    \"logical_cpu_count\": ", output$provenance$logical_cpu_count, ","),
   paste0("    \"measured_utc\": ", json_string(output$provenance$measured_utc)),
   "  },",
   "  \"cases\": {",

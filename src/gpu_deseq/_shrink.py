@@ -121,6 +121,57 @@ def _nbinom_apeglm_grad(
     return (d_prior_noshrink + d_prior_shrink) - d_nll
 
 
+def _nbinom_apeglm_loss_grad(
+    beta: torch.Tensor,
+    counts: torch.Tensor,
+    size: torch.Tensor,
+    offset: torch.Tensor,
+    design: torch.Tensor,
+    prior_no_shrink_scale: float,
+    prior_scale: float,
+    shrink_index: int,
+    *,
+    counts_plus_size: torch.Tensor | None = None,
+    log_size: torch.Tensor | None = None,
+    design_t: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return apeGLM loss and gradient while sharing their linear predictor.
+
+    L-BFGS always requests these together.  Computing them through the two
+    public helpers separately duplicated ``beta @ design.T`` and construction
+    of its G x S result at every line-search trial.
+    """
+    if design_t is None:
+        design_t = design.T
+    xbeta = beta @ design_t
+    xbeta_off = xbeta + offset.unsqueeze(0)
+    size_col = size.unsqueeze(1)
+    if counts_plus_size is None:
+        counts_plus_size = counts + size_col
+    if log_size is None:
+        log_size = torch.log(size).unsqueeze(1)
+
+    lae = torch.logaddexp(xbeta_off, log_size.expand_as(xbeta_off))
+    nll = (counts * xbeta - counts_plus_size * lae).sum(dim=1)
+
+    inv = 1.0 / (1.0 + size_col * torch.exp(-xbeta_off))
+    resid = counts - counts_plus_size * inv
+    d_nll = resid @ design
+
+    beta_s = beta[:, shrink_index]
+    no_shrink_sq = beta.square().sum(dim=1) - beta_s.square()
+    prior = (
+        no_shrink_sq / (2.0 * prior_no_shrink_scale ** 2)
+        + torch.log1p((beta_s / prior_scale) ** 2)
+    )
+
+    d_prior = beta / (prior_no_shrink_scale ** 2)
+    d_prior[:, shrink_index] = (
+        2.0 * beta_s / (prior_scale ** 2 + beta_s ** 2)
+    )
+    return prior - nll, d_prior - d_nll
+
+
 def _nbinom_apeglm_hess(
     beta: torch.Tensor,
     counts: torch.Tensor,
@@ -159,6 +210,23 @@ def _nbinom_apeglm_hess(
     return H_nll + H_prior
 
 
+# These two routines materialize gene-by-sample intermediates in eager PyTorch.
+# Inductor fuses their elementwise work and reductions around the matrix
+# multiplies, which removes most of that memory traffic.  Compilation is lazy:
+# importing gpu_deseq does not compile anything, and CPU execution keeps the
+# eager functions so tests and small CPU jobs do not pay compilation overhead.
+_compiled_nbinom_apeglm_loss_grad = torch.compile(
+    _nbinom_apeglm_loss_grad,
+    fullgraph=True,
+    mode="default",
+)
+_compiled_nbinom_apeglm_hess = torch.compile(
+    _nbinom_apeglm_hess,
+    fullgraph=True,
+    mode="default",
+)
+
+
 # ---------------------------------------------------------------------------
 # Batched L-BFGS: a vectorized port of apeglm's own LBFGS++ solver
 # ---------------------------------------------------------------------------
@@ -187,12 +255,37 @@ def _batched_lbfgs(x0, counts, size, offset, design, shrink_index,
     G, P = x0.shape
     dev, dt = x0.device, x0.dtype
     zeroG = torch.zeros(G, device=dev, dtype=dt)
+    counts_plus_size = counts + size.unsqueeze(1)
+    log_size = torch.log(size).unsqueeze(1)
+    design_t = design.T
+
+    # CUDA uses a lazily compiled evaluator.  Keeping every argument explicit
+    # avoids capturing a particular dataset in the compiled graph.  Scalar
+    # tensors prevent empirical-Bayes prior values from causing recompilation.
+    loss_grad = (
+        _compiled_nbinom_apeglm_loss_grad
+        if counts.is_cuda
+        else _nbinom_apeglm_loss_grad
+    )
+    prior_no_shrink_scale_arg = torch.scalar_tensor(
+        prior_no_shrink_scale, dtype=dt, device=dev
+    )
+    prior_scale_arg = torch.scalar_tensor(prior_scale, dtype=dt, device=dev)
 
     def _fg(b):
-        return (_nbinom_apeglm_loss(b, counts, size, offset, design,
-                                    prior_no_shrink_scale, prior_scale, shrink_index),
-                _nbinom_apeglm_grad(b, counts, size, offset, design,
-                                    prior_no_shrink_scale, prior_scale, shrink_index))
+        return loss_grad(
+            b,
+            counts,
+            size,
+            offset,
+            design,
+            prior_no_shrink_scale_arg,
+            prior_scale_arg,
+            shrink_index,
+            counts_plus_size=counts_plus_size,
+            log_size=log_size,
+            design_t=design_t,
+        )
 
     x = x0.clone()
     fx, grad = _fg(x)
@@ -291,7 +384,7 @@ def apeglm_shrink_batched(
     max_beta: float = 30.0,
     beta_init: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Batched Newton MAP fit of the apeGLM posterior.
+    """Batched L-BFGS MAP fit of the apeGLM posterior.
 
     Returns:
         beta_shrunk: (G, P) MAP coefficients.
@@ -332,8 +425,27 @@ def apeglm_shrink_batched(
 
     # Compute inv(Hessian) diagonal at final β for SE — no ridge; the posterior
     # SD is sqrt of the diagonal of the inverse observed information.
-    H_final = _nbinom_apeglm_hess(beta, counts, size, offset, design,
-                                  prior_no_shrink_scale, prior_scale, shrink_index)
+    hessian = (
+        _compiled_nbinom_apeglm_hess
+        if counts.is_cuda
+        else _nbinom_apeglm_hess
+    )
+    prior_no_shrink_scale_arg = torch.scalar_tensor(
+        prior_no_shrink_scale, dtype=dtype, device=device
+    )
+    prior_scale_arg = torch.scalar_tensor(
+        prior_scale, dtype=dtype, device=device
+    )
+    H_final = hessian(
+        beta,
+        counts,
+        size,
+        offset,
+        design,
+        prior_no_shrink_scale_arg,
+        prior_scale_arg,
+        shrink_index,
+    )
     H_inv = torch.linalg.inv(H_final)
     inv_hess_diag = torch.diagonal(H_inv, dim1=1, dim2=2)  # (G, P)
     return beta, inv_hess_diag, converged

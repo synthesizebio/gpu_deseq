@@ -1,5 +1,5 @@
 # R 4.6.0 / Bioconductor 3.23 are the release pair used for DESeq2 1.52.0.
-ARG BIOC_IMAGE=bioconductor/bioconductor:RELEASE_3_23-r-4.6.0
+ARG BIOC_IMAGE=bioconductor/bioconductor:RELEASE_3_23-r-4.6.0@sha256:b10002b39efa30c3779ad839549806ebdbb29b3266f0d2428478b04426e55929
 FROM ${BIOC_IMAGE}
 
 USER root
@@ -33,11 +33,11 @@ COPY docker/install_r_packages.R /tmp/install_r_packages.R
 RUN Rscript /tmp/install_r_packages.R \
     && rm /tmp/install_r_packages.R
 
-ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu126
 COPY docker/constraints.txt /tmp/constraints.txt
 RUN python3 -m pip install --break-system-packages \
         --index-url "${TORCH_INDEX_URL}" \
-        torch==2.6.0 \
+        torch==2.7.1 \
     && python3 -m pip install --break-system-packages \
         --constraint /tmp/constraints.txt \
         formulaic \
