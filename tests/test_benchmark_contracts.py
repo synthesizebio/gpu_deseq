@@ -102,6 +102,7 @@ def test_regenerated_timing_schema_passes_paper_audit(tmp_path: Path) -> None:
         "bench/results/reference_parity.json",
         "bench/results/parity.json",
         "bench/results/r_parallel_a100_12worker.json",
+        "bench/results/gtex_scaling_a100.json",
         "benchmarks/results_a100_samplesweep_2026-09-11.json",
     ]
     required_files.extend(

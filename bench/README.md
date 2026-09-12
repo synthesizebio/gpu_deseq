@@ -180,3 +180,12 @@ GTEX_R_DISPERSION_ONLY=1 Rscript bench/run_gtex_scaling_r.R \
   validation/sources/SRP012682_rse_gene.Rdata \
   bench/cache/gtex_scaling/matrix /tmp/p6_all_gpu.json /tmp/p6_all_r
 ```
+
+After all raw case files are complete, assemble the committed artifact and
+human-readable table:
+
+```bash
+PYTHONPATH=src python bench/assemble_gtex_scaling.py /path/to/run \
+  bench/results/gtex_scaling_a100.json \
+  --markdown bench/results/GTEX_SCALING.md
+```

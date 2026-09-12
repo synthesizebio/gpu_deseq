@@ -13,6 +13,7 @@ allocator state from a preceding case would otherwise change the boundary.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import gc
 import hashlib
 import json
@@ -360,6 +361,7 @@ def run_case(
     )
     contrast = f"tissue[T.{categories[1]}]"
     commit, dirty = git_state()
+    measured_utc_start = dt.datetime.now(dt.timezone.utc).isoformat()
     record: dict[str, Any] = {
         **spec,
         "mode_requested": mode,
@@ -371,6 +373,7 @@ def run_case(
         ).hexdigest(),
         "git_commit": commit,
         "working_tree_dirty_at_start": dirty,
+        "measured_utc_start": measured_utc_start,
         "python_version": platform.python_version(),
         "torch_version": torch.__version__,
         "torch_cuda_version": torch.version.cuda,
@@ -475,6 +478,7 @@ def run_case(
             pass
     finally:
         record["elapsed_s"] = time.perf_counter() - started
+        record["measured_utc_end"] = dt.datetime.now(dt.timezone.utc).isoformat()
     return record
 
 

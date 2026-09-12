@@ -34,6 +34,9 @@ PREPARED_MANIFEST = json.loads(
 SAMPLE_SWEEP = json.loads(
     (ROOT / "benchmarks/results_a100_samplesweep_2026-09-11.json").read_text()
 )
+GTEX_SCALING = json.loads(
+    (RESULTS / "gtex_scaling_a100.json").read_text()
+)
 
 CASES = (
     ("pasilla", "pasilla"),
@@ -109,6 +112,7 @@ def table(label: str) -> str:
 
 
 def numeric_cell(cell: str) -> float:
+    cell = cell.replace("{,}", "").replace(",", "")
     match = re.search(r"-?\d+(?:\.\d+)?(?:e[+-]?\d+)?", cell, re.I)
     if not match:
         raise ValueError(f"no number in table cell {cell!r}")
@@ -385,6 +389,156 @@ for record in SAMPLE_SWEEP["sample_sweep"]:
     )
 
 
+# Real-GTEx full-workflow scaling and A100 memory-boundary artifact.
+gtex_provenance = GTEX_SCALING["provenance"]
+check("GTEx scaling schema", GTEX_SCALING["schema_version"] == 1)
+check("GTEx scaling source samples", gtex_provenance["n_source_samples"] == 9662)
+check("GTEx scaling source tissues", gtex_provenance["n_source_tissues"] == 54)
+check("GTEx scaling fixed genes", gtex_provenance["n_genes"] == 54922)
+check(
+    "GTEx scaling source manifest",
+    gtex_provenance["source_manifest_sha256"] == digest(SOURCE_MANIFEST_PATH),
+)
+check(
+    "GTEx scaling source object",
+    gtex_provenance["source_rdata_sha256"]
+    == next(
+        source["sha256"]
+        for source in SOURCE_MANIFEST["sources"]
+        if source["id"] == "gtex_recount2_srp012682"
+    ),
+)
+check(
+    "GTEx scaling paper gene axis",
+    gtex_provenance["paper_counts_sha256"]
+    == PREPARED_MANIFEST["cases"]["gtex_blood_muscle"]["files"]["counts.csv"]["sha256"],
+)
+check(
+    "GTEx scaling clean timing commit",
+    gtex_provenance["gpu_timing_commit"]
+    == "17ee2e5bcb27d163efbd3e1a2306b1129ddd6674",
+)
+gtex_timings = GTEX_SCALING["gpu_timings"]
+check(
+    "GTEx paper cohort exact source columns",
+    gtex_timings["p2_300"]["source_columns_one_based"]
+    == PREPARED_MANIFEST["cases"]["gtex_blood_muscle"]["metadata"]["selected_source_columns"],
+)
+for case, record in gtex_timings.items():
+    check(f"GTEx {case}: pass", record["status"] == "pass")
+    check(f"GTEx {case}: clean", record["working_tree_dirty_at_start"] is False)
+    check(f"GTEx {case}: one warmup", record["warmups"] == 1)
+    check(f"GTEx {case}: five staged repetitions", record["reps"] == 5)
+    check(f"GTEx {case}: five direct repetitions", record["direct_reps"] == 5)
+    check(f"GTEx {case}: five direct samples", len(record["direct_values_ms"]) == 5)
+    check(
+        f"GTEx {case}: direct median",
+        close(record["direct_median_ms"], statistics.median(record["direct_values_ms"]), 1e-12),
+    )
+    check(
+        f"GTEx {case}: stage sum",
+        close(
+            record["stage_total_ms"],
+            sum(record["stage_medians_ms"].values()),
+            1e-12,
+        ),
+    )
+
+gtex_scaling_labels = {
+    "p2_300": "paper-equivalent",
+    "p2_600": "2 tissues, balanced",
+    "p2_912": "2 tissues, source max.",
+    "p3_fixed300": r"3 tissues $\times$ 300",
+    "p4_fixed300": r"4 tissues $\times$ 300",
+    "p5_fixed300": r"5 tissues $\times$ 300",
+    "p6_fixed300": r"6 tissues $\times$ 300",
+    "p6_all": "6 tissues, all samples",
+}
+gtex_scaling_table = table("tab:gtexscale")
+for case, label in gtex_scaling_labels.items():
+    row = next(
+        line for line in gtex_scaling_table.splitlines() if line.strip().startswith(label)
+    )
+    cells = row.split("&")
+    record = gtex_timings[case]
+    check(
+        f"GTEx scaling table {case}: direct",
+        round(numeric_cell(cells[-2]), 3) == round(record["direct_median_ms"] / 1000, 3),
+    )
+    check(
+        f"GTEx scaling table {case}: memory",
+        round(numeric_cell(cells[-1]), 2) == round(record["peak_allocated_bytes"] / 2**30, 2),
+    )
+
+gtex_r_table = table("tab:gtexrendpoint")
+for case, row_prefix in (("p2_912", "912 "), ("p6_all", r"2{,}451 ")):
+    row = next(
+        line for line in gtex_r_table.splitlines() if line.strip().startswith(row_prefix)
+    )
+    cells = row.split("&")
+    endpoint = GTEX_SCALING["r_endpoints"][case]
+    check(f"GTEx R endpoint {case}: parity", endpoint["parity"]["pass"] is True)
+    check(
+        f"GTEx R endpoint table {case}: R",
+        round(numeric_cell(cells[2]), 3)
+        == round(endpoint["timing"]["stage_total_ms"] / 1000, 3),
+    )
+    check(
+        f"GTEx R endpoint table {case}: GPU",
+        round(numeric_cell(cells[3]), 3)
+        == round(gtex_timings[case]["stage_total_ms"] / 1000, 3),
+    )
+    check(
+        f"GTEx R endpoint table {case}: speedup",
+        round(numeric_cell(cells[4]), 1)
+        == round(endpoint["stage_speedup_vs_gpu"], 1),
+    )
+
+p6_metrics = {
+    metric["substep"]: metric
+    for metric in GTEX_SCALING["r_endpoints"]["p6_all"]["parity"]["metrics"]
+}
+check(
+    "GTEx P6 dispersion parity claim",
+    round(p6_metrics["dispersion"]["value"], 5) == 0.00212,
+)
+check(
+    "GTEx P6 raw LFC parity claim",
+    round(p6_metrics["glm_fit"]["value"], 7) == 0.0000318,
+)
+check(
+    "GTEx P6 significance parity claim",
+    round(p6_metrics["significance"]["value"], 5) == 0.99896,
+)
+check(
+    "GTEx P6 shrink parity claim",
+    round(p6_metrics["lfc_shrink"]["value"], 6) == 0.999994,
+)
+
+gtex_oom_table = table("tab:gtexoom")
+for case, tissues in (("p8_all", 8), ("p9_all", 9), ("p10_all", 10), ("p12_all", 12)):
+    record = GTEX_SCALING["oom_probes"][case]
+    row = next(
+        line for line in gtex_oom_table.splitlines() if line.strip().startswith(f"{tissues} ")
+    )
+    cells = row.split("&")
+    check(
+        f"GTEx OOM table {case}: peak",
+        round(numeric_cell(cells[3]), 2)
+        == round(record["peak_allocated_bytes"] / 2**30, 2),
+    )
+    check(
+        f"GTEx OOM table {case}: status",
+        record["status"].lower() in cells[4].lower(),
+    )
+check(
+    "GTEx observed OOM boundary",
+    GTEX_SCALING["oom_probes"]["p9_all"]["status"] == "pass"
+    and GTEX_SCALING["oom_probes"]["p10_all"]["status"] == "oom"
+    and GTEX_SCALING["oom_probes"]["p10_all"]["failed_stage"] == "dispersion",
+)
+
+
 # Remaining quantitative claims.
 validation = {
     case: json.loads((ROOT / f"validation/results/{case}.json").read_text())
@@ -481,6 +635,15 @@ checked_facts = {
     "4\\,ms",
     "0.2604",
     "$3.8 \\times 10^{-7}$",
+    "2{,}451",
+    "22.936-s",
+    "20.10 GiB",
+    "185.3$\\times$",
+    "137.2$\\times$",
+    "0.00212",
+    "0.99896",
+    "0.999994",
+    "37.09 GiB",
 }
 check(
     "every marked fact is artifact-backed",

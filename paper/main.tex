@@ -87,7 +87,9 @@ samples, $P=2$--$5$), final dispersion has a median p95 relative error of
 \fact{0.99722}. The standard
 Wald path includes count-outlier replacement and refitting. On one A100,
 the fastest \cudeseq{} mode is \fact{10.6--171.2$\times$} faster than one-worker
-R when the same five stage medians are summed.\\[3pt]
+R when the same five stage medians are summed. A separate real-GTEx scaling
+study runs 54{,}922 genes across \fact{2{,}451} samples and a $P=6$ tissue
+design in a \fact{22.936-s} direct median.\\[3pt]
 \textbf{Availability and implementation:} Open source under the MIT license at
 \url{https://github.com/synthesizebio/gpu_deseq}; PyTorch and a CUDA GPU are
 required for the reported acceleration.\\[3pt]
@@ -165,8 +167,9 @@ In this paper we present the following contributions
   \item A fully fused Triton kernel: one program per gene runs the whole
         gradient-ascent loop in registers with per-gene early exit.
   \item End-to-end and per-step timing benchmarks against R across six
-        real-data designs, together with sample-count scaling measurements for
-        the three GPU execution modes.
+        real-data designs, simulated sample-count scaling, and real-GTEx
+        full-workflow scaling to 2{,}451 samples with measured GPU-memory and
+        out-of-memory boundaries.
 \end{enumerate}
 
 % ===========================================================================
@@ -385,14 +388,19 @@ to pass the same thresholds.
 All GPU measurements are taken on one NVIDIA A100-SXM4-40GB under
 PyTorch~2.7.1 with CUDA~12.6 and NVIDIA driver~580.126.20. The reference CPU baseline
 (host~A) is R~DESeq2~1.52.0 on a 12-vCPU virtual machine, with R~4.6.0 and
-apeglm~1.34.0. Every reported real-data timing is a warm median of five
-repetitions. GPU stage timers call \texttt{torch.cuda.synchronize()} at both
+apeglm~1.34.0. The main real-data suite and repeated real-GTEx GPU sweep use a
+warm median of five repetitions. GPU stage timers call
+\texttt{torch.cuda.synchronize()} at both
 boundaries, so no GPU work remains in flight when the clock stops. The matched
 R--GPU comparison sums the five independently measured stage medians; it is not
 a directly observed end-to-end duration. A separately collected R experiment
 times the ordinary \texttt{DESeq()} call path directly with one and 12
 BiocParallel workers, and is reported without combining it with stage-summed
-GPU measurements.
+GPU measurements. The two large-GTEx R endpoints are single cold staged
+observations because one run takes 16--54 minutes; they are labeled separately
+and are not pooled with the five-repetition headline comparison. OOM-boundary
+points are also single cold feasibility probes in fresh processes, not timing
+estimates.
 
 We validate on three real, published RNA-seq datasets sliced into six designs
 spanning $P=2$--$5$ model terms: pasilla \citep{brooks2011pasilla}
@@ -407,9 +415,12 @@ the average read length (100 bases for missing or non-positive lengths). The
 source URLs, byte lengths, SHA-256 values, selected GTEx column indices and
 sample identifiers, and SHA-256 values of all prepared files are versioned in
 \texttt{validation/data\_sources.json} and
-\texttt{validation/prepared\_data\_manifest.json}. Scaling studies use
-fixed-seed negative-binomial simulations where the gene and sample axes can be
-swept independently.
+\texttt{validation/prepared\_data\_manifest.json}. The synthetic scaling study
+uses fixed-seed negative-binomial simulations where the gene and sample axes
+can be swept independently. A separate real-GTEx study uses all 9{,}662 source
+samples across 54 detailed tissue levels while holding the gene axis fixed at
+54{,}922; nested cohort membership and matrix hashes are stored in
+\texttt{bench/results/gtex\_scaling\_a100.json}.
 
 \subsection{Numerical parity with R}
 \label{sec:parity}
@@ -634,6 +645,95 @@ Samples & eager & graph & Triton \\\midrule
 \end{tabular}
 \end{table}
 
+\subsection{Real-GTEx sample, design-width, and memory scaling}
+The synthetic sweep isolates the sample axis but does not measure the complete
+workflow on a large real matrix. We therefore materialized all 9{,}662 samples
+from the same checksum-pinned recount2 source as a 54{,}922-gene matrix. Sample
+order is deterministic, and the first 150 whole-blood and 150 skeletal-muscle
+samples are byte-identical to the original paper case. The P=2 series appends
+real samples within those tissues; the design-width series adds the next most
+abundant tissues with 300 samples per level. Table~\ref{tab:gtexscale} reports
+five direct GPU observations after one warm-up and the maximum allocated CUDA
+memory across the corresponding staged repetitions.
+
+\begin{table}[htbp]\centering
+\caption{Full-workflow real-GTEx scaling on one A100 at 54{,}922 genes. Direct
+wall time is the median of five CUDA-synchronized observations after one
+warm-up; peak allocation is the maximum over five staged repetitions. P=2--6
+uses the fused Triton dispersion path.}
+\label{tab:gtexscale}
+{\footnotesize
+\begin{tabular}{lrrrr}
+\toprule
+Cohort & Samples & $P$ & Direct (s) & Peak GiB \\\midrule
+paper-equivalent       & 300   & 2 & 1.753  & 1.98 \\
+2 tissues, balanced    & 600   & 2 & 2.740  & 3.95 \\
+2 tissues, source max. & 912   & 2 & 5.430  & 5.99 \\
+3 tissues $\times$ 300 & 900   & 3 & 6.005  & 5.92 \\
+4 tissues $\times$ 300 & 1{,}200 & 4 & 8.990  & 8.38 \\
+5 tissues $\times$ 300 & 1{,}500 & 5 & 9.898  & 11.09 \\
+6 tissues $\times$ 300 & 1{,}800 & 6 & 14.323 & 14.77 \\
+6 tissues, all samples & 2{,}451 & 6 & 22.936 & 20.10 \\\bottomrule
+\end{tabular}}
+\end{table}
+
+For the nested P=2 series, tripling the real sample count from 300 to 912
+increases direct GPU time from 1.753 to 5.430 seconds and peak allocation from
+1.98 to 5.99 GiB. The widest fused case uses all samples from the six largest
+tissues: \fact{2{,}451} samples at $P=6$ complete in a \fact{22.936-s} direct
+median with \fact{20.10 GiB} peak allocation. One cold one-worker R staged
+observation takes 952.305 seconds at 912 samples/P=2 and 3{,}211.540 seconds at
+2{,}451 samples/P=6 (Table~\ref{tab:gtexrendpoint}). These observations imply
+\fact{185.3$\times$} and \fact{137.2$\times$} matched-stage speedups,
+respectively, but are kept outside the main headline because the R endpoints
+have one observation rather than five.
+
+\begin{table}[htbp]\centering
+\caption{Large-GTEx one-worker R endpoint observations versus the matched sum
+of five GPU stage medians. The R column is one cold staged observation and is
+therefore an endpoint measurement, not part of the five-repetition headline.}
+\label{tab:gtexrendpoint}
+{\footnotesize
+\begin{tabular}{lrrrrr}
+\toprule
+Samples & $P$ & R (s) & GPU (s) & Speedup & Parity \\\midrule
+912   & 2 & 952.305   & 5.139  & 185.3$\times$ & pass \\
+2{,}451 & 6 & 3{,}211.540 & 23.415 & 137.2$\times$ & pass \\\bottomrule
+\end{tabular}}
+\end{table}
+
+The endpoint parity checks use the same five predefined tolerances as
+Table~\ref{tab:parity}. At P=6, dispersion p95 relative error is
+\fact{0.00212}, raw-LFC p95 absolute error is $3.18\times10^{-5}$,
+significant-set Jaccard is \fact{0.99896}, and shrunken-LFC Pearson correlation
+is \fact{0.999994}; all five stages pass. The R exporter preserves dispersion
+immediately after \texttt{estimateDispersions}, before Cook's-outlier refitting,
+so both implementations are compared at the same stage boundary.
+
+Finally, we expanded nested all-sample tissue models beyond the fused kernel's
+$P\leq6$ limit. These runs correctly use the eager fallback and are single
+cold fresh-process feasibility probes (Table~\ref{tab:gtexoom}). P=9 with
+3{,}478 samples passes at \fact{37.09 GiB} peak allocation, while P=10 with
+3{,}784 samples fails during dispersion. Thus the observed boundary on this
+40-GB A100 lies between those two nested cohorts; it is not a universal
+sample-count limit because both sample count and design width change.
+
+\begin{table}[htbp]\centering
+\caption{Observed A100 feasibility boundary for nested all-sample GTEx tissue
+models. Each row is one cold workflow in a fresh process. P$>6$ uses eager
+dispersion fallback; pass-row wall times are not treated as timing estimates.}
+\label{tab:gtexoom}
+{\footnotesize
+\begin{tabular}{rrrrll}
+\toprule
+Tissues & Samples & $P$ & Peak GiB & Status & Failed stage \\\midrule
+8  & 3{,}147 & 8  & 30.98 & pass & --- \\
+9  & 3{,}478 & 9  & 37.09 & pass & --- \\
+10 & 3{,}784 & 10 & 27.88 & OOM  & dispersion \\
+12 & 4{,}338 & 12 & 35.51 & OOM  & dispersion \\\bottomrule
+\end{tabular}}
+\end{table}
+
 % ===========================================================================
 \section{Discussion}
 \label{sec:discussion}
@@ -657,8 +757,8 @@ Speedup varies across designs because time spent in dispersion fitting,
 shrinkage, and the remaining CPU steps depend on sample size and the design
 matrix.
 
-We note that our validated scope includes single-factor designs with up to four levels,
-additive multi-factor designs with up to $P{=}5$, and continuous covariates. 
+We note that our validated scope includes single-factor designs with up to six
+levels, additive multi-factor designs with up to $P{=}5$, and continuous covariates.
 The fused Triton path supports
 $P\in\{2,\dots,6\}$ and otherwise uses the eager implementation. 
 
@@ -689,12 +789,15 @@ under that statistical model specification.
 
 This study has several limitations. Measurements use one A100 and one CPU host,
 so absolute timings and cost effectiveness should not be generalized to other
-hardware. The real-data suite has six designs from three datasets, with five
-designs containing only seven or eight samples. Interactions, observation
+hardware. The primary real-data suite has six designs from three datasets,
+with five designs containing only seven or eight samples; the separate GTEx
+scaling study adds larger nested cohorts but not additional source studies.
+Interactions, observation
 weights, the \texttt{ashr} and normal shrinkage estimators, and the
 \texttt{glmGamPoi} dispersion backend are outside the validated scope. GPU
-memory use is characterized only by the exploratory GTEx scaling study, not
-across GPU architectures. Finally, the headline comparison is a matched sum of
+memory use is characterized on one 40-GB A100, not across GPU architectures;
+the P=8--12 boundary also changes sample count and design width together.
+Finally, the headline comparison is a matched sum of
 stage medians, not a direct end-to-end GPU observation; direct complete-workflow
 medians are therefore reported separately in Table~\ref{tab:realdirectgpu}.
 
@@ -739,6 +842,10 @@ GTEx/recount2 object. The reported tables can then be regenerated with the
 \texttt{container-r-reference}, \texttt{container-r-parallel}, and
 \texttt{container-gpu-benchmark} Make targets, and checked without untracked
 caches by \texttt{scripts/audit\_paper\_numbers.py}.
+The real-GTEx scaling matrix is reconstructed with
+\texttt{bench/extract\_gtex\_scaling.R}; exact nested source columns, all raw
+GPU timings, memory observations, OOM records, endpoint R timings, and parity
+metrics are committed in \texttt{bench/results/gtex\_scaling\_a100.json}.
 \end{sloppypar}
 
 \bibliographystyle{plainnat}
@@ -752,10 +859,12 @@ The benchmark host was a KVM virtual machine with an Intel Xeon CPU at
 GPU measurements used one NVIDIA A100-SXM4-40GB. The software environment was
 PyTorch~2.7.1 with CUDA~12.6 and NVIDIA driver~580.126.20; the R environment was
 R~4.6.0 with DESeq2~1.52.0 and apeglm~1.34.0. OMP, OpenBLAS, and MKL thread
-counts were pinned to one for the R measurements. Each real-data timing is the
-median of five measured repetitions following an untimed warm-up. The separate
-sample-axis sweep uses seven measured repetitions after three warm-ups and
-records its newer software stack in its artifact.
+counts were pinned to one for the R measurements. Main-suite and real-GTEx GPU
+timings are medians of five measured repetitions following an untimed warm-up.
+The two large-GTEx R endpoint observations and four OOM-boundary probes are
+explicitly single-run measurements. The separate synthetic sample-axis sweep
+uses seven measured repetitions after three warm-ups and records its software
+stack in its artifact.
 
 \section*{Supplementary algorithms}
 \addcontentsline{toc}{section}{Supplementary algorithms}

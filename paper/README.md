@@ -29,13 +29,18 @@ requires the project Python environment and the validation data described in
 - Exact download URLs/checksums and prepared-input checksums are recorded in
   `validation/data_sources.json` and `validation/prepared_data_manifest.json`.
 - GPU execution-mode agreement is recorded in `bench/results/parity.json`.
+- Real-GTEx full-workflow scaling, exact nested cohorts, endpoint R parity,
+  peak CUDA memory, and the A100 OOM boundary are recorded in
+  `bench/results/gtex_scaling_a100.json`.
 - Human-readable derived tables are in `bench/results/TABLES.md`.
 
-Every real-data timing is the median of five measured repetitions following an
-untimed warm-up. The R worker table contains direct end-to-end observations;
+Main-suite and repeated real-GTEx GPU timings are medians of five measured
+repetitions following an untimed warm-up. The R worker table contains direct end-to-end observations;
 the retained matched R--GPU table contains explicitly labelled sums of stage
-medians. The manuscript's measured claims can be checked from a clean checkout,
-without ignored data or caches, with:
+medians. The two large-GTEx R endpoints and the OOM feasibility probes are
+explicitly single observations and are not pooled into the main headline.
+The manuscript's measured claims can be checked from a clean checkout, without
+ignored data or caches, with:
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/audit_paper_numbers.py
